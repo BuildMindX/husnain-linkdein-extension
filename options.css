@@ -1,0 +1,657 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f3f2ef;
+  color: #1e293b;
+  min-height: 100vh;
+  padding: 32px 16px 72px;
+}
+
+.container {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+/* ── Page Header ──────────────────────────────────────────────────────────── */
+.page-header {
+  margin-bottom: 36px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.logo h1 {
+  font-size: 22px;
+  font-weight: 800;
+  color: #0A66C2;
+  letter-spacing: -0.3px;
+}
+
+.header-sub {
+  font-size: 13px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+/* ── Section Blocks ───────────────────────────────────────────────────────── */
+.section-block {
+  margin-bottom: 44px;
+}
+
+.section-header {
+  margin-bottom: 20px;
+}
+
+.section-step {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 11px;
+  background: #0A66C2;
+  color: #fff;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.section-step-config {
+  background: #374151;
+}
+
+.section-header h2 {
+  font-size: 20px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.3px;
+  margin-bottom: 5px;
+}
+
+.section-sub {
+  font-size: 13.5px;
+  color: #64748b;
+  line-height: 1.55;
+}
+
+/* ── Mode Selector ────────────────────────────────────────────────────────── */
+.mode-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.mode-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  background: #fff;
+  border: 2px solid #e2e8f0;
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.18s, background 0.18s, box-shadow 0.18s;
+  width: 100%;
+}
+
+.mode-card:hover {
+  border-color: #93c5fd;
+  background: #f8faff;
+}
+
+.mode-card.active {
+  border-color: #0A66C2;
+  background: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(10, 102, 194, 0.1);
+}
+
+.mode-card-icon {
+  font-size: 26px;
+  flex-shrink: 0;
+  width: 40px;
+  text-align: center;
+}
+
+.mode-card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mode-card-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.mode-card.active .mode-card-name {
+  color: #0A66C2;
+}
+
+.mode-card-tagline {
+  font-size: 12.5px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.mode-card.active .mode-card-tagline {
+  color: #3b82f6;
+}
+
+.mode-card-check {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+  transition: background 0.18s, color 0.18s;
+}
+
+.mode-card.active .mode-card-check {
+  background: #0A66C2;
+  color: #fff;
+}
+
+/* ── Mode Info Box ────────────────────────────────────────────────────────── */
+.mode-info-box {
+  background: #f0f7ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 18px 20px;
+  margin-bottom: 20px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.mode-info-box:empty {
+  display: none;
+}
+
+.mib-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.mib-content {
+  flex: 1;
+}
+
+.mib-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e40af;
+  margin-bottom: 5px;
+}
+
+.mib-desc {
+  font-size: 13px;
+  color: #334155;
+  line-height: 1.55;
+  margin-bottom: 10px;
+}
+
+.mib-list {
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.mib-list li {
+  font-size: 12.5px;
+  color: #1e40af;
+  line-height: 1.45;
+}
+
+.mib-cta {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0369a1;
+  padding: 8px 12px;
+  background: rgba(14, 116, 144, 0.07);
+  border-radius: 8px;
+}
+
+/* ── Cards ────────────────────────────────────────────────────────────────── */
+.card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 24px 24px 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 2px 8px rgba(0,0,0,0.04);
+  position: relative;
+}
+
+.card h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 8px;
+}
+
+.card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 8px;
+}
+
+.card-title-row h3 {
+  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-desc {
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.card-desc a {
+  color: #0A66C2;
+  text-decoration: none;
+}
+
+.card-desc a:hover {
+  text-decoration: underline;
+}
+
+/* Mode badges on cards */
+.card-mode-badge {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 9px;
+  border-radius: 20px;
+}
+
+.badge-sales { background: #dbeafe; color: #1d4ed8; }
+.badge-b2c   { background: #ede9fe; color: #6d28d9; }
+.badge-job   { background: #dcfce7; color: #166534; }
+
+/* Required / Optional badges (inline in h3) */
+.required-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: #fee2e2;
+  color: #dc2626;
+  padding: 2px 7px;
+  border-radius: 20px;
+}
+
+.optional-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: #f1f5f9;
+  color: #64748b;
+  padding: 2px 7px;
+  border-radius: 20px;
+}
+
+/* ── Forms ────────────────────────────────────────────────────────────────── */
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.label-hint {
+  font-weight: 400;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.optional {
+  font-weight: 400;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+/* Plain inputs / textareas */
+.form-group > input[type="text"],
+.form-group textarea,
+.tag-text,
+.form-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-family: inherit;
+  color: #1e293b;
+  background: #fafafa;
+  transition: border-color 0.18s, box-shadow 0.18s;
+  outline: none;
+  resize: vertical;
+}
+
+.form-group > input[type="text"]:focus,
+.form-group textarea:focus,
+.tag-text:focus,
+.form-select:focus {
+  border-color: #0A66C2;
+  box-shadow: 0 0 0 3px rgba(10, 102, 194, 0.12);
+  background: #fff;
+}
+
+.form-select {
+  resize: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+  cursor: pointer;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.form-row .form-group {
+  margin-bottom: 0;
+}
+
+/* Password input wrapper */
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-wrapper input {
+  width: 100%;
+  padding: 10px 42px 10px 12px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #1e293b;
+  background: #fafafa;
+  transition: border-color 0.18s, box-shadow 0.18s;
+  outline: none;
+}
+
+.input-wrapper input:focus {
+  border-color: #0A66C2;
+  box-shadow: 0 0 0 3px rgba(10, 102, 194, 0.12);
+  background: #fff;
+}
+
+.toggle-btn {
+  position: absolute;
+  right: 10px;
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+
+.toggle-btn:hover { color: #0A66C2; }
+
+.hint {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+.hint a { color: #0A66C2; text-decoration: none; }
+.hint a:hover { text-decoration: underline; }
+.hint code {
+  background: #f1f5f9;
+  color: #475569;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+/* ── Tags ─────────────────────────────────────────────────────────────────── */
+.tag-input {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.tag-input:empty { display: none; }
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 4px 6px 4px 10px;
+  border-radius: 16px;
+  line-height: 1.4;
+}
+
+.tag-target { background: #dcfce7; color: #15803d; }
+.tag-exclude { background: #fee2e2; color: #dc2626; }
+
+.tag-remove {
+  background: rgba(0,0,0,0.08);
+  border: none;
+  color: inherit;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.tag-remove:hover { background: rgba(0,0,0,0.18); }
+
+/* ── Segmented Control ────────────────────────────────────────────────────── */
+.seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.seg button {
+  padding: 7px 14px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 8px;
+  background: #fafafa;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.seg button:hover { border-color: #0A66C2; }
+
+.seg button.active {
+  border-color: #0A66C2;
+  background: #eff6ff;
+  color: #0A66C2;
+  box-shadow: 0 0 0 2px rgba(10, 102, 194, 0.12);
+}
+
+/* Checkbox row */
+.checkbox-row {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  margin-bottom: 8px !important;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #0A66C2;
+  cursor: pointer;
+}
+
+/* ── Status Messages ──────────────────────────────────────────────────────── */
+.status-msg {
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
+
+.status-msg:empty { display: none; }
+.status-success { background: #dcfce7; color: #15803d; }
+.status-error   { background: #fee2e2; color: #dc2626; }
+.status-info    { background: #f0f9ff; color: #0369a1; }
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.btn-primary {
+  flex: 1;
+  min-width: 120px;
+  background: #0A66C2;
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  padding: 10px 20px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+
+.btn-primary:hover { background: #004182; }
+
+.btn-secondary {
+  background: transparent;
+  color: #0A66C2;
+  border: 1.5px solid #0A66C2;
+  border-radius: 20px;
+  padding: 9px 20px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+
+.btn-secondary:hover { background: #eff6ff; }
+
+/* ── HubSpot Setup Steps ──────────────────────────────────────────────────── */
+.hs-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+.hs-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: #374151;
+  line-height: 1.55;
+}
+
+.hs-num {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  background: #0A66C2;
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 1px;
+}
+
+.hs-step a { color: #0A66C2; text-decoration: none; }
+.hs-step a:hover { text-decoration: underline; }
+
+.scope-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.scope-list code {
+  background: #e0f2fe;
+  color: #0369a1;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.hs-step code {
+  background: #f1f5f9;
+  color: #475569;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* ── Utility ──────────────────────────────────────────────────────────────── */
+.hidden {
+  display: none !important;
+}

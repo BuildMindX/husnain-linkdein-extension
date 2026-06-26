@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Husnain LinkedIn Helper — Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+
+    <header class="page-header">
+      <div class="logo">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="#0A66C2">
+          <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+        </svg>
+        <div>
+          <h1>Husnain LinkedIn Helper</h1>
+          <p class="header-sub">AI-powered LinkedIn intelligence</p>
+        </div>
+      </div>
+    </header>
+
+    <main>
+
+      <!-- ─── Step 1: Choose Mode ─────────────────────────────────────────────── -->
+      <div class="section-block">
+        <div class="section-header">
+          <span class="section-step">Step 1 of 3</span>
+          <h2>What are you using LinkedIn for?</h2>
+          <p class="section-sub">Pick your goal. The AI will analyze every profile differently depending on what you're trying to do.</p>
+        </div>
+
+        <div class="mode-selector" id="mode-selector">
+          <button class="mode-card" data-intent="b2b_sales" id="mode-b2b">
+            <span class="mode-card-icon">💼</span>
+            <div class="mode-card-body">
+              <span class="mode-card-name">B2B Sales</span>
+              <span class="mode-card-tagline">Score and qualify prospects for your sales pipeline</span>
+            </div>
+            <span class="mode-card-check" aria-hidden="true">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                <path d="M2 6.5l2.8 2.8 5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </button>
+          <button class="mode-card" data-intent="b2c_sales" id="mode-b2c">
+            <span class="mode-card-icon">🧑‍💻</span>
+            <div class="mode-card-body">
+              <span class="mode-card-name">Freelance / Consulting</span>
+              <span class="mode-card-tagline">Find clients for your individual expertise and services</span>
+            </div>
+            <span class="mode-card-check" aria-hidden="true">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                <path d="M2 6.5l2.8 2.8 5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </button>
+          <button class="mode-card" data-intent="job_search" id="mode-job">
+            <span class="mode-card-icon">🎯</span>
+            <div class="mode-card-body">
+              <span class="mode-card-name">Job Search</span>
+              <span class="mode-card-tagline">Identify recruiters, hiring managers, and open-role signals</span>
+            </div>
+            <span class="mode-card-check" aria-hidden="true">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                <path d="M2 6.5l2.8 2.8 5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </button>
+        </div>
+        <div id="intent-status" class="status-msg" aria-live="polite"></div>
+      </div>
+
+      <!-- ─── Step 2: Profile Setup ───────────────────────────────────────────── -->
+      <div class="section-block" id="step2-block" style="visibility:hidden">
+        <div class="section-header">
+          <span class="section-step">Step 2 of 3</span>
+          <h2 id="step2-title">Set up your profile</h2>
+          <p class="section-sub" id="step2-desc">The AI uses your profile to personalize every analysis and outreach message. The more detail you add, the more accurate and useful the results.</p>
+        </div>
+
+        <!-- Dynamic mode info box — content set by JS -->
+        <div class="mode-info-box" id="mode-info-box"></div>
+
+        <!-- ── B2B: Ideal Customer Profile ── -->
+        <div class="card hidden" id="sales-config">
+          <div class="card-mode-badge badge-sales">B2B Sales</div>
+          <h3>Your Ideal Customer Profile (ICP)</h3>
+          <p class="card-desc">Tell the AI which industries you sell into and which to skip. It uses this to rate every prospect as <strong>Strong Fit</strong>, <strong>Partial Fit</strong>, or <strong>Poor Fit</strong> — and automatically flags excluded industries so you don't waste time on bad leads.</p>
+
+          <div class="form-group">
+            <label>Target industries <span class="label-hint">— prospects here score higher</span></label>
+            <div class="tag-input" id="target-tags"></div>
+            <input type="text" id="target-input" class="tag-text" placeholder='Type an industry and press Enter — e.g. "Dental", "Construction", "Fintech"' autocomplete="off" />
+          </div>
+
+          <div class="form-group">
+            <label>Excluded industries <span class="label-hint">— flagged as poor fit automatically</span></label>
+            <div class="tag-input" id="exclude-tags"></div>
+            <input type="text" id="exclude-input" class="tag-text" placeholder='Type to exclude and press Enter — e.g. "IT staffing", "Marketing agencies"' autocomplete="off" />
+          </div>
+
+          <div id="icp-status" class="status-msg" aria-live="polite"></div>
+          <div class="actions">
+            <button type="button" id="icp-save-btn" class="btn-primary">Save ICP</button>
+            <button type="button" id="icp-reset-btn" class="btn-secondary">Reset excludes to default</button>
+          </div>
+        </div>
+
+        <!-- ── B2B: Business Profile ── -->
+        <div class="card hidden" id="business-config">
+          <div class="card-mode-badge badge-sales">B2B Sales</div>
+          <h3>Your Business Profile</h3>
+          <p class="card-desc">Tell the AI what you sell, who you sell to, and what problem you solve. It uses this to write personalized connection requests — subtly referencing your context without ever making a hard pitch. The more specific you are, the better the messages.</p>
+
+          <div class="form-group">
+            <label for="biz-offer">What you sell / offer</label>
+            <textarea id="biz-offer" rows="2" placeholder="e.g. We build custom patient-booking software for dental and healthcare clinics"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="biz-customer">Your ideal customer</label>
+            <textarea id="biz-customer" rows="2" placeholder="e.g. Clinic owners and practice managers at multi-location dental groups"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="biz-problem">Problem you solve</label>
+            <textarea id="biz-problem" rows="2" placeholder="e.g. They lose revenue to no-shows and manual scheduling — we automate the whole thing"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="biz-valueprop">One-liner / value prop <span class="optional">(optional)</span></label>
+            <input type="text" id="biz-valueprop" placeholder="e.g. Cut no-shows by 40% with automated reminders" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="biz-name">Your first name <span class="optional">(optional)</span></label>
+              <input type="text" id="biz-name" placeholder="e.g. Jane" />
+            </div>
+            <div class="form-group">
+              <label for="biz-company">Your company name <span class="optional">(optional)</span></label>
+              <input type="text" id="biz-company" placeholder="e.g. Acme" />
+            </div>
+          </div>
+
+          <div id="biz-status" class="status-msg" aria-live="polite"></div>
+          <div class="actions">
+            <button type="button" id="biz-save-btn" class="btn-primary">Save Business Profile</button>
+          </div>
+        </div>
+
+        <!-- ── B2B: Message Style ── -->
+        <div class="card hidden" id="message-config">
+          <div class="card-mode-badge badge-sales">B2B Sales</div>
+          <h3>Message Style</h3>
+          <p class="card-desc">Set your default tone and length for AI-generated connection requests and cold messages. You can always override these on a per-profile basis by adding a custom note directly in the panel.</p>
+
+          <div class="form-group">
+            <label>Tone</label>
+            <div class="seg" id="tone-seg">
+              <button type="button" data-val="warm">Warm</button>
+              <button type="button" data-val="direct">Direct</button>
+              <button type="button" data-val="casual">Casual</button>
+              <button type="button" data-val="professional">Professional</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Length</label>
+            <div class="seg" id="length-seg">
+              <button type="button" data-val="short">Short</button>
+              <button type="button" data-val="standard">Standard</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-row">
+              <input type="checkbox" id="cta-toggle" />
+              Include a soft call-to-action at the end
+            </label>
+            <input type="text" id="cta-text" placeholder='e.g. "Open to a quick chat sometime?"' />
+          </div>
+
+          <div id="msg-status" class="status-msg" aria-live="polite"></div>
+          <div class="actions">
+            <button type="button" id="msg-save-btn" class="btn-primary">Save Message Style</button>
+          </div>
+        </div>
+
+        <!-- ── B2C: Personal Profile ── -->
+        <div class="card hidden" id="b2c-config">
+          <div class="card-mode-badge badge-b2c">Freelance</div>
+          <h3>Your Personal Profile</h3>
+          <p class="card-desc">Tell the AI about your expertise and services so it can evaluate each contact as a potential client and suggest the most effective outreach angle — always positioning you as a trusted expert, never as a vendor pitching services.</p>
+
+          <div class="form-group">
+            <label for="b2c-expertise">Your expertise / domain</label>
+            <textarea id="b2c-expertise" rows="2" placeholder="e.g. Full-stack developer specialising in React and Node.js — 8 years building SaaS products"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="b2c-services">Services you offer</label>
+            <textarea id="b2c-services" rows="2" placeholder="e.g. MVP builds, custom dashboards, API integrations, code reviews"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="b2c-target">Your target clients</label>
+            <textarea id="b2c-target" rows="2" placeholder="e.g. Funded early-stage startups and solo founders who need to move fast without a full-time team"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="b2c-problem">Problem you solve</label>
+            <textarea id="b2c-problem" rows="2" placeholder="e.g. Founders who need to ship fast but can't justify hiring a full-time engineer yet"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="b2c-valueprop">Your unique angle <span class="optional">(optional)</span></label>
+            <input type="text" id="b2c-valueprop" placeholder="e.g. Shipped 20+ MVPs, always on time, async-first" />
+          </div>
+          <div class="form-group">
+            <label for="b2c-name">Your first name <span class="optional">(optional)</span></label>
+            <input type="text" id="b2c-name" placeholder="e.g. Jane" />
+          </div>
+
+          <div id="b2c-status" class="status-msg" aria-live="polite"></div>
+          <div class="actions">
+            <button type="button" id="b2c-save-btn" class="btn-primary">Save Personal Profile</button>
+          </div>
+        </div>
+
+        <!-- ── Job Search: Seeker Profile (NEW) ── -->
+        <div class="card hidden" id="job-config">
+          <div class="card-mode-badge badge-job">Job Search</div>
+          <h3>Your Job Seeker Profile</h3>
+          <p class="card-desc">The AI uses this to write connection requests that sound natural and professional — not like a job application. Adding your background helps it reference your specific situation when reaching out to recruiters and hiring managers.</p>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="job-name">Your first name <span class="optional">(optional)</span></label>
+              <input type="text" id="job-name" placeholder="e.g. Alex" />
+            </div>
+            <div class="form-group">
+              <label for="job-title">Your current or target job title</label>
+              <input type="text" id="job-title" placeholder="e.g. Product Manager, Software Engineer" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="job-background">Your professional background <span class="label-hint">— 1 to 3 sentences</span></label>
+            <textarea id="job-background" rows="3" placeholder="e.g. 5 years in B2B SaaS product management at two Series-B startups. Strong background in data-driven roadmaps, cross-functional delivery, and go-to-market."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>Roles you are targeting <span class="label-hint">— personalizes your outreach messages</span></label>
+            <div class="tag-input" id="job-role-tags"></div>
+            <input type="text" id="job-role-input" class="tag-text" placeholder='Type a role and press Enter — e.g. "Product Manager", "Growth Lead", "Engineering Manager"' autocomplete="off" />
+          </div>
+
+          <div class="form-group">
+            <label>Industries you are targeting <span class="optional">(optional)</span></label>
+            <div class="tag-input" id="job-industry-tags"></div>
+            <input type="text" id="job-industry-input" class="tag-text" placeholder='e.g. "SaaS", "Fintech", "Healthcare"' autocomplete="off" />
+          </div>
+
+          <div class="form-group">
+            <label for="job-years">Years of experience</label>
+            <select id="job-years" class="form-select">
+              <option value="">Select...</option>
+              <option value="0–2 years (entry-level)">0–2 years (entry-level)</option>
+              <option value="3–5 years (mid-level)">3–5 years (mid-level)</option>
+              <option value="6–10 years (senior)">6–10 years (senior)</option>
+              <option value="10+ years (lead / principal)">10+ years (lead / principal)</option>
+            </select>
+          </div>
+
+          <div id="job-status" class="status-msg" aria-live="polite"></div>
+          <div class="actions">
+            <button type="button" id="job-save-btn" class="btn-primary">Save Job Profile</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Step 3: Configuration ──────────────────────────────────────────── -->
+      <div class="section-block">
+        <div class="section-header">
+          <span class="section-step section-step-config">Step 3 of 3</span>
+          <h2>Connect the AI & integrations</h2>
+          <p class="section-sub">Add your OpenAI API key to activate the AI. HubSpot is optional — connect it to push LinkedIn contacts straight into your CRM.</p>
+        </div>
+
+        <!-- OpenAI API Key -->
+        <div class="card">
+          <div class="card-title-row">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0A66C2" stroke-width="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+              <path d="M2 17l10 5 10-5"></path>
+              <path d="M2 12l10 5 10-5"></path>
+            </svg>
+            <h3>OpenAI API Key <span class="required-badge">Required</span></h3>
+          </div>
+          <p class="card-desc">Needed to run AI analysis on LinkedIn profiles. Your key is stored only in your browser and sent directly to OpenAI — no one else sees it. <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">Get your API key →</a></p>
+
+          <div class="form-group">
+            <label for="api-key">Paste your API key here</label>
+            <div class="input-wrapper">
+              <input type="password" id="api-key" placeholder="sk-proj-..." autocomplete="off" spellcheck="false" />
+              <button type="button" id="toggle-visibility" class="toggle-btn" aria-label="Show/hide key">
+                <svg id="eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </button>
+            </div>
+            <p class="hint">Keys start with <code>sk-</code> and are found on the OpenAI platform under API keys.</p>
+          </div>
+
+          <div id="status-msg" class="status-msg" aria-live="polite"></div>
+          <div class="actions">
+            <button type="button" id="save-btn" class="btn-primary">Save API Key</button>
+            <button type="button" id="clear-btn" class="btn-secondary">Clear Key</button>
+          </div>
+        </div>
+
+        <!-- HubSpot Integration -->
+        <div class="card">
+          <div class="card-title-row">
+            <svg width="20" height="20" viewBox="0 0 512 512" fill="#FF7A59">
+              <path d="M267.4 211.6c-25.1 23.7-40.8 57-40.8 94 0 29.3 9.7 56.3 26 78L203 434c-4.4-1.6-9.1-2.5-14-2.5-22.1 0-40 17.9-40 40s17.9 40 40 40 40-17.9 40-40c0-4-.6-7.9-1.6-11.6l50.1-50.2c21.7 14.2 47.4 22.5 75 22.5 76.2 0 138-61.8 138-138s-61.8-138-138-138c-30.2 0-58.2 9.7-80.8 26.1l.7-.7zM353.4 414c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96z"/>
+            </svg>
+            <h3>HubSpot CRM <span class="optional-badge">Optional</span></h3>
+          </div>
+          <p class="card-desc">Push LinkedIn profiles directly into HubSpot as deals — with notes, pipeline stage, and deal owner. You'll need a Private App token from your HubSpot account.</p>
+
+          <div class="hs-steps">
+            <div class="hs-step">
+              <span class="hs-num">1</span>
+              <span>Go to <a href="https://app.hubspot.com/private-apps" target="_blank" rel="noopener">app.hubspot.com/private-apps</a> and click <strong>Create a private app</strong></span>
+            </div>
+            <div class="hs-step">
+              <span class="hs-num">2</span>
+              <span>Name it <em>Husnain LinkedIn Helper</em>, then open the <strong>Scopes</strong> tab</span>
+            </div>
+            <div class="hs-step">
+              <span class="hs-num">3</span>
+              <div>
+                <span>Enable these scopes:</span>
+                <div class="scope-list">
+                  <code>crm.objects.deals.read</code>
+                  <code>crm.objects.deals.write</code>
+                  <code>crm.objects.notes.write</code>
+                  <code>crm.objects.owners.read</code>
+                  <code>crm.objects.contacts.write</code>
+                </div>
+              </div>
+            </div>
+            <div class="hs-step">
+              <span class="hs-num">4</span>
+              <span>Click <strong>Create app</strong>, copy the access token (starts with <code>pat-</code>), paste it below</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="hs-key">HubSpot Private App Token</label>
+            <div class="input-wrapper">
+              <input type="password" id="hs-key" placeholder="pat-na1-..." autocomplete="off" spellcheck="false" />
+              <button type="button" id="hs-toggle-visibility" class="toggle-btn" aria-label="Show/hide token">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div id="hs-status-msg" class="status-msg" aria-live="polite"></div>
+          <div class="actions">
+            <button type="button" id="hs-save-btn" class="btn-primary">Save HubSpot Token</button>
+            <button type="button" id="hs-clear-btn" class="btn-secondary">Clear</button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

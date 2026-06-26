@@ -1,0 +1,669 @@
+const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
+const OPENAI_MODEL = 'gpt-4o-mini';
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === 'ANALYZE_PROFILE') {
+    handleAnalyzeProfile(msg.profileData, msg.intent).then(sendResponse).catch(err => {
+      sendResponse({ error: err.message });
+    });
+    return true;
+  }
+  if (msg.type === 'GENERATE_CONNECTION_REQUEST') {
+    handleGenerateConnectionRequest(msg.profileData, msg.intent, msg.userNotes).then(sendResponse).catch(err => {
+      sendResponse({ error: err.message });
+    });
+    return true;
+  }
+  if (msg.type === 'GENERATE_COLD_MESSAGE') {
+    handleGenerateColdMessage(msg.profileData, msg.intent, msg.userNotes).then(sendResponse).catch(err => {
+      sendResponse({ error: err.message });
+    });
+    return true;
+  }
+  if (msg.type === 'FETCH_HUBSPOT_PIPELINES') {
+    fetchHubSpotPipelines().then(sendResponse).catch(err => {
+      sendResponse({ error: err.message });
+    });
+    return true;
+  }
+  if (msg.type === 'FETCH_HUBSPOT_OWNERS') {
+    fetchHubSpotOwners().then(sendResponse).catch(err => {
+      sendResponse({ error: err.message });
+    });
+    return true;
+  }
+  if (msg.type === 'PUSH_TO_HUBSPOT') {
+    pushHubSpotDeal(msg).then(sendResponse).catch(err => {
+      sendResponse({ error: err.message });
+    });
+    return true;
+  }
+  if (msg.type === 'OPEN_OPTIONS_PAGE') {
+    chrome.runtime.openOptionsPage();
+    return false;
+  }
+  if (msg.type === 'GET_API_KEY_STATUS') {
+    chrome.storage.local.get('openaiApiKey').then(result => {
+      sendResponse({ hasKey: !!result.openaiApiKey });
+    });
+    return true;
+  }
+  if (msg.type === 'GET_HS_KEY_STATUS') {
+    chrome.storage.local.get('hubspotApiKey').then(result => {
+      sendResponse({ hasKey: !!result.hubspotApiKey });
+    });
+    return true;
+  }
+});
+
+async function getApiKey() {
+  const result = await chrome.storage.local.get('openaiApiKey');
+  if (!result.openaiApiKey) throw new Error('NO_API_KEY');
+  return result.openaiApiKey;
+}
+
+// ─── Sales / ICP config ───────────────────────────────────────────────────────
+const DEFAULT_EXCLUDES = ['Tech service providers', 'IT outsourcing / staffing', 'Digital / marketing agencies'];
+
+async function getSalesConfig() {
+  const r = await chrome.storage.local.get(['targetIndustries', 'excludeIndustries', 'businessProfile', 'messagePresets']);
+  return {
+    targets: Array.isArray(r.targetIndustries) ? r.targetIndustries : [],
+    excludes: Array.isArray(r.excludeIndustries) ? r.excludeIndustries : DEFAULT_EXCLUDES,
+    business: r.businessProfile || {},
+    presets: r.messagePresets || {},
+  };
+}
+
+function buildIcpContext(cfg, mode = 'b2b') {
+  const lines = ['--- YOUR IDEAL CUSTOMER PROFILE (use this to judge fit) ---'];
+  const fallback = mode === 'b2c'
+    ? 'TARGET INDUSTRIES: not specified — judge fit on general freelance opportunity signals (founder/owner at SMB/startup preferred).'
+    : 'TARGET INDUSTRIES: not specified — judge fit on general B2B buying potential.';
+  lines.push(cfg.targets.length
+    ? `TARGET INDUSTRIES (strong fit): ${cfg.targets.join(', ')}`
+    : fallback);
+  lines.push(cfg.excludes.length
+    ? `EXCLUDED INDUSTRIES (poor fit — set "excluded": true and level "Poor" if their company matches any of these): ${cfg.excludes.join(', ')}`
+    : 'EXCLUDED INDUSTRIES: none.');
+
+  const b = cfg.business || {};
+  const biz = [];
+  if (b.offer) biz.push(`What we offer: ${b.offer}`);
+  if (b.idealCustomer) biz.push(`Our ideal customer: ${b.idealCustomer}`);
+  if (b.problem) biz.push(`Problem we solve: ${b.problem}`);
+  if (b.valueProp) biz.push(`Value prop: ${b.valueProp}`);
+  if (biz.length) { lines.push('\nOUR BUSINESS:'); lines.push(biz.join('\n')); }
+  return lines.join('\n');
+}
+
+function buildMessageStyle(cfg) {
+  const p = cfg.presets || {};
+  const b = cfg.business || {};
+  const tone = p.tone || 'warm';
+  const length = p.length || 'standard';
+  const lines = [`Tone: ${tone}.`];
+  lines.push(`Length: ${length === 'short' ? 'very short — one or two lines.' : 'concise but complete.'}`);
+  if (p.includeCta && (p.ctaText || '').trim()) {
+    lines.push(`End with a soft, natural call-to-action along the lines of: "${p.ctaText.trim()}". Keep it casual, never salesy.`);
+  } else {
+    lines.push('Do not include a hard call-to-action.');
+  }
+  const who = [];
+  if (b.offer) who.push(`We offer: ${b.offer}`);
+  if (b.valueProp) who.push(`Value prop: ${b.valueProp}`);
+  if (b.senderName) who.push(`Sender name: ${b.senderName}`);
+  if (b.companyName) who.push(`Sender company: ${b.companyName}`);
+  if (who.length) {
+    lines.push('\nABOUT THE SENDER (weave in subtly ONLY if it strengthens the message — never pitch hard, never list features):');
+    lines.push(who.join('\n'));
+  }
+  return lines.join('\n');
+}
+
+async function getB2cProfile() {
+  const r = await chrome.storage.local.get('b2cProfile');
+  return r.b2cProfile || {};
+}
+
+function buildB2cContext(p) {
+  const lines = ['--- YOUR PERSONAL PROFILE (use this to personalise analysis and messaging) ---'];
+  if (p.expertise) lines.push(`Your expertise / domain: ${p.expertise}`);
+  if (p.services) lines.push(`Services you offer: ${p.services}`);
+  if (p.targetClient) lines.push(`Your target clients: ${p.targetClient}`);
+  if (p.problem) lines.push(`Problem you solve: ${p.problem}`);
+  if (p.valueProp) lines.push(`Your unique angle / USP: ${p.valueProp}`);
+  if (p.senderName) lines.push(`Your name: ${p.senderName}`);
+  return lines.join('\n');
+}
+
+async function getJobProfile() {
+  const r = await chrome.storage.local.get('jobProfile');
+  return r.jobProfile || {};
+}
+
+function buildJobContext(p) {
+  if (!p || !Object.keys(p).length) return '';
+  const lines = ['--- YOUR JOB SEARCH PROFILE (personalize messaging based on this — calibrate tone and references to the sender\'s background) ---'];
+  if (p.senderName) lines.push(`Your name: ${p.senderName}`);
+  if (p.currentTitle) lines.push(`Your current or target role: ${p.currentTitle}`);
+  if (p.background) lines.push(`Your professional background: ${p.background}`);
+  if (Array.isArray(p.targetRoles) && p.targetRoles.length) lines.push(`Roles you are looking for: ${p.targetRoles.join(', ')}`);
+  if (Array.isArray(p.targetIndustries) && p.targetIndustries.length) lines.push(`Industries you are targeting: ${p.targetIndustries.join(', ')}`);
+  if (p.yearsExp) lines.push(`Years of experience: ${p.yearsExp}`);
+  return lines.join('\n');
+}
+
+async function callAI(systemPrompt, userPrompt) {
+  const apiKey = await getApiKey();
+
+  const response = await fetch(OPENAI_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      max_tokens: 1500,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `API error ${response.status}`);
+  }
+
+  const data = await response.json();
+  return (data.choices[0].message.content || '').trim();
+}
+
+async function handleAnalyzeProfile(profileData, intent) {
+  const isJobSearch = intent === 'job_search';
+  const isB2c = intent === 'b2c_sales';
+  const cfg = (!isJobSearch) ? await getSalesConfig() : null;
+  const b2cProfile = isB2c ? await getB2cProfile() : null;
+
+  let systemPrompt;
+
+  if (isJobSearch) {
+    systemPrompt = `You are a job search intelligence assistant. Analyze LinkedIn profiles from the perspective of a job seeker evaluating contacts.
+
+Respond ONLY with valid JSON. No markdown, no explanation, no extra text — just the raw JSON object.
+IMPORTANT: Always return the full JSON structure. Never add an "error" field. Use "Unknown" for anything you cannot determine.
+
+Return exactly this structure:
+{
+  "hiringSignal": {
+    "score": "Strong | Possible | Unlikely",
+    "reasoning": "One sentence max explaining the score"
+  },
+  "isRecruiter": "Yes | Likely | No",
+  "companyName": "Current employer name, or Unknown",
+  "companySize": "Startup | SMB | Mid-market | Enterprise | Unknown",
+  "engagementRate": "Daily | Weekly | Occasional | Rarely",
+  "industry": "Short industry label (e.g. Construction, SaaS, Finance)",
+  "summaryPoints": [
+    "Short chip-sized fact about their background (max 8 words)",
+    "Second fact",
+    "Third fact",
+    "Fourth fact"
+  ],
+  "recentActivity": "One sentence on what they post about or engage with. If none visible, say No recent posts visible.",
+  "keyInsights": [
+    "Actionable job-search insight #1 — concise, specific",
+    "Actionable job-search insight #2",
+    "Actionable job-search insight #3"
+  ]
+}
+
+hiringSignal guide:
+- Strong: Recruiter, HR, Talent Acquisition, or posts about hiring/open roles
+- Possible: Hiring manager, team lead, or growing company with budget signals
+- Unlikely: IC with no hiring signals, or company appears to be contracting
+
+isRecruiter guide:
+- Yes: Title contains Recruiter, Talent, HR, People Ops, Staffing
+- Likely: HR Manager, People Partner, or posts frequently about hiring
+- No: No HR/recruiting signals
+
+companySize guide:
+- Startup: <50 employees or early-stage signals
+- SMB: 50-500 employees
+- Mid-market: 500-5000 employees
+- Enterprise: 5000+ employees or well-known large corp
+
+keyInsights should be actionable for a job seeker — e.g. what to mention, how to approach them, what roles they hire for, growth signals.
+engagementRate: infer from follower count, post frequency, and activity signals`;
+
+  } else if (isB2c) {
+    systemPrompt = `You are a B2C freelance sales intelligence assistant. Analyze LinkedIn profiles from the perspective of an individual freelancer or consultant evaluating whether this person could become a client.
+
+Respond ONLY with valid JSON. No markdown, no explanation, no extra text — just the raw JSON object.
+IMPORTANT: Always return the full JSON structure. Never add an "error" field. Use "Unknown" for anything you cannot determine.
+
+Return exactly this structure:
+{
+  "clientPotential": {
+    "score": "High | Medium | Low",
+    "reasoning": "One sentence max explaining the score"
+  },
+  "freelancerSignal": {
+    "signal": "Strong | Possible | Unlikely",
+    "reasoning": "One sentence on how likely they are to work with individual freelancers or consultants"
+  },
+  "decisionMaker": "Yes | Likely | No",
+  "company": {
+    "name": "Current employer name, or Unknown",
+    "size": "Startup | SMB | Mid-market | Enterprise | Unknown",
+    "stage": "Early-stage | Growth | Established | Unknown"
+  },
+  "engagementRate": "Daily | Weekly | Occasional | Rarely",
+  "industry": "Short industry label (e.g. SaaS, E-commerce, Healthcare)",
+  "summaryPoints": [
+    "Short chip-sized fact about their background (max 8 words)",
+    "Second fact",
+    "Third fact",
+    "Fourth fact"
+  ],
+  "recentActivity": "One sentence on what they post about or engage with. If none visible, say No recent posts visible.",
+  "painPoints": [
+    "Visible pain, challenge, or gap a freelancer in your domain could address",
+    "Second pain point or opportunity"
+  ],
+  "keyInsights": [
+    "Actionable B2C insight #1 — specific to pitching your personal expertise",
+    "Actionable insight #2",
+    "Actionable insight #3"
+  ],
+  "approachAngle": "The most compelling angle to reach out as an individual expert — specific to their situation, not generic"
+}
+
+clientPotential scoring guide:
+- High: decision-maker at a startup/SMB with visible skill gaps, budget signals, or history working with freelancers/agencies
+- Medium: manager-level, growing team, relevant industry but less direct signal
+- Low: large-enterprise IC with no procurement authority, or no freelance alignment
+
+freelancerSignal guide:
+- Strong: founder, co-founder, solo operator, small team with obvious gaps, or history with contractors
+- Possible: manager with some autonomy, project-based work signals, growing team
+- Unlikely: large enterprise, siloed role, no budget/decision signals
+
+decisionMaker guide:
+- Yes: Founder, Owner, CEO, CTO, Head of X at a small company
+- Likely: Manager, Team Lead, Director at an SMB
+- No: IC, junior, large-enterprise employee with no budget authority
+
+companySize guide:
+- Startup: <50 employees or early-stage
+- SMB: 50-500 employees
+- Mid-market: 500-5000 employees
+- Enterprise: 5000+ or well-known large corp
+
+engagementRate: infer from follower count, post frequency, and activity signals
+
+${buildIcpContext(cfg, 'b2c')}
+${b2cProfile && Object.keys(b2cProfile).length ? '\n' + buildB2cContext(b2cProfile) : ''}`;
+
+  } else {
+    systemPrompt = `You are a B2B SaaS sales intelligence assistant. Analyze LinkedIn profiles and return structured data for a sales dashboard.
+
+Respond ONLY with valid JSON. No markdown, no explanation, no extra text — just the raw JSON object.
+IMPORTANT: Always return the full JSON structure. Never add an "error" field. Use "Unknown" for anything you cannot determine.
+
+Return exactly this structure:
+{
+  "potentialClient": {
+    "score": "High | Medium | Low",
+    "reasoning": "One sentence max explaining the score"
+  },
+  "industryFit": {
+    "level": "Strong | Partial | Poor",
+    "reasoning": "One sentence on how well their company's industry matches the target ICP below",
+    "excluded": false
+  },
+  "decisionMaker": "Yes | Likely | No",
+  "company": {
+    "name": "Current employer name, or Unknown",
+    "domain": "Likely website domain (e.g. acme.com) only if obvious from the company name, else Unknown",
+    "headcount": "Estimated employee range (e.g. 11-50, 51-200, 1000+), or Unknown",
+    "industry": "Their company's industry (e.g. Healthcare, Dental, Construction, Fintech, Ecommerce)"
+  },
+  "companySize": "Startup | SMB | Mid-market | Enterprise | Unknown",
+  "engagementRate": "Daily | Weekly | Occasional | Rarely",
+  "industry": "Short industry label (e.g. Construction, SaaS, Finance)",
+  "summaryPoints": [
+    "Short chip-sized fact about their background (max 8 words)",
+    "Second fact",
+    "Third fact",
+    "Fourth fact"
+  ],
+  "recentActivity": "One sentence on what they post about or engage with. If none visible, say No recent posts visible.",
+  "keyInsights": [
+    "Actionable sales insight #1 — concise, specific",
+    "Actionable sales insight #2",
+    "Actionable sales insight #3"
+  ]
+}
+
+industryFit guide:
+- Strong: their company's industry is one of the TARGET INDUSTRIES below (or closely adjacent).
+- Partial: a plausible B2B buyer, but not in a listed target industry.
+- Poor: their company is in an EXCLUDED industry or clearly irrelevant. Set "excluded": true and level "Poor".
+- industryFit MUST influence potentialClient.score: Poor/excluded fit can never score High.
+
+Scoring guide (combine seniority AND industry fit):
+- High: decision-maker (Director/VP/C-level/Owner) AND Strong or Partial fit
+- Medium: some influence or buying signals, at least Partial fit
+- Low: individual contributor, OR Poor/excluded fit, OR irrelevant
+
+decisionMaker guide:
+- Yes: C-level, VP, Director, Owner, Founder
+- Likely: Manager, Team Lead, Senior with procurement mentions
+- No: IC, student, junior role
+
+companySize guide:
+- Startup: <50 employees or early-stage signals
+- SMB: 50-500 employees
+- Mid-market: 500-5000 employees
+- Enterprise: 5000+ employees or well-known large corp
+
+engagementRate: infer from follower count, post frequency, and activity signals
+
+${buildIcpContext(cfg)}`;
+  }
+
+  const userPrompt = buildProfileText(profileData);
+  const raw = await callAI(systemPrompt, userPrompt);
+
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('Invalid AI response — could not parse JSON');
+  return JSON.parse(jsonMatch[0]);
+}
+
+async function handleGenerateConnectionRequest(profileData, intent, userNotes) {
+  const isJobSearch = intent === 'job_search';
+  const isB2c = intent === 'b2c_sales';
+  const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
+  const b2cProfile = isB2c ? await getB2cProfile() : null;
+  const jobProfile = isJobSearch ? await getJobProfile() : null;
+
+  let systemPrompt;
+
+  if (isJobSearch) {
+    systemPrompt = `You write LinkedIn connection requests for a job seeker. Write like a real person, not a cover letter.
+
+PRIORITY RULE: Base the message on their CURRENT role if possible. Only reference posts if they clearly relate to their current job — never reference posts from a previous employer. If there is nothing specific to reference about their current role, write a warm, natural message using just their name, current title, and company. Always produce a message — never refuse or ask for clarification.
+
+Rules:
+- Hard limit: 200 characters total (count carefully)
+- Zero em dashes, zero hyphens used as dashes
+- No corporate speak, no buzzwords
+- Show genuine interest in their company or work — not desperation
+- No mention of "looking for opportunities" or "open to work"
+- Sound like a curious professional, not an applicant
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- No emojis
+
+Return ONLY the connection request text. Nothing else. No quotes around it.`;
+
+    const jobCtx = buildJobContext(jobProfile);
+    if (jobCtx) systemPrompt += `\n\n${jobCtx}`;
+
+  } else if (isB2c) {
+    systemPrompt = `You write LinkedIn connection requests for an individual freelancer or consultant reaching out to a potential client. You are positioning the sender as a peer and fellow professional, not as a vendor.
+
+PRIORITY RULE: Base the message on their CURRENT role, company, or recent activity. Never reference posts from a previous employer. If nothing specific is available, write a warm human message using their current title and company. Always produce a message — never refuse.
+
+Rules:
+- Hard limit: 200 characters total (count carefully)
+- Zero em dashes, zero hyphens used as dashes
+- No selling, no pitching, no mention of services or offers
+- Sound like one professional reaching out to another — collegial, not promotional
+- Reference something specific about their work, company, or background if possible
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- No emojis
+- Never mention "freelance", "hire me", or any engagement offer
+
+Return ONLY the connection request text. Nothing else. No quotes around it.`;
+
+    if (b2cProfile && Object.keys(b2cProfile).length) {
+      systemPrompt += `\n\n--- YOUR PROFILE (sender context, for tone calibration only) ---\n${buildB2cContext(b2cProfile)}`;
+    }
+
+  } else {
+    systemPrompt = `You write LinkedIn connection requests. Write like a real person, not a marketer.
+
+PRIORITY RULE: Base the message on their CURRENT role if possible. Only reference posts if they clearly relate to their current job — never reference posts from a previous employer. If there is nothing specific to reference about their current role, write a warm, natural message using just their current title and company. Always produce a message — never refuse or ask for clarification.
+
+Rules:
+- Hard limit: 200 characters total (count carefully)
+- Zero em dashes, zero hyphens used as dashes
+- No corporate speak, no buzzwords
+- No selling, no pitching, no mention of your own work
+- Sound like a genuine human reaching out
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- No emojis
+
+Return ONLY the connection request text. Nothing else. No quotes around it.`;
+
+    if (cfg) systemPrompt += `\n\n--- MESSAGE STYLE & SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
+  }
+
+  const userPrompt = buildProfileText(profileData, userNotes);
+  return { text: await callAI(systemPrompt, userPrompt) };
+}
+
+async function handleGenerateColdMessage(profileData, intent, userNotes) {
+  const isJobSearch = intent === 'job_search';
+  const isB2c = intent === 'b2c_sales';
+  const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
+  const b2cProfile = isB2c ? await getB2cProfile() : null;
+  const jobProfile = isJobSearch ? await getJobProfile() : null;
+
+  let systemPrompt;
+
+  if (isJobSearch) {
+    systemPrompt = `You write first LinkedIn direct messages for a job seeker reaching out to someone they are already connected with.
+
+PRIORITY RULE: Base the message on their CURRENT role if possible. Only reference posts if they clearly relate to their current job — never reference posts from a previous employer. If there is nothing specific to reference, write a warm natural opener using their current title and company. Always produce a message — never refuse or ask for clarification.
+
+Rules:
+- Max 300 characters total (count carefully)
+- Zero em dashes, zero hyphens used as dashes
+- No corporate speak, no buzzwords
+- Do NOT say you are looking for a job, open to work, or mention opportunities
+- Ask a simple, natural question that invites a reply — can be about their current role or transition
+- Sound curious and human, not templated
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- No emojis
+
+Return ONLY the message text. Nothing else. No quotes around it.`;
+
+    const jobCtx = buildJobContext(jobProfile);
+    if (jobCtx) systemPrompt += `\n\n${jobCtx}`;
+
+  } else if (isB2c) {
+    systemPrompt = `You write first LinkedIn direct messages for a freelancer or independent consultant reaching out to a potential client they are already connected with. You are positioning the sender as a trusted individual expert — knowledgeable, direct, and worth a conversation.
+
+PRIORITY RULE: Base the message on their CURRENT role, challenges, or recent posts. Only reference posts clearly tied to their current job. If nothing specific is available, write a warm opener using their current title and company. Always produce a message — never refuse.
+
+Rules:
+- Max 300 characters total (count carefully)
+- Zero em dashes, zero hyphens used as dashes
+- No buzzwords, no SDR templates, no hard pitch
+- Acknowledge something specific about their situation — a challenge, a recent post, a company initiative
+- End with a single soft, conversational question that invites a reply (not a meeting request)
+- Sound like a trusted peer, not a vendor
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- No emojis
+- Never say "freelance", "hire me", "my services", "I can help you with", or anything transactional
+
+Return ONLY the message text. Nothing else. No quotes around it.`;
+
+    if (b2cProfile && Object.keys(b2cProfile).length) {
+      systemPrompt += `\n\n--- YOUR PROFILE (for context and tone calibration) ---\n${buildB2cContext(b2cProfile)}`;
+    }
+
+  } else {
+    systemPrompt = `You write first LinkedIn direct messages for a B2B sales professional reaching out to a connection.
+
+PRIORITY RULE: Base the message on their CURRENT role if possible. Only reference posts if they clearly relate to their current job — never reference posts from a previous employer. If there is nothing specific to reference, write a warm natural opener using their current title and company. Always produce a message — never refuse or ask for clarification.
+
+Rules:
+- Max 300 characters total (count carefully)
+- Zero em dashes, zero hyphens used as dashes
+- No corporate speak, no buzzwords, no pitching
+- The goal is to start a genuine conversation, not sell anything
+- One clear, natural question that invites a reply — can be as simple as asking about their current work
+- Sound like a real person, not an SDR template
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- No emojis
+
+Return ONLY the message text. Nothing else. No quotes around it.`;
+
+    if (cfg) systemPrompt += `\n\n--- MESSAGE STYLE & SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
+  }
+
+  const userPrompt = buildProfileText(profileData, userNotes);
+  return { text: await callAI(systemPrompt, userPrompt) };
+}
+
+async function getHubSpotKey() {
+  const result = await chrome.storage.local.get('hubspotApiKey');
+  if (!result.hubspotApiKey) throw new Error('NO_HUBSPOT_KEY');
+  return result.hubspotApiKey;
+}
+
+async function hubspotFetch(path, options = {}) {
+  const token = await getHubSpotKey();
+  const res = await fetch(`https://api.hubapi.com${path}`, {
+    ...options,
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const msg = data?.message || data?.error || `HubSpot API error ${res.status}`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+async function fetchHubSpotPipelines() {
+  const data = await hubspotFetch('/crm/v3/pipelines/deal');
+  return (data.results || []).map(p => ({
+    id: p.id,
+    label: p.label,
+    stages: (p.stages || [])
+      .sort((a, b) => a.displayOrder - b.displayOrder)
+      .map(s => ({ id: s.id, label: s.label })),
+  }));
+}
+
+async function fetchHubSpotOwners() {
+  const data = await hubspotFetch('/crm/v3/owners?limit=100');
+  return (data.results || []).map(o => ({
+    id: o.id,
+    label: [o.firstName, o.lastName].filter(Boolean).join(' ') || o.email,
+  }));
+}
+
+async function pushHubSpotDeal({ name, linkedinUrl, contactText, remarks, pipelineId, stageId, ownerId }) {
+  const dealName = name || 'LinkedIn Lead';
+
+  // 1. Create deal
+  const deal = await hubspotFetch('/crm/v3/objects/deals', {
+    method: 'POST',
+    body: JSON.stringify({
+      properties: {
+        dealname: dealName,
+        pipeline: pipelineId,
+        dealstage: stageId,
+        ...(ownerId ? { hubspot_owner_id: ownerId } : {}),
+      },
+    }),
+  });
+
+  // 2. Build note body
+  const noteParts = [];
+  if (remarks && remarks.trim()) noteParts.push(remarks.trim());
+  noteParts.push(`LinkedIn: ${linkedinUrl}`);
+  if (contactText) noteParts.push(`Connection Request:\n${contactText}`);
+
+  // 3. Create note
+  const note = await hubspotFetch('/crm/v3/objects/notes', {
+    method: 'POST',
+    body: JSON.stringify({
+      properties: {
+        hs_note_body: noteParts.join('\n\n'),
+        hs_timestamp: Date.now().toString(),
+      },
+    }),
+  });
+
+  // 4. Associate note with deal
+  await hubspotFetch(`/crm/v4/objects/note/${note.id}/associations/default/deal/${deal.id}`, {
+    method: 'PUT',
+  });
+
+  return { success: true };
+}
+
+function buildProfileText(p, userNotes) {
+  const lines = [];
+
+  if (p.name) lines.push(`Name: ${p.name}`);
+  if (p.headline) lines.push(`Headline: ${p.headline}`);
+  if (p.location) lines.push(`Location: ${p.location}`);
+  if (p.connections) lines.push(`Connections: ${p.connections}`);
+  if (p.followers) lines.push(`Followers: ${p.followers}`);
+
+  if (p.experience?.length) {
+    lines.push('\nExperience:');
+    p.experience.forEach((e, i) => {
+      const label = i === 0 ? '  [CURRENT ROLE] ' : '  [PREVIOUS] ';
+      lines.push(`${label}${e.title} at ${e.company}${e.duration ? ` (${e.duration})` : ''}${e.description ? `: ${e.description.slice(0, 200)}` : ''}`);
+    });
+  }
+
+  if (p.education?.length) {
+    lines.push('\nEducation:');
+    p.education.forEach(e => {
+      lines.push(`  - ${e.school}${e.degree ? `, ${e.degree}` : ''}`);
+    });
+  }
+
+  if (p.skills?.length) {
+    lines.push(`\nSkills: ${p.skills.slice(0, 10).join(', ')}`);
+  }
+
+  if (p.posts?.length) {
+    lines.push('\nRecent Posts/Activity (only use if relevant to CURRENT ROLE):');
+    p.posts.slice(0, 3).forEach((post, i) => {
+      lines.push(`  Post ${i + 1}: ${post.slice(0, 300)}`);
+    });
+  }
+
+  if (p.rawText && lines.length < 4) {
+    lines.push('\nRaw profile text (extract all details from this):');
+    lines.push(p.rawText.slice(0, 3000));
+  } else if (p.rawText) {
+    lines.push('\nAdditional raw profile text:');
+    lines.push(p.rawText.slice(0, 1500));
+  }
+
+  if (userNotes && userNotes.trim()) {
+    lines.push('\n--- User notes (prioritize these when crafting the message) ---');
+    lines.push(userNotes.trim());
+  }
+
+  return lines.join('\n');
+}

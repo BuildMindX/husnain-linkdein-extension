@@ -1,0 +1,166 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif;
+  background: #f8fafc;
+  color: #1e293b;
+  width: 300px;
+}
+
+/* ── Header ───────────────────────────────────────────────────────────────── */
+.popup-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 16px 15px;
+  background: #0A66C2;
+  color: #fff;
+}
+
+.popup-header svg { flex-shrink: 0; }
+
+.popup-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.2;
+}
+
+.popup-sub {
+  font-size: 11px;
+  color: rgba(255,255,255,0.72);
+  margin-top: 3px;
+}
+
+/* ── Status section ───────────────────────────────────────────────────────── */
+.popup-status-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  background: #fff;
+  border-bottom: 1px solid #e9eef5;
+}
+
+.key-status {
+  font-size: 12px;
+  padding: 6px 11px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.key-status:empty { display: none; }
+
+.key-ok {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.key-missing {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.intent-badge {
+  font-size: 12px;
+  padding: 5px 11px;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #0369a1;
+  border: 1px solid #bfdbfe;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.intent-badge:empty { display: none; }
+
+/* ── Steps section ────────────────────────────────────────────────────────── */
+.popup-steps-section {
+  padding: 14px 14px 12px;
+  background: #fff;
+  margin-top: 6px;
+}
+
+.section-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #94a3b8;
+  margin-bottom: 10px;
+}
+
+.steps {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 12.5px;
+  color: #334155;
+  line-height: 1.5;
+}
+
+.step-num {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  background: #0A66C2;
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 1px;
+}
+
+.steps code {
+  background: #f1f5f9;
+  color: #0369a1;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.steps strong { color: #0A66C2; }
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+.popup-footer {
+  padding: 12px 14px 14px;
+}
+
+.btn-settings {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: #0A66C2;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+
+.btn-settings:hover { background: #004182; }
