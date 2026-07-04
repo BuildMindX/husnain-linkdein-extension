@@ -178,6 +178,7 @@ document.getElementById('icp-reset-btn')?.addEventListener('click', () => {
 
 // ── Business Profile ──────────────────────────────────────────────────────────
 const bizFields = {
+  expertise: 'biz-expertise',
   offer: 'biz-offer',
   idealCustomer: 'biz-customer',
   problem: 'biz-problem',

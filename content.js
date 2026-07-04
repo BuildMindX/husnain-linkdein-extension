@@ -242,6 +242,13 @@
           <input type="text" class="lia-pc-custom-input" id="lia-pc-custom-topic" placeholder="Type your topic idea..." />
           <button class="lia-btn-secondary" id="lia-pc-custom-go">Go</button>
         </div>
+        <div class="lia-pc-or" style="margin-top:14px">— already have a post? —</div>
+        <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-img-only-btn" style="display:flex;align-items:center;justify-content:center;gap:7px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+          </svg>
+          Generate Image for My Post
+        </button>
       </div>
     `;
     body.querySelector('#lia-pc-suggest-btn').addEventListener('click', () => {
@@ -257,6 +264,53 @@
     });
     body.querySelector('#lia-pc-custom-topic').addEventListener('keydown', e => {
       if (e.key === 'Enter') body.querySelector('#lia-pc-custom-go').click();
+    });
+    body.querySelector('#lia-pc-img-only-btn').addEventListener('click', renderPcImageOnly);
+  }
+
+  function renderPcImageOnly() {
+    const body = document.getElementById('lia-pc-body');
+    if (!body) return;
+    body.innerHTML = `
+      <div class="lia-pc-back-row">
+        <button class="lia-pc-back-btn" id="lia-pc-imgonly-back">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+          Back
+        </button>
+      </div>
+      <div class="lia-pc-section">
+        <div class="lia-pc-label">Your Post or Description</div>
+        <textarea
+          class="lia-pc-imgonly-input"
+          id="lia-pc-imgonly-text"
+          rows="5"
+          placeholder="Paste your post text, or describe what the image should convey — e.g. 'A post about AI transforming healthcare with ethical challenges' ..."></textarea>
+      </div>
+      <div class="lia-pc-section">
+        <button class="lia-btn-primary lia-pc-full-btn" id="lia-pc-imgonly-gen">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+          </svg>
+          Generate Image
+        </button>
+      </div>
+      <div id="lia-pc-image-area" class="lia-pc-image-area" style="display:none"></div>
+    `;
+
+    body.querySelector('#lia-pc-imgonly-back').addEventListener('click', renderPcLanding);
+
+    body.querySelector('#lia-pc-imgonly-gen').addEventListener('click', () => {
+      const text = body.querySelector('#lia-pc-imgonly-text')?.value.trim();
+      if (!text) {
+        body.querySelector('#lia-pc-imgonly-text').focus();
+        return;
+      }
+      const area = body.querySelector('#lia-pc-image-area');
+      if (area) area.style.display = '';
+      // Truncate to ~500 chars for the image prompt — enough context without overloading
+      generateImage(text.slice(0, 500));
     });
   }
 
@@ -555,12 +609,6 @@
       ? 'Get a warm note positioning you as a fellow expert'
       : 'Get a personalized note to send with a connection invite';
 
-    const coldDesc = currentIntent === 'job_search'
-      ? 'Already connected — start a casual, genuine conversation'
-      : currentIntent === 'b2c_sales'
-      ? 'Already connected — reach out as a trusted consultant'
-      : 'Already connected — write a first outreach message';
-
     body.innerHTML = `
       <div class="lia-purpose-picker">
         <div class="lia-mode-indicator">${modeLabel}</div>
@@ -593,27 +641,18 @@
             <span class="lia-purpose-desc">${connectionDesc}</span>
           </span>
         </button>
-        <button class="lia-purpose-tile" id="lia-purpose-cold">
+        <button class="lia-purpose-tile" id="lia-purpose-followup">
           <span class="lia-purpose-icon">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              <polyline points="17 1 21 5 17 9"></polyline>
+              <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+              <polyline points="7 23 3 19 7 15"></polyline>
+              <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
             </svg>
           </span>
           <span class="lia-purpose-content">
-            <span class="lia-purpose-title">First Message</span>
-            <span class="lia-purpose-desc">${coldDesc}</span>
-          </span>
-        </button>
-        <button class="lia-purpose-tile" id="lia-purpose-dm">
-          <span class="lia-purpose-icon">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-              <polyline points="22,6 12,13 2,6"></polyline>
-            </svg>
-          </span>
-          <span class="lia-purpose-content">
-            <span class="lia-purpose-title">Open Messaging</span>
-            <span class="lia-purpose-desc">Jump straight into LinkedIn messaging with this person</span>
+            <span class="lia-purpose-title">Follow-up Message</span>
+            <span class="lia-purpose-desc">${currentIntent === 'job_search' ? 'Continue an ongoing conversation — write the perfect follow-up' : 'Already messaging — get a contextual follow-up based on your conversation'}</span>
           </span>
         </button>
         ${hasCache ? `<button class="lia-purpose-refresh" id="lia-purpose-reanalyze">
@@ -627,8 +666,7 @@
     `;
 
     body.querySelector('#lia-purpose-connection').addEventListener('click', () => runForPurpose('connection'));
-    body.querySelector('#lia-purpose-cold').addEventListener('click', () => runForPurpose('cold'));
-    body.querySelector('#lia-purpose-dm').addEventListener('click', () => runForPurpose('dm'));
+    body.querySelector('#lia-purpose-followup').addEventListener('click', () => runForPurpose('followup'));
     body.querySelector('#lia-purpose-analyze').addEventListener('click', () => runForPurpose('analyze'));
     body.querySelector('#lia-purpose-reanalyze')?.addEventListener('click', async () => {
       const prev = await dbGet(currentProfileUrl).catch(() => null);
@@ -641,16 +679,15 @@
   }
 
   async function runForPurpose(purpose, userNotes = '', forceRefresh = false) {
-    // DM: just open LinkedIn messaging — no API key needed
-    if (purpose === 'dm') {
-      openLinkedInDM();
-      return;
-    }
-
     const hasKey = await checkApiKey();
     if (!hasKey) { renderNoApiKey(); return; }
 
     const { analysisIntent: intent = 'b2b_sales' } = await chrome.storage.local.get('analysisIntent');
+
+    if (purpose === 'followup') {
+      renderFollowupForm(intent);
+      return;
+    }
 
     if (purpose === 'analyze') {
       const tabs = panel.querySelector('.lia-tabs');
@@ -678,68 +715,217 @@
         renderSingleText('connection', stored.connectionRequest, intent);
         return;
       }
-      if (purpose === 'cold' && stored?.coldMessage) {
-        renderSingleText('cold', stored.coldMessage, intent);
-        return;
-      }
     }
 
-    // Generate fresh
+    // Generate fresh connection request
     const body = document.getElementById('lia-body');
     if (body) body.innerHTML = `
       <div class="lia-loading">
         <div class="lia-spinner"></div>
-        <p>${purpose === 'cold' ? 'Writing cold message...' : 'Writing connection request...'}</p>
+        <p>Writing connection request...</p>
       </div>
     `;
 
     try {
       const profileData = extractProfile();
-      const msgType = purpose === 'cold' ? 'GENERATE_COLD_MESSAGE' : 'GENERATE_CONNECTION_REQUEST';
-      const result = await sendMessage(msgType, profileData, { intent, userNotes: userNotes || undefined });
+      const result = await sendMessage('GENERATE_CONNECTION_REQUEST', profileData, { intent, userNotes: userNotes || undefined });
       if (result.error) throw new Error(result.error);
 
-      // Cache it (skip cache if user notes were used — notes-based results are ephemeral)
       if (!userNotes) {
         const current = await dbGet(currentProfileUrl).catch(() => null) || { url: currentProfileUrl };
-        const updateKey = purpose === 'cold' ? 'coldMessage' : 'connectionRequest';
-        await dbPut(currentProfileUrl, { ...current, [updateKey]: result.text, intent }).catch(() => {});
+        await dbPut(currentProfileUrl, { ...current, connectionRequest: result.text, intent }).catch(() => {});
       }
 
-      renderSingleText(purpose, result.text, intent);
+      renderSingleText('connection', result.text, intent);
     } catch (err) {
       renderError(err.message);
     }
   }
 
-  function openLinkedInDM() {
-    // Try to click the Message button on the page first
-    const msgBtn = [...document.querySelectorAll('button')].find(b =>
-      b.textContent.trim().toLowerCase() === 'message' ||
-      b.getAttribute('aria-label')?.toLowerCase().includes('message')
-    );
-    if (msgBtn) {
-      msgBtn.click();
-      togglePanel(false);
-      return;
+  function extractLinkedInConversation() {
+    const lines = [];
+
+    // Search in any open messaging overlay first, then fallback to full document
+    const searchRoots = [
+      document.querySelector('.msg-overlay-conversation-bubble'),
+      document.querySelector('.msg-thread'),
+      document.querySelector('[class*="messaging-thread"]'),
+      document,
+    ].filter(Boolean);
+
+    for (const root of searchRoots) {
+      // Strategy A: message groups (LinkedIn groups consecutive msgs from same sender)
+      const groups = root.querySelectorAll('.msg-s-message-group');
+      if (groups.length) {
+        groups.forEach(group => {
+          const nameEl = group.querySelector(
+            '.msg-s-message-group__meta .presence-entity__display-name, ' +
+            '.msg-s-message-group__meta strong, ' +
+            '.msg-s-message-group__meta [aria-label]'
+          );
+          const name = nameEl?.textContent.trim() || '';
+          group.querySelectorAll(
+            '.msg-s-event-listitem__message-bubble, ' +
+            '.msg-s-event-listitem__body p, ' +
+            '.msg-s-event__body p'
+          ).forEach(el => {
+            const text = el.textContent.trim();
+            if (text) lines.push(name ? `${name}: ${text}` : text);
+          });
+        });
+        if (lines.length) break;
+      }
+
+      // Strategy B: individual event items without group wrapper
+      const items = root.querySelectorAll('.msg-s-event-listitem, .msg-s-event__content');
+      if (items.length) {
+        items.forEach(item => {
+          const body = item.querySelector(
+            '.msg-s-event-listitem__body, .msg-s-event-listitem__message-bubble, p'
+          );
+          if (body) {
+            const text = body.textContent.trim();
+            if (text && text.length > 1) lines.push(text);
+          }
+        });
+        if (lines.length) break;
+      }
     }
-    // Fallback: open messaging page in a new tab
-    const profileSlug = location.pathname.replace(/\/$/, '').split('/in/')[1];
-    if (profileSlug) {
-      window.open(`https://www.linkedin.com/messaging/compose/?to=${profileSlug}`, '_blank');
-    } else {
-      window.open('https://www.linkedin.com/messaging/', '_blank');
-    }
-    togglePanel(false);
+
+    // Deduplicate consecutive duplicates (LinkedIn sometimes repeats nodes) and cap at 30
+    const deduped = lines.filter((l, i) => l !== lines[i - 1]);
+    return deduped.length ? deduped.slice(-30).join('\n\n') : null;
+  }
+
+  function renderFollowupForm(intent) {
+    const body = document.getElementById('lia-body');
+    if (!body) return;
+    const tabs = panel.querySelector('.lia-tabs');
+    if (tabs) tabs.style.display = 'none';
+
+    // Try to auto-extract the open conversation immediately
+    const extracted = extractLinkedInConversation();
+    const statusHtml = extracted
+      ? `<div class="lia-convo-status lia-convo-found">
+           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+           Conversation auto-loaded (${extracted.split('\n\n').length} messages)
+           <button class="lia-convo-refresh" id="lia-convo-refresh">↺ Refresh</button>
+         </div>`
+      : `<div class="lia-convo-status lia-convo-missing">
+           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+           No open conversation found — open the message window on this page, then click
+           <button class="lia-convo-refresh" id="lia-convo-refresh">↺ Refresh</button>
+         </div>`;
+
+    body.innerHTML = `
+      <div class="lia-back-row">
+        <button class="lia-back-btn" id="lia-back-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+          Back
+        </button>
+      </div>
+      <div class="lia-section">
+        <div class="lia-label">Conversation
+          <span class="lia-optional" style="font-weight:400"> — auto-extracted from this page</span>
+        </div>
+        ${statusHtml}
+        <textarea class="lia-notes-input" id="lia-followup-convo" rows="6" placeholder="Conversation will appear here — or paste it manually..." style="min-height:110px"></textarea>
+      </div>
+      <div class="lia-section">
+        <button class="lia-btn-primary" id="lia-followup-gen-btn" style="width:100%">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <polyline points="17 1 21 5 17 9"></polyline>
+            <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+            <polyline points="7 23 3 19 7 15"></polyline>
+            <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+          </svg>
+          Generate Follow-up
+        </button>
+        <div id="lia-followup-result" style="display:none;margin-top:12px"></div>
+      </div>
+    `;
+
+    // Pre-fill textarea if conversation was found
+    if (extracted) body.querySelector('#lia-followup-convo').value = extracted;
+
+    // Refresh button re-scrapes the page
+    body.querySelector('#lia-convo-refresh')?.addEventListener('click', () => {
+      const fresh = extractLinkedInConversation();
+      const textarea = body.querySelector('#lia-followup-convo');
+      const statusEl = body.querySelector('.lia-convo-status');
+      if (fresh) {
+        if (textarea) textarea.value = fresh;
+        if (statusEl) {
+          statusEl.className = 'lia-convo-status lia-convo-found';
+          statusEl.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> Conversation loaded (${fresh.split('\n\n').length} messages) <button class="lia-convo-refresh" id="lia-convo-refresh">↺ Refresh</button>`;
+          statusEl.querySelector('#lia-convo-refresh')?.addEventListener('click', () => body.querySelector('#lia-convo-refresh')?.click());
+        }
+      } else {
+        if (statusEl) {
+          statusEl.className = 'lia-convo-status lia-convo-missing';
+          statusEl.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> Still no conversation found — make sure the message window is open <button class="lia-convo-refresh" id="lia-convo-refresh">↺ Refresh</button>`;
+          statusEl.querySelector('#lia-convo-refresh')?.addEventListener('click', () => body.querySelector('#lia-convo-refresh')?.click());
+        }
+      }
+    });
+
+    body.querySelector('#lia-back-btn').addEventListener('click', () => {
+      if (tabs) tabs.style.display = 'none';
+      renderPurposePicker();
+    });
+
+    body.querySelector('#lia-followup-gen-btn').addEventListener('click', async () => {
+      const btn = body.querySelector('#lia-followup-gen-btn');
+      const resultDiv = body.querySelector('#lia-followup-result');
+      const convoText = body.querySelector('#lia-followup-convo')?.value.trim() || '';
+
+      btn.disabled = true;
+      btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="lia-spin"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> Writing follow-up...`;
+      resultDiv.style.display = 'none';
+
+      try {
+        const profileData = extractProfile();
+        const result = await sendMessage('GENERATE_FOLLOW_UP', profileData, { intent, conversationText: convoText });
+        if (result.error) throw new Error(result.error);
+
+        const text = result.text || '';
+        resultDiv.innerHTML = `
+          <div class="lia-label">Follow-up Message</div>
+          <div class="lia-connection-box">
+            <p id="lia-followup-text">${escHtml(text)}</p>
+          </div>
+          <button class="lia-btn-primary lia-copy-btn" id="lia-followup-copy">Copy to Clipboard</button>
+        `;
+        resultDiv.style.display = '';
+
+        resultDiv.querySelector('#lia-followup-copy')?.addEventListener('click', async () => {
+          const copyBtn = resultDiv.querySelector('#lia-followup-copy');
+          await navigator.clipboard.writeText(text);
+          copyBtn.textContent = 'Copied!';
+          copyBtn.classList.add('copied');
+          setTimeout(() => { copyBtn.textContent = 'Copy to Clipboard'; copyBtn.classList.remove('copied'); }, 2000);
+        });
+
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg> Regenerate`;
+        btn.disabled = false;
+      } catch (err) {
+        const msg = err.message === 'NO_API_KEY' ? 'No API key found. Add your OpenAI key in Settings → Step 3.' : err.message;
+        resultDiv.innerHTML = `<p class="lia-error-msg">${escHtml(msg)}</p>`;
+        resultDiv.style.display = '';
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg> Generate Follow-up`;
+        btn.disabled = false;
+      }
+    });
   }
 
   function renderSingleText(purpose, text, intent) {
     const body = document.getElementById('lia-body');
     if (!body) return;
 
-    const isCold = purpose === 'cold';
-    const label = isCold ? 'First Cold Message' : 'Connection Request';
-    const charLimit = isCold ? 300 : 200;
+    const label = 'Connection Request';
+    const charLimit = 200;
     const charCount = (text || '').length;
     const charClass = charCount > charLimit ? 'char-over' : charCount > charLimit * 0.8 ? 'char-warn' : 'char-ok';
 
@@ -1252,7 +1438,61 @@
             `).join('')}
           </div>
         </div>` : ''}
+
+        <div class="lia-section lia-first-msg-section">
+          <button class="lia-btn-primary" id="lia-gen-first-msg" style="width:100%">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            ${intent === 'job_search' ? 'Generate Outreach Message' : 'Generate First Message'}
+          </button>
+          <div id="lia-first-msg-result" style="display:none;margin-top:10px"></div>
+        </div>
       `;
+
+      body.querySelector('#lia-gen-first-msg')?.addEventListener('click', async () => {
+        const btn = body.querySelector('#lia-gen-first-msg');
+        const resultDiv = body.querySelector('#lia-first-msg-result');
+        if (!btn || !resultDiv) return;
+
+        btn.disabled = true;
+        btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="lia-spin"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> Writing message...`;
+        resultDiv.style.display = 'none';
+
+        try {
+          const profileData = extractProfile();
+          const result = await sendMessage('GENERATE_FIRST_MESSAGE', profileData, { intent, analysis });
+          if (result.error) throw new Error(result.error);
+
+          const text = result.text || '';
+          resultDiv.innerHTML = `
+            <div class="lia-label" style="margin-bottom:6px">${intent === 'job_search' ? 'Outreach Message' : 'First Message'}</div>
+            <div class="lia-connection-box">
+              <p id="lia-first-msg-text">${escHtml(text)}</p>
+            </div>
+            <button class="lia-btn-primary lia-copy-btn" id="lia-first-msg-copy">Copy to Clipboard</button>
+          `;
+          resultDiv.style.display = '';
+
+          resultDiv.querySelector('#lia-first-msg-copy')?.addEventListener('click', async () => {
+            const copyBtn = resultDiv.querySelector('#lia-first-msg-copy');
+            await navigator.clipboard.writeText(text);
+            copyBtn.textContent = 'Copied!';
+            copyBtn.classList.add('copied');
+            setTimeout(() => { copyBtn.textContent = 'Copy to Clipboard'; copyBtn.classList.remove('copied'); }, 2000);
+          });
+
+          btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> Regenerate Message`;
+          btn.disabled = false;
+        } catch (err) {
+          const msg = err.message === 'NO_API_KEY' ? 'No API key found. Add your OpenAI key in Settings → Step 3.' : err.message;
+          resultDiv.innerHTML = `<p class="lia-error-msg">${escHtml(msg)}</p>`;
+          resultDiv.style.display = '';
+          btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> ${intent === 'job_search' ? 'Generate Outreach Message' : 'Generate First Message'}`;
+          btn.disabled = false;
+        }
+      });
+
     } else if (tab === 'connection') {
       const charCount = (connectionRequest || '').length;
       const charClass = charCount > 200 ? 'char-over' : charCount > 160 ? 'char-warn' : 'char-ok';

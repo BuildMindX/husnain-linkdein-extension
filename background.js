@@ -20,6 +20,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
     return true;
   }
+  if (msg.type === 'GENERATE_FIRST_MESSAGE') {
+    handleGenerateFirstMessage(msg.profileData, msg.analysis, msg.intent).then(sendResponse).catch(err => {
+      sendResponse({ error: err.message });
+    });
+    return true;
+  }
+  if (msg.type === 'GENERATE_FOLLOW_UP') {
+    handleGenerateFollowUp(msg.profileData, msg.conversationText, msg.intent).then(sendResponse).catch(err => {
+      sendResponse({ error: err.message });
+    });
+    return true;
+  }
   if (msg.type === 'FETCH_HUBSPOT_PIPELINES') {
     fetchHubSpotPipelines().then(sendResponse).catch(err => {
       sendResponse({ error: err.message });
@@ -128,6 +140,7 @@ function buildMessageStyle(cfg) {
     lines.push('Do not include a hard call-to-action.');
   }
   const who = [];
+  if (b.expertise) who.push(`Sender expertise: ${b.expertise}`);
   if (b.offer) who.push(`We offer: ${b.offer}`);
   if (b.valueProp) who.push(`Value prop: ${b.valueProp}`);
   if (b.senderName) who.push(`Sender name: ${b.senderName}`);
@@ -551,6 +564,176 @@ Return ONLY the message text. Nothing else. No quotes around it.`;
   return { text: await callAI(systemPrompt, userPrompt) };
 }
 
+function buildAnalysisContext(analysis, intent) {
+  const lines = ['--- PROFILE ANALYSIS (use these insights to craft a personalized message) ---'];
+  if (intent === 'b2b_sales') {
+    if (analysis.potentialClient?.score) lines.push(`Prospect Score: ${analysis.potentialClient.score}`);
+    if (analysis.potentialClient?.reasoning) lines.push(`Score reasoning: ${analysis.potentialClient.reasoning}`);
+    if (analysis.decisionMaker) lines.push(`Decision Maker: ${analysis.decisionMaker}`);
+    if (analysis.industryFit?.level) lines.push(`Industry Fit: ${analysis.industryFit.level} — ${analysis.industryFit.reasoning || ''}`);
+    if (analysis.companySize) lines.push(`Company Size: ${analysis.companySize}`);
+  } else if (intent === 'b2c_sales') {
+    if (analysis.clientPotential?.score) lines.push(`Client Potential: ${analysis.clientPotential.score}`);
+    if (analysis.clientPotential?.reasoning) lines.push(`Reasoning: ${analysis.clientPotential.reasoning}`);
+    if (analysis.decisionMaker) lines.push(`Decision Maker: ${analysis.decisionMaker}`);
+    if ((analysis.painPoints || []).length) lines.push(`Pain Points:\n${analysis.painPoints.map(p => `  - ${p}`).join('\n')}`);
+    if (analysis.approachAngle) lines.push(`Recommended Approach: ${analysis.approachAngle}`);
+  } else if (intent === 'job_search') {
+    if (analysis.hiringSignal?.score) lines.push(`Hiring Signal: ${analysis.hiringSignal.score}`);
+    if (analysis.hiringSignal?.reasoning) lines.push(`Hiring reasoning: ${analysis.hiringSignal.reasoning}`);
+    if (analysis.isRecruiter) lines.push(`Is Recruiter: ${analysis.isRecruiter}`);
+    if (analysis.companyName) lines.push(`Company: ${analysis.companyName}`);
+  }
+  if (analysis.industry) lines.push(`Industry: ${analysis.industry}`);
+  if (analysis.recentActivity) lines.push(`Recent Activity: ${analysis.recentActivity}`);
+  if ((analysis.keyInsights || []).length) lines.push(`Key Insights:\n${analysis.keyInsights.map(i => `  - ${i}`).join('\n')}`);
+  if ((analysis.summaryPoints || []).length) lines.push(`Profile Facts:\n${analysis.summaryPoints.slice(0, 3).map(p => `  - ${p}`).join('\n')}`);
+  return lines.join('\n');
+}
+
+async function handleGenerateFirstMessage(profileData, analysis, intent) {
+  const isJobSearch = intent === 'job_search';
+  const isB2c = intent === 'b2c_sales';
+  const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
+  const b2cProfile = isB2c ? await getB2cProfile() : null;
+  const jobProfile = isJobSearch ? await getJobProfile() : null;
+
+  const analysisCtx = buildAnalysisContext(analysis || {}, intent);
+
+  let systemPrompt;
+
+  if (isJobSearch) {
+    systemPrompt = `You write first LinkedIn direct messages for a job seeker. This message is informed by a detailed analysis of the recipient's profile — use the analysis insights to make it feel personally researched, not templated.
+
+PRIORITY RULE: Reference something specific from the analysis — their hiring signals, recent activity, or company context. Never mention "I'm looking for opportunities" or "I'm open to work". Sound like a curious professional exploring a conversation.
+
+Rules:
+- Max 300 characters total
+- Zero em dashes, zero hyphens as dashes
+- No corporate speak
+- End with a soft, natural question that invites a reply
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- No emojis
+- Never reference the analysis itself — weave the insights in naturally
+
+Return ONLY the message text. No quotes.`;
+
+    const jobCtx = buildJobContext(jobProfile);
+    if (jobCtx) systemPrompt += `\n\n${jobCtx}`;
+
+  } else if (isB2c) {
+    systemPrompt = `You write first LinkedIn direct messages for a freelancer or consultant who is already connected with the recipient. This message must be grounded in real insights from the profile analysis — not generic outreach.
+
+PRIORITY RULE: Reference one specific pain point, signal, or insight from the analysis. Position the sender as a knowledgeable peer who noticed something relevant — never as a vendor pitching services.
+
+Rules:
+- Max 350 characters total
+- Zero em dashes, zero hyphens as dashes
+- No pitching, no "I can help you with X", no service offers
+- Sound like a trusted expert starting a genuine conversation
+- End with a soft question about their situation
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- No emojis
+- Do NOT say "I noticed from your profile..." — just reference the insight naturally
+
+Return ONLY the message text. No quotes.`;
+
+    if (b2cProfile && Object.keys(b2cProfile).length) {
+      systemPrompt += `\n\n--- SENDER PROFILE (use for tone and expertise calibration) ---\n${buildB2cContext(b2cProfile)}`;
+    }
+
+  } else {
+    systemPrompt = `You write first LinkedIn direct messages for a B2B sales professional who is already connected with the recipient. This message is powered by a detailed profile analysis — use the analysis to write something that feels personally researched and relevant to this specific person and company.
+
+PRIORITY RULE: Reference one specific insight from the analysis (prospect score reasoning, industry fit signals, decision maker level, key insight, or recent activity). The message must feel like the sender actually did their research — not a template.
+
+Rules:
+- Max 350 characters total
+- Zero em dashes, zero hyphens as dashes
+- Not salesy — the goal is to start a conversation, not pitch
+- One soft, natural question at the end that invites a reply
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- No emojis
+- Do NOT say "I saw your profile" or "I noticed from your profile" — weave insights in naturally
+
+Return ONLY the message text. No quotes.`;
+
+    if (cfg) systemPrompt += `\n\n--- SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
+  }
+
+  systemPrompt += `\n\n${analysisCtx}`;
+
+  const userPrompt = buildProfileText(profileData);
+  return { text: await callAI(systemPrompt, userPrompt) };
+}
+
+async function handleGenerateFollowUp(profileData, conversationText, intent) {
+  const isJobSearch = intent === 'job_search';
+  const isB2c = intent === 'b2c_sales';
+  const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
+  const b2cProfile = isB2c ? await getB2cProfile() : null;
+  const jobProfile = isJobSearch ? await getJobProfile() : null;
+
+  let systemPrompt;
+
+  if (isJobSearch) {
+    systemPrompt = `You write follow-up LinkedIn messages for a job seeker who is already in an active conversation with this person. Read the conversation carefully and write a natural, contextual follow-up that moves the conversation forward.
+
+Rules:
+- Max 300 characters total
+- Zero em dashes, zero hyphens as dashes
+- No corporate speak, no buzzwords
+- Pick up naturally from where the conversation left off
+- Sound human and genuinely interested — not pushy or needy
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- No emojis
+- Never mention "I'm looking for a job" or "open to work"
+
+Return ONLY the follow-up message text. No quotes.`;
+
+    const jobCtx = buildJobContext(jobProfile);
+    if (jobCtx) systemPrompt += `\n\n${jobCtx}`;
+
+  } else if (isB2c) {
+    systemPrompt = `You write follow-up LinkedIn messages for a freelancer or consultant who has an ongoing conversation with a potential client. Read the existing conversation and write a contextual follow-up that feels natural and moves things forward.
+
+Rules:
+- Max 350 characters total
+- Zero em dashes, zero hyphens as dashes
+- No pitching, no "I can help you", no service offers
+- Reference what was already discussed — show you were listening
+- Move the conversation forward with a soft question or relevant observation
+- Sound like a trusted peer, not a sales rep following up
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- No emojis
+
+Return ONLY the follow-up message text. No quotes.`;
+
+    if (b2cProfile && Object.keys(b2cProfile).length) {
+      systemPrompt += `\n\n--- SENDER PROFILE ---\n${buildB2cContext(b2cProfile)}`;
+    }
+
+  } else {
+    systemPrompt = `You write follow-up LinkedIn messages for a B2B sales professional in an active conversation with a prospect. Read the conversation carefully and write a follow-up that feels natural, contextual, and moves things forward without being pushy.
+
+Rules:
+- Max 350 characters total
+- Zero em dashes, zero hyphens as dashes
+- Reference what was already discussed — never repeat an opening
+- Move the conversation forward: a relevant question, a useful observation, or a gentle next-step suggestion
+- Sound like a real person, not a sales follow-up template
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- No emojis
+
+Return ONLY the follow-up message text. No quotes.`;
+
+    if (cfg) systemPrompt += `\n\n--- SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
+  }
+
+  const userPrompt = `RECIPIENT PROFILE:\n${buildProfileText(profileData)}\n\nEXISTING CONVERSATION:\n${conversationText || '(no conversation provided)'}`;
+  return { text: await callAI(systemPrompt, userPrompt) };
+}
+
 async function getHubSpotKey() {
   const result = await chrome.storage.local.get('hubspotApiKey');
   if (!result.hubspotApiKey) throw new Error('NO_HUBSPOT_KEY');
@@ -827,7 +1010,7 @@ Return ONLY valid JSON:
 {
   "post": "Full post text (use \\n for line breaks between paragraphs)",
   "hashtags": ["hashtag1", "hashtag2", "hashtag3", "hashtag4", "hashtag5"],
-  "imagePrompt": "Detailed image generation prompt for a professional LinkedIn-appropriate illustration reinforcing the post theme. No text, no logos, no people's faces. Clean, modern style."
+  "imagePrompt": "Write a detailed photorealistic image prompt for this post. Describe a cinematic, real-world scene or abstract concept visualization — dramatic lighting, depth, atmosphere, professional color grading. NOT a cartoon, NOT an illustration, NOT flat design. No text overlay, no logos, no identifiable faces. Think high-end editorial photography meets concept art. The image must feel real and visually compelling, directly reflecting the post topic."
 }
 
 Hashtag rules: 5-7 tags. ${hashtagContext}`;
@@ -849,7 +1032,7 @@ Hashtag rules: 5-7 tags. ${hashtagContext}`;
 
 async function handleGeneratePostImage(prompt) {
   const apiKey = await getApiKey();
-  const fullPrompt = `Professional LinkedIn post illustration: ${prompt}. Style: clean modern flat illustration, corporate yet warm color palette, no text overlay, no logos, high visual quality.`;
+  const fullPrompt = `Cinematic photorealistic concept photography for a professional LinkedIn post: ${prompt}. Style: high-end editorial photography, dramatic natural or studio lighting, shallow depth of field, rich realistic textures, professional color grading. Absolutely NO cartoons, NO vector illustrations, NO flat design, NO clip art. NO text overlay, NO logos, NO identifiable human faces. The image must look like a real photograph or a hyper-realistic render — visually striking, modern, and conceptually meaningful. 4K quality, ultra-detailed.`;
 
   const res = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',
@@ -859,7 +1042,7 @@ async function handleGeneratePostImage(prompt) {
       prompt: fullPrompt,
       n: 1,
       size: '1024x1024',
-      quality: 'medium',
+      quality: 'high',
     }),
   });
   const data = await res.json();
