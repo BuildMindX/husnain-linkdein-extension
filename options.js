@@ -424,6 +424,70 @@ hsClearBtn?.addEventListener('click', () => {
 
 hsKeyInput?.addEventListener('keydown', e => { if (e.key === 'Enter') hsSaveBtn?.click(); });
 
+// ── Content Creator Profile ────────────────────────────────────────────────────
+const creatorDomainTagState = { domains: [] };
+
+function renderCreatorDomainTags() {
+  const container = document.getElementById('creator-domain-tags');
+  if (!container) return;
+  container.innerHTML = creatorDomainTagState.domains.map((t, i) => `
+    <span class="tag tag-target">
+      ${escapeHtml(t)}
+      <button type="button" class="tag-remove" data-idx="${i}" aria-label="Remove">&times;</button>
+    </span>`).join('');
+  container.querySelectorAll('.tag-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      creatorDomainTagState.domains.splice(Number(btn.dataset.idx), 1);
+      renderCreatorDomainTags();
+    });
+  });
+}
+
+const creatorDomainInput = document.getElementById('creator-domain-input');
+if (creatorDomainInput) {
+  creatorDomainInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const val = creatorDomainInput.value.trim().replace(/,$/, '');
+      if (val && !creatorDomainTagState.domains.some(t => t.toLowerCase() === val.toLowerCase())) {
+        creatorDomainTagState.domains.push(val);
+        renderCreatorDomainTags();
+      }
+      creatorDomainInput.value = '';
+    } else if (e.key === 'Backspace' && !creatorDomainInput.value && creatorDomainTagState.domains.length) {
+      creatorDomainTagState.domains.pop();
+      renderCreatorDomainTags();
+    }
+  });
+}
+
+chrome.storage.local.get('creatorProfile', r => {
+  const p = r.creatorProfile || {};
+  const setVal = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+  setVal('creator-name', p.name);
+  setVal('creator-linkedin-url', p.linkedinUrl);
+  setVal('creator-audience', p.audience);
+  setVal('creator-goal', p.goal);
+  setVal('creator-style', p.postStyle);
+  creatorDomainTagState.domains = Array.isArray(p.domains) ? p.domains : [];
+  renderCreatorDomainTags();
+});
+
+document.getElementById('creator-save-btn')?.addEventListener('click', () => {
+  const raw = {
+    name: document.getElementById('creator-name')?.value.trim(),
+    linkedinUrl: document.getElementById('creator-linkedin-url')?.value.trim(),
+    audience: document.getElementById('creator-audience')?.value.trim(),
+    goal: document.getElementById('creator-goal')?.value,
+    postStyle: document.getElementById('creator-style')?.value,
+    domains: creatorDomainTagState.domains.length ? creatorDomainTagState.domains : undefined,
+  };
+  const creatorProfile = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined && v !== ''));
+  chrome.storage.local.set({ creatorProfile }, () => {
+    showStatus(document.getElementById('creator-status'), 'Content profile saved.', 'success');
+  });
+});
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

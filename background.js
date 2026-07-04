@@ -54,6 +54,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
     return true;
   }
+  if (msg.type === 'SUGGEST_POST_TOPICS') {
+    handleSuggestPostTopics(msg.creatorProfile).then(sendResponse).catch(err => {
+      sendResponse({ error: err.message });
+    });
+    return true;
+  }
+  if (msg.type === 'GENERATE_POST') {
+    handleGeneratePost(msg).then(sendResponse).catch(err => {
+      sendResponse({ error: err.message });
+    });
+    return true;
+  }
+  if (msg.type === 'GENERATE_POST_IMAGE') {
+    handleGeneratePostImage(msg.prompt).then(sendResponse).catch(err => {
+      sendResponse({ error: err.message });
+    });
+    return true;
+  }
 });
 
 async function getApiKey() {
@@ -666,4 +684,152 @@ function buildProfileText(p, userNotes) {
   }
 
   return lines.join('\n');
+}
+
+// ─── Post Creator ─────────────────────────────────────────────────────────────
+
+async function handleSuggestPostTopics(creatorProfile) {
+  const apiKey = await getApiKey();
+  const cp = creatorProfile || {};
+  const domains = (Array.isArray(cp.domains) && cp.domains.length)
+    ? cp.domains.join(', ')
+    : 'AI, machine learning, technology';
+  const audience = cp.audience || 'tech professionals and business leaders';
+  const style = cp.postStyle || 'educational';
+
+  const styleDesc = {
+    educational: 'educational, insight-driven',
+    story: 'personal story or journey-based',
+    hottake: 'contrarian, bold hot takes',
+    tips: 'practical, actionable tips',
+  }[style] || 'educational, insight-driven';
+
+  const userPrompt = `You are a LinkedIn content strategist for tech thought leaders.
+
+Suggest 5 high-performing LinkedIn post topics for an expert in: ${domains}.
+Target audience: ${audience}.
+Preferred style: ${styleDesc}.
+
+Respond ONLY with valid JSON — no markdown, no explanation:
+{
+  "topics": [
+    {
+      "title": "Catchy topic title (max 8 words)",
+      "angle": "The specific angle or unique take on this topic",
+      "hook": "The opening 1-2 sentences — must stop the scroll",
+      "whyNow": "Why this resonates right now (1 sentence)"
+    }
+  ]
+}
+
+Requirements for topics:
+- Highly specific to ${domains} — not generic tech advice
+- Mix of: industry trend, personal experience angle, contrarian take, practical insight, prediction
+- Phrased to appeal to ${audience}
+- Timely and grounded in real current developments`;
+
+  const res = await fetch(OPENAI_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      temperature: 0.88,
+      messages: [{ role: 'user', content: userPrompt }],
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error?.message || `OpenAI error ${res.status}`);
+
+  const raw = (data.choices[0]?.message?.content || '').trim();
+  try { return JSON.parse(raw); } catch {
+    const m = raw.match(/\{[\s\S]*\}/);
+    return m ? JSON.parse(m[0]) : { topics: [] };
+  }
+}
+
+async function handleGeneratePost({ topic, angle, hook, style, creatorProfile }) {
+  const apiKey = await getApiKey();
+  const cp = creatorProfile || {};
+  const domains = (Array.isArray(cp.domains) && cp.domains.length)
+    ? cp.domains.join(', ')
+    : 'AI, machine learning, technology';
+  const name = cp.name ? ` (written as ${cp.name})` : '';
+  const audience = cp.audience || 'tech professionals and business leaders';
+  const goal = cp.goal || 'build personal brand';
+
+  const styleGuides = {
+    educational: 'Educational/Insight: Open with a surprising fact or bold statement, explain the concept in plain terms, give a concrete example or analogy, close with a key takeaway and question',
+    story: 'Personal Story: Open with a vivid specific moment (not "I"), build the narrative arc, share the lesson learned, make it universally relatable',
+    hottake: 'Hot Take: Open with a bold counter-intuitive claim, dismantle the common view with evidence, offer your alternative framework, invite respectful debate',
+    tips: 'Quick Tips: Lead with the value proposition ("Here\'s how to…" or "X things I wish I knew"), 3-5 numbered points, each crisp and actionable, close with a "save this" or follow CTA',
+  };
+  const styleGuide = styleGuides[style] || styleGuides.educational;
+
+  const userPrompt = `You are an expert LinkedIn ghostwriter for tech thought leaders. Write in a direct, confident, and human voice — never corporate or generic.
+
+Write a LinkedIn post on:
+Topic: ${topic}
+Angle: ${angle || 'your best angle'}
+Opening hook to build from: ${hook || 'craft the best hook'}
+Style guide: ${styleGuide}
+Author expertise: ${domains}${name}
+Target audience: ${audience}
+Goal: ${goal}
+
+LinkedIn format rules:
+- First line = scroll-stopper hook. No opener starting with "I". No emojis at the very start.
+- Short paragraphs: 1-3 lines max. White space is your friend.
+- Line breaks between every thought.
+- Emojis: 0-2 max, only where they genuinely add emphasis — never decorative.
+- No hashtags in body.
+- End with one sharp engagement question OR a "save this / follow for more" CTA.
+- Word count: 150-280 words.
+
+Return ONLY valid JSON:
+{
+  "post": "Full post text (use \\n for line breaks between paragraphs)",
+  "hashtags": ["hashtag1", "hashtag2", "hashtag3", "hashtag4", "hashtag5"],
+  "imagePrompt": "Detailed DALL-E 3 prompt for a professional LinkedIn-appropriate illustration that reinforces the post theme. No text in the image. Clean, modern style."
+}
+
+Hashtag rules: 5-7 tags, mix of niche (#MachineLearning) and broad (#AI #Tech). No #LinkedIn, no generic tags like #Motivation.`;
+
+  const res = await fetch(OPENAI_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      temperature: 0.78,
+      messages: [{ role: 'user', content: userPrompt }],
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error?.message || `OpenAI error ${res.status}`);
+
+  const raw = (data.choices[0]?.message?.content || '').trim();
+  try { return JSON.parse(raw); } catch {
+    const m = raw.match(/\{[\s\S]*\}/);
+    return m ? JSON.parse(m[0]) : { post: raw, hashtags: [], imagePrompt: '' };
+  }
+}
+
+async function handleGeneratePostImage(prompt) {
+  const apiKey = await getApiKey();
+  const fullPrompt = `Professional LinkedIn post illustration: ${prompt}. Style: clean modern flat illustration, corporate yet warm color palette, no text overlay, no logos, high quality.`;
+
+  const res = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: 'dall-e-3',
+      prompt: fullPrompt,
+      n: 1,
+      size: '1024x1024',
+      quality: 'standard',
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error?.message || `DALL-E error ${res.status}`);
+
+  return { url: data.data?.[0]?.url || null };
 }

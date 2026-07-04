@@ -68,6 +68,10 @@ body {
   background: #374151;
 }
 
+.section-step-creator {
+  background: #7c3aed;
+}
+
 .section-header h2 {
   font-size: 20px;
   font-weight: 800;
@@ -290,9 +294,10 @@ body {
   border-radius: 20px;
 }
 
-.badge-sales { background: #dbeafe; color: #1d4ed8; }
-.badge-b2c   { background: #ede9fe; color: #6d28d9; }
-.badge-job   { background: #dcfce7; color: #166534; }
+.badge-sales    { background: #dbeafe; color: #1d4ed8; }
+.badge-b2c      { background: #ede9fe; color: #6d28d9; }
+.badge-job      { background: #dcfce7; color: #166534; }
+.badge-creator  { background: #f3e8ff; color: #7c3aed; }
 
 /* Required / Optional badges (inline in h3) */
 .required-badge {

@@ -7,6 +7,16 @@
   let currentProfileUrl = null;
   let activeTab = 'analysis';
 
+  // Post creator state
+  let postBtn = null;
+  let postPanel = null;
+  let pcStep = 'idle';       // idle | loading-topics | topics | writing | post | imaging | done
+  let pcTopics = [];
+  let pcSelected = null;     // { title, angle, hook }
+  let pcStyle = 'educational';
+  let pcResult = null;       // { post, hashtags, imagePrompt }
+  let pcImageUrl = null;
+
   // ─── IndexedDB ────────────────────────────────────────────────────────────────
   const DB_NAME = 'lia-db';
   const DB_VERSION = 1;
@@ -68,11 +78,24 @@
     return /linkedin\.com\/in\/[^\/]+/.test(location.href);
   }
 
+  async function isOwnProfile() {
+    try {
+      const r = await chrome.storage.local.get('creatorProfile');
+      const myUrl = r.creatorProfile?.linkedinUrl;
+      if (!myUrl) return false;
+      const myPath = new URL(myUrl).pathname.replace(/\/$/, '').toLowerCase();
+      const curPath = location.pathname.replace(/\/$/, '').toLowerCase();
+      return curPath === myPath;
+    } catch { return false; }
+  }
+
   // ─── Init ─────────────────────────────────────────────────────────────────────
-  function init() {
+  async function init() {
     if (!isProfilePage()) return;
     currentProfileUrl = location.href.split('?')[0];
     injectTriggerButton();
+    const own = await isOwnProfile();
+    if (own) injectPostCreatorButton();
   }
 
   // ─── SPA Navigation (singleton — created once, never recreated) ───────────────
@@ -106,6 +129,280 @@
     `;
     triggerBtn.addEventListener('click', handleTriggerClick);
     document.body.appendChild(triggerBtn);
+  }
+
+  // ─── Post Creator Button ──────────────────────────────────────────────────────
+  function injectPostCreatorButton() {
+    if (postBtn) return;
+    postBtn = document.createElement('button');
+    postBtn.id = 'lia-post-trigger';
+    postBtn.setAttribute('aria-label', 'Create LinkedIn Post');
+    postBtn.innerHTML = `<span>✍️</span><span>Post</span>`;
+    postBtn.addEventListener('click', openPostCreator);
+    document.body.appendChild(postBtn);
+  }
+
+  function openPostCreator() {
+    if (postPanel) {
+      postPanel.classList.toggle('lia-pc-open');
+      return;
+    }
+    postPanel = document.createElement('div');
+    postPanel.id = 'lia-post-panel';
+    postPanel.innerHTML = `
+      <div class="lia-pc-header">
+        <div class="lia-pc-title">
+          <span>✍️</span>
+          <span>Post Creator</span>
+        </div>
+        <button class="lia-pc-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="lia-pc-body" id="lia-pc-body"></div>
+    `;
+    postPanel.querySelector('.lia-pc-close').addEventListener('click', () => {
+      postPanel.classList.remove('lia-pc-open');
+    });
+    document.body.appendChild(postPanel);
+    setTimeout(() => postPanel.classList.add('lia-pc-open'), 10);
+    renderPcLanding();
+  }
+
+  async function renderPcLanding() {
+    const body = document.getElementById('lia-pc-body');
+    if (!body) return;
+    const r = await chrome.storage.local.get('creatorProfile').catch(() => ({}));
+    const cp = r.creatorProfile || {};
+    const hasDomains = Array.isArray(cp.domains) && cp.domains.length;
+    const domainsHtml = hasDomains
+      ? `<div class="lia-pc-domains">${cp.domains.map(d => `<span class="lia-pc-domain-chip">${escHtml(d)}</span>`).join('')}</div>`
+      : '';
+    const noDomainWarning = !hasDomains
+      ? `<p class="lia-pc-notice">Tip: add your domains in Settings → Step 4 for more relevant topic suggestions.</p>`
+      : '';
+    body.innerHTML = `
+      <div class="lia-pc-section">
+        <p class="lia-pc-intro">Generate a LinkedIn post tailored to your niche${cp.name ? `, <strong>${escHtml(cp.name)}</strong>` : ''}.</p>
+        ${domainsHtml}
+        ${noDomainWarning}
+      </div>
+      <div class="lia-pc-section">
+        <button class="lia-btn-primary lia-pc-full-btn" id="lia-pc-suggest-btn">
+          💡 Suggest Trending Topics
+        </button>
+        <div class="lia-pc-or">— or write about something specific —</div>
+        <div class="lia-pc-custom-row">
+          <input type="text" class="lia-pc-custom-input" id="lia-pc-custom-topic" placeholder="Type your topic idea..." />
+          <button class="lia-btn-secondary" id="lia-pc-custom-go">Go</button>
+        </div>
+      </div>
+    `;
+    body.querySelector('#lia-pc-suggest-btn').addEventListener('click', () => loadTopics(cp));
+    body.querySelector('#lia-pc-custom-go').addEventListener('click', () => {
+      const val = document.getElementById('lia-pc-custom-topic')?.value.trim();
+      if (val) {
+        pcSelected = { title: val, angle: '', hook: '' };
+        renderPcStylePicker(cp);
+      }
+    });
+    body.querySelector('#lia-pc-custom-topic').addEventListener('keydown', e => {
+      if (e.key === 'Enter') body.querySelector('#lia-pc-custom-go').click();
+    });
+  }
+
+  async function loadTopics(cp) {
+    const body = document.getElementById('lia-pc-body');
+    if (!body) return;
+    body.innerHTML = `
+      <div class="lia-pc-loading">
+        <div class="lia-spinner"></div>
+        <p>Generating topic ideas for your niche...</p>
+      </div>
+    `;
+    const result = await new Promise(resolve => {
+      chrome.runtime.sendMessage({ type: 'SUGGEST_POST_TOPICS', creatorProfile: cp }, resolve);
+    });
+    if (result?.error) {
+      body.innerHTML = `<p class="lia-pc-error">${escHtml(result.error)}</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-from-err">← Back</button>`;
+      body.querySelector('#lia-pc-back-from-err').addEventListener('click', () => renderPcLanding());
+      return;
+    }
+    pcTopics = result?.topics || [];
+    renderPcTopics(cp);
+  }
+
+  function renderPcTopics(cp) {
+    const body = document.getElementById('lia-pc-body');
+    if (!body) return;
+    body.innerHTML = `
+      <div class="lia-pc-section">
+        <div class="lia-pc-sub-label">Pick a topic to write about:</div>
+        <div class="lia-pc-topic-list" id="lia-pc-topic-list"></div>
+      </div>
+      <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-topics" style="margin-top:8px">← Back</button>
+    `;
+    const list = body.querySelector('#lia-pc-topic-list');
+    pcTopics.forEach((t, i) => {
+      const card = document.createElement('div');
+      card.className = 'lia-pc-topic-card';
+      card.innerHTML = `
+        <div class="lia-pc-topic-title">${escHtml(t.title)}</div>
+        <div class="lia-pc-topic-angle">${escHtml(t.angle)}</div>
+        <div class="lia-pc-topic-why">${escHtml(t.whyNow)}</div>
+      `;
+      card.addEventListener('click', () => {
+        pcSelected = t;
+        renderPcStylePicker(cp);
+      });
+      list.appendChild(card);
+    });
+    body.querySelector('#lia-pc-back-topics').addEventListener('click', () => renderPcLanding());
+  }
+
+  function renderPcStylePicker(cp) {
+    const body = document.getElementById('lia-pc-body');
+    if (!body) return;
+    const styles = [
+      { val: 'educational', label: '📚 Educational', desc: 'Teach something valuable' },
+      { val: 'story',       label: '💬 Story',       desc: 'Personal experience or journey' },
+      { val: 'hottake',     label: '🔥 Hot Take',    desc: 'Bold contrarian opinion' },
+      { val: 'tips',        label: '✅ Quick Tips',  desc: 'Practical, actionable list' },
+    ];
+    body.innerHTML = `
+      <div class="lia-pc-section">
+        <div class="lia-pc-selected-topic">
+          <span class="lia-pc-st-label">Topic</span>
+          <span class="lia-pc-st-title">${escHtml(pcSelected.title)}</span>
+        </div>
+        <div class="lia-pc-sub-label" style="margin-top:14px">Choose a post style:</div>
+        <div class="lia-pc-style-grid" id="lia-pc-style-grid">
+          ${styles.map(s => `
+            <button class="lia-pc-style-card${pcStyle === s.val ? ' active' : ''}" data-val="${s.val}">
+              <span class="lia-pc-style-label">${s.label}</span>
+              <span class="lia-pc-style-desc">${s.desc}</span>
+            </button>`).join('')}
+        </div>
+      </div>
+      <button class="lia-btn-primary lia-pc-full-btn" id="lia-pc-write-btn">✍️ Write Post</button>
+      <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-style" style="margin-top:6px">← Back</button>
+    `;
+    body.querySelectorAll('.lia-pc-style-card').forEach(btn => {
+      btn.addEventListener('click', () => {
+        pcStyle = btn.dataset.val;
+        body.querySelectorAll('.lia-pc-style-card').forEach(b => b.classList.toggle('active', b.dataset.val === pcStyle));
+      });
+    });
+    body.querySelector('#lia-pc-write-btn').addEventListener('click', () => generatePost(cp));
+    body.querySelector('#lia-pc-back-style').addEventListener('click', () => {
+      pcTopics.length ? renderPcTopics(cp) : renderPcLanding();
+    });
+  }
+
+  async function generatePost(cp) {
+    const body = document.getElementById('lia-pc-body');
+    if (!body) return;
+    body.innerHTML = `
+      <div class="lia-pc-loading">
+        <div class="lia-spinner"></div>
+        <p>Writing your post...</p>
+      </div>
+    `;
+    const result = await new Promise(resolve => {
+      chrome.runtime.sendMessage({
+        type: 'GENERATE_POST',
+        topic: pcSelected.title,
+        angle: pcSelected.angle,
+        hook: pcSelected.hook,
+        style: pcStyle,
+        creatorProfile: cp,
+      }, resolve);
+    });
+    if (result?.error) {
+      body.innerHTML = `<p class="lia-pc-error">${escHtml(result.error)}</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-we">← Back</button>`;
+      body.querySelector('#lia-pc-back-we').addEventListener('click', () => renderPcStylePicker(cp));
+      return;
+    }
+    pcResult = result;
+    pcImageUrl = null;
+    renderPcPost(cp);
+  }
+
+  function renderPcPost(cp) {
+    const body = document.getElementById('lia-pc-body');
+    if (!body) return;
+    const { post = '', hashtags = [], imagePrompt = '' } = pcResult || {};
+    const hashtagStr = hashtags.map(h => `#${h.replace(/^#/, '')}`).join(' ');
+    const fullText = post + (hashtagStr ? `\n\n${hashtagStr}` : '');
+
+    body.innerHTML = `
+      <div class="lia-pc-section">
+        <div class="lia-pc-sub-label">Your Post</div>
+        <div class="lia-pc-post-box" id="lia-pc-post-box">${escHtml(post).replace(/\n/g, '<br>')}</div>
+        ${hashtagStr ? `<div class="lia-pc-hashtags">${escHtml(hashtagStr)}</div>` : ''}
+        <div class="lia-pc-post-actions">
+          <button class="lia-btn-primary" id="lia-pc-copy-btn">Copy Post + Hashtags</button>
+          <button class="lia-btn-secondary" id="lia-pc-regen-btn">↺ Rewrite</button>
+        </div>
+      </div>
+
+      ${imagePrompt ? `
+      <div class="lia-pc-section">
+        <div class="lia-pc-sub-label">Image</div>
+        <div id="lia-pc-image-area">
+          <div class="lia-pc-image-prompt">${escHtml(imagePrompt)}</div>
+          <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-gen-image-btn">🎨 Generate Image with DALL-E 3</button>
+          <p class="lia-pc-image-note">Uses your OpenAI key · ~$0.04 per image</p>
+        </div>
+      </div>` : ''}
+
+      <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-new-post" style="margin-top:8px">＋ Create Another Post</button>
+    `;
+
+    body.querySelector('#lia-pc-copy-btn').addEventListener('click', async () => {
+      await navigator.clipboard.writeText(fullText).catch(() => {});
+      const btn = body.querySelector('#lia-pc-copy-btn');
+      const orig = btn.textContent;
+      btn.textContent = '✓ Copied!';
+      setTimeout(() => { btn.textContent = orig; }, 2000);
+    });
+
+    body.querySelector('#lia-pc-regen-btn').addEventListener('click', () => generatePost(cp));
+    body.querySelector('#lia-pc-new-post').addEventListener('click', () => {
+      pcSelected = null; pcTopics = []; pcResult = null; pcImageUrl = null;
+      renderPcLanding();
+    });
+
+    const genImgBtn = body.querySelector('#lia-pc-gen-image-btn');
+    if (genImgBtn) {
+      genImgBtn.addEventListener('click', () => generateImage(imagePrompt));
+    }
+  }
+
+  async function generateImage(prompt) {
+    const area = document.getElementById('lia-pc-image-area');
+    if (!area) return;
+    area.innerHTML = `
+      <div class="lia-pc-loading">
+        <div class="lia-spinner"></div>
+        <p>Generating image with DALL-E 3...</p>
+      </div>
+    `;
+    const result = await new Promise(resolve => {
+      chrome.runtime.sendMessage({ type: 'GENERATE_POST_IMAGE', prompt }, resolve);
+    });
+    if (result?.error) {
+      area.innerHTML = `<p class="lia-pc-error">${escHtml(result.error)}</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-retry-img">↺ Retry</button>`;
+      area.querySelector('#lia-pc-retry-img').addEventListener('click', () => generateImage(prompt));
+      return;
+    }
+    pcImageUrl = result.url;
+    if (pcImageUrl) {
+      area.innerHTML = `
+        <img class="lia-pc-image-preview" src="${escHtml(pcImageUrl)}" alt="Generated post image" />
+        <a class="lia-btn-primary lia-pc-full-btn lia-pc-download-btn" href="${escHtml(pcImageUrl)}" download="linkedin-post-image.png" target="_blank">⬇ Download Image</a>
+        <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-regen-img">↺ Regenerate Image</button>
+      `;
+      area.querySelector('#lia-pc-regen-img').addEventListener('click', () => generateImage(prompt));
+    }
   }
 
   // ─── Main Click Handler ───────────────────────────────────────────────────────
@@ -1316,7 +1613,10 @@
   function resetUI() {
     if (panel) { panel.remove(); panel = null; }
     if (triggerBtn) { triggerBtn.remove(); triggerBtn = null; }
+    if (postPanel) { postPanel.remove(); postPanel = null; }
+    if (postBtn) { postBtn.remove(); postBtn = null; }
     activeTab = 'analysis';
+    pcStep = 'idle'; pcTopics = []; pcSelected = null; pcResult = null; pcImageUrl = null;
   }
 
   function removeAll() {

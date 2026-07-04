@@ -372,6 +372,70 @@
         </div>
       </div>
 
+      <!-- ─── Step 4: Content Creator ───────────────────────────────────────────── -->
+      <div class="section-block">
+        <div class="section-header">
+          <span class="section-step section-step-creator">Step 4 — Optional</span>
+          <h2>LinkedIn Post Creator</h2>
+          <p class="section-sub">Activate the <strong>✍️ Post</strong> button on your own LinkedIn profile. The AI will suggest trending topic ideas in your niche, write full posts, and generate matching images — ready to copy and publish.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-mode-badge badge-creator">Content</div>
+          <h3>Your Content Creator Profile</h3>
+          <p class="card-desc">The AI uses this to generate posts that sound like you — specific to your domain, your audience, and your goals on LinkedIn. The more detail you add, the better the content.</p>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="creator-name">Your first name <span class="optional">(optional)</span></label>
+              <input type="text" id="creator-name" placeholder="e.g. Husnain" />
+            </div>
+            <div class="form-group">
+              <label for="creator-goal">Your LinkedIn goal</label>
+              <select id="creator-goal" class="form-select">
+                <option value="">Select...</option>
+                <option value="build personal brand">Build personal brand / thought leadership</option>
+                <option value="attract job offers">Attract job offers and recruiters</option>
+                <option value="find clients">Find freelance or consulting clients</option>
+                <option value="grow network">Grow my professional network</option>
+                <option value="attract investors">Attract investors or co-founders</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="creator-linkedin-url">Your LinkedIn profile URL <span class="label-hint">— activates the ✍️ Post button when you visit your own profile</span></label>
+            <input type="url" id="creator-linkedin-url" placeholder="https://www.linkedin.com/in/your-username/" autocomplete="off" />
+          </div>
+
+          <div class="form-group">
+            <label>Your expertise &amp; domains <span class="label-hint">— topics you post about</span></label>
+            <div class="tag-input" id="creator-domain-tags"></div>
+            <input type="text" id="creator-domain-input" class="tag-text" placeholder='Press Enter after each — e.g. "AI", "Machine Learning", "Blockchain", "Full Stack"' autocomplete="off" />
+          </div>
+
+          <div class="form-group">
+            <label for="creator-audience">Target audience <span class="label-hint">— who you want to reach</span></label>
+            <input type="text" id="creator-audience" placeholder="e.g. CTOs, investors, senior engineers, AI researchers" />
+          </div>
+
+          <div class="form-group">
+            <label for="creator-style">Preferred post style</label>
+            <select id="creator-style" class="form-select">
+              <option value="educational">Educational — teach something valuable</option>
+              <option value="story">Story — personal experience or journey</option>
+              <option value="hottake">Hot Take — contrarian or bold opinion</option>
+              <option value="tips">Quick Tips — practical, actionable list</option>
+            </select>
+          </div>
+
+          <div id="creator-status" class="status-msg" aria-live="polite"></div>
+          <div class="actions">
+            <button type="button" id="creator-save-btn" class="btn-primary">Save Content Profile</button>
+          </div>
+        </div>
+      </div>
+
     </main>
   </div>
 
