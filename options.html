@@ -434,6 +434,68 @@
             <button type="button" id="creator-save-btn" class="btn-primary">Save Content Profile</button>
           </div>
         </div>
+
+        <!-- ── B2B Company Profile ── -->
+        <div class="card">
+          <div class="card-mode-badge badge-company">B2B Company</div>
+          <h3>Your Company Profile</h3>
+          <p class="card-desc">Enable the <strong>🏢 Company</strong> mode in the Post Creator to generate authoritative B2B posts on behalf of your company — targeting clients, stakeholders, and top talent. The AI writes as the company, not as you personally.</p>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="co-name">Company name</label>
+              <input type="text" id="co-name" placeholder="e.g. BuildMindX" />
+            </div>
+            <div class="form-group">
+              <label for="co-industry">Industry</label>
+              <input type="text" id="co-industry" placeholder="e.g. AI / SaaS, Blockchain, FinTech" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="co-about">What your company does <span class="label-hint">— 2-3 sentences</span></label>
+            <textarea id="co-about" rows="3" placeholder="e.g. BuildMindX builds AI-powered automation tools for B2B companies, helping teams reduce manual work by 60% through intelligent workflows and predictive analytics."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="co-products">Products / services</label>
+            <textarea id="co-products" rows="2" placeholder="e.g. AI workflow automation, custom ML models, predictive dashboards, API integrations"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="co-icp">Ideal client profile (ICP)</label>
+            <textarea id="co-icp" rows="2" placeholder="e.g. CTOs and operations leaders at Series A–C SaaS companies looking to scale without growing headcount"></textarea>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="co-goal">Company LinkedIn goal</label>
+              <select id="co-goal" class="form-select">
+                <option value="">Select...</option>
+                <option value="attract clients and close deals">Attract clients and close deals</option>
+                <option value="build brand awareness and authority">Build brand awareness and authority</option>
+                <option value="attract top talent and employer brand">Attract top talent / employer brand</option>
+                <option value="engage investors and stakeholders">Engage investors and stakeholders</option>
+                <option value="all of the above">All of the above</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="co-style">Default post style</label>
+              <select id="co-style" class="form-select">
+                <option value="thought_leadership">Thought Leadership</option>
+                <option value="industry_insight">Industry Insight</option>
+                <option value="case_study">Case Study / Success Story</option>
+                <option value="culture">Company Culture / Team</option>
+                <option value="product_spotlight">Product Spotlight</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="co-status" class="status-msg" aria-live="polite"></div>
+          <div class="actions">
+            <button type="button" id="co-save-btn" class="btn-primary">Save Company Profile</button>
+          </div>
+        </div>
       </div>
 
     </main>

@@ -1055,6 +1055,31 @@
   letter-spacing: -0.1px;
 }
 
+/* ── Mode Toggle ──────────────────────────────────────────────────────────────── */
+.lia-pc-mode-toggle {
+  display: flex;
+  background: rgba(255,255,255,0.15);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.lia-pc-mode-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.75);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 9px;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.lia-pc-mode-btn:hover { color: #fff; background: rgba(255,255,255,0.15); }
+.lia-pc-mode-btn.active { background: rgba(255,255,255,0.25); color: #fff; }
+
 .lia-pc-close {
   background: transparent;
   border: none;
@@ -1115,6 +1140,33 @@
   border-radius: 8px;
   padding: 8px 10px;
   margin: 0;
+}
+
+.lia-pc-company-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lia-pc-posts-found {
+  font-size: 11px;
+  color: #0369a1;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  padding: 7px 10px;
+  margin: 0;
+}
+
+.lia-pc-style-grid-col {
+  grid-template-columns: 1fr;
 }
 
 .lia-pc-full-btn {

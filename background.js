@@ -55,7 +55,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === 'SUGGEST_POST_TOPICS') {
-    handleSuggestPostTopics(msg.creatorProfile).then(sendResponse).catch(err => {
+    handleSuggestPostTopics(msg.creatorProfile, msg.recentPosts, msg.mode, msg.companyProfile).then(sendResponse).catch(err => {
       sendResponse({ error: err.message });
     });
     return true;
@@ -688,27 +688,48 @@ function buildProfileText(p, userNotes) {
 
 // ─── Post Creator ─────────────────────────────────────────────────────────────
 
-async function handleSuggestPostTopics(creatorProfile) {
+async function handleSuggestPostTopics(creatorProfile, recentPosts = [], mode = 'personal', companyProfile = null) {
   const apiKey = await getApiKey();
-  const cp = creatorProfile || {};
-  const domains = (Array.isArray(cp.domains) && cp.domains.length)
-    ? cp.domains.join(', ')
-    : 'AI, machine learning, technology';
-  const audience = cp.audience || 'tech professionals and business leaders';
-  const style = cp.postStyle || 'educational';
 
-  const styleDesc = {
-    educational: 'educational, insight-driven',
-    story: 'personal story or journey-based',
-    hottake: 'contrarian, bold hot takes',
-    tips: 'practical, actionable tips',
-  }[style] || 'educational, insight-driven';
+  let context, styleDesc, topicTypes;
 
-  const userPrompt = `You are a LinkedIn content strategist for tech thought leaders.
+  if (mode === 'company' && companyProfile) {
+    const co = companyProfile;
+    const styleMap = {
+      thought_leadership: 'thought leadership, authoritative industry perspective',
+      industry_insight: 'data-driven industry insights and trends',
+      case_study: 'client success stories and case studies',
+      culture: 'company culture and employer brand storytelling',
+      product_spotlight: 'product/service value and problem-solving',
+    };
+    styleDesc = styleMap[co.postStyle] || styleMap.thought_leadership;
+    context = `Company: ${co.name || 'a B2B company'}
+Industry: ${co.industry || 'technology'}
+About: ${co.about || ''}
+Products/Services: ${co.products || ''}
+ICP (target clients): ${co.icp || 'business decision makers'}
+Company goal: ${co.goal || 'attract clients and build brand awareness'}`;
+    topicTypes = 'industry trends, client pain points your product solves, thought leadership, success signals, employer brand, market predictions';
+  } else {
+    const cp = creatorProfile || {};
+    const domains = (Array.isArray(cp.domains) && cp.domains.length) ? cp.domains.join(', ') : 'AI, machine learning, technology';
+    const audience = cp.audience || 'tech professionals and business leaders';
+    const styleMap = { educational: 'educational, insight-driven', story: 'personal story or journey-based', hottake: 'contrarian, bold hot takes', tips: 'practical, actionable tips' };
+    styleDesc = styleMap[cp.postStyle] || styleMap.educational;
+    context = `Expert in: ${domains}\nTarget audience: ${audience}\nGoal: ${cp.goal || 'build personal brand'}`;
+    topicTypes = 'industry trend, personal experience angle, contrarian take, practical insight, prediction';
+  }
 
-Suggest 5 high-performing LinkedIn post topics for an expert in: ${domains}.
-Target audience: ${audience}.
-Preferred style: ${styleDesc}.
+  const avoidSection = recentPosts.length
+    ? `\n\nCRITICAL — these topics were already posted recently. Do NOT suggest anything similar or overlapping:\n${recentPosts.map((p, i) => `${i + 1}. "${p.slice(0, 200)}"`).join('\n')}`
+    : '';
+
+  const userPrompt = `You are a LinkedIn content strategist${mode === 'company' ? ' specializing in B2B company thought leadership' : ' for tech thought leaders'}.
+
+${context}
+Preferred style: ${styleDesc}
+
+Suggest 5 fresh, high-performing LinkedIn post topics. Mix of: ${topicTypes}.${avoidSection}
 
 Respond ONLY with valid JSON — no markdown, no explanation:
 {
@@ -722,20 +743,15 @@ Respond ONLY with valid JSON — no markdown, no explanation:
   ]
 }
 
-Requirements for topics:
-- Highly specific to ${domains} — not generic tech advice
-- Mix of: industry trend, personal experience angle, contrarian take, practical insight, prediction
-- Phrased to appeal to ${audience}
-- Timely and grounded in real current developments`;
+Requirements:
+- Each topic must be clearly distinct from the others
+- Grounded in real current developments — no generic advice
+- Phrased to appeal to the stated audience`;
 
   const res = await fetch(OPENAI_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: OPENAI_MODEL,
-      temperature: 0.88,
-      messages: [{ role: 'user', content: userPrompt }],
-    }),
+    body: JSON.stringify({ model: OPENAI_MODEL, temperature: 0.88, messages: [{ role: 'user', content: userPrompt }] }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error?.message || `OpenAI error ${res.status}`);
@@ -747,61 +763,79 @@ Requirements for topics:
   }
 }
 
-async function handleGeneratePost({ topic, angle, hook, style, creatorProfile }) {
+async function handleGeneratePost({ topic, angle, hook, style, creatorProfile, mode, companyProfile }) {
   const apiKey = await getApiKey();
-  const cp = creatorProfile || {};
-  const domains = (Array.isArray(cp.domains) && cp.domains.length)
-    ? cp.domains.join(', ')
-    : 'AI, machine learning, technology';
-  const name = cp.name ? ` (written as ${cp.name})` : '';
-  const audience = cp.audience || 'tech professionals and business leaders';
-  const goal = cp.goal || 'build personal brand';
 
-  const styleGuides = {
-    educational: 'Educational/Insight: Open with a surprising fact or bold statement, explain the concept in plain terms, give a concrete example or analogy, close with a key takeaway and question',
-    story: 'Personal Story: Open with a vivid specific moment (not "I"), build the narrative arc, share the lesson learned, make it universally relatable',
-    hottake: 'Hot Take: Open with a bold counter-intuitive claim, dismantle the common view with evidence, offer your alternative framework, invite respectful debate',
-    tips: 'Quick Tips: Lead with the value proposition ("Here\'s how to…" or "X things I wish I knew"), 3-5 numbered points, each crisp and actionable, close with a "save this" or follow CTA',
-  };
-  const styleGuide = styleGuides[style] || styleGuides.educational;
+  let systemContext, authorCtx, styleGuide, hashtagContext;
 
-  const userPrompt = `You are an expert LinkedIn ghostwriter for tech thought leaders. Write in a direct, confident, and human voice — never corporate or generic.
+  if (mode === 'company' && companyProfile) {
+    const co = companyProfile;
+    const coStyleGuides = {
+      thought_leadership: 'Thought Leadership: Open with a bold industry observation, unpack the insight with data or evidence, position the company as a forward-thinking authority, close with an invitation to discuss',
+      industry_insight: 'Industry Insight: Lead with a striking statistic or trend, explain what it means for the industry, share the company\'s perspective, end with a question for the audience',
+      case_study: 'Case Study/Success: Open with the client\'s challenge (no names needed), describe the approach and solution, quantify the result, close with the lesson or takeaway',
+      culture: 'Company Culture: Open with a specific authentic moment or milestone, tell the human story behind it, tie it to company values, end with a culture-forward message',
+      product_spotlight: 'Product Spotlight: Open with the pain point your product solves (not the product itself), introduce the solution naturally, show the outcome, soft CTA',
+    };
+    styleGuide = coStyleGuides[style] || coStyleGuides.thought_leadership;
+    systemContext = `You are a professional LinkedIn content writer for ${co.name || 'a B2B company'}, a ${co.industry || 'technology'} company. Write in a polished, authoritative company voice — confident and insightful, not salesy.`;
+    authorCtx = `Company: ${co.name || ''}
+Industry: ${co.industry || ''}
+About: ${co.about || ''}
+Products/Services: ${co.products || ''}
+ICP: ${co.icp || 'business decision makers'}
+Goal: ${co.goal || 'attract clients, build brand awareness'}`;
+    hashtagContext = `Niche company hashtags (#${(co.industry || 'Tech').replace(/\s+/g, '')}), broad (#B2B #BusinessGrowth), and topic-specific. No #LinkedIn.`;
+  } else {
+    const cp = creatorProfile || {};
+    const domains = (Array.isArray(cp.domains) && cp.domains.length) ? cp.domains.join(', ') : 'AI, machine learning, technology';
+    const personalStyleGuides = {
+      educational: 'Educational/Insight: Open with a surprising fact or bold statement, explain the concept in plain terms, give a concrete example or analogy, close with a key takeaway and question',
+      story: 'Personal Story: Open with a vivid specific moment (not "I"), build the narrative arc, share the lesson learned, make it universally relatable',
+      hottake: 'Hot Take: Open with a bold counter-intuitive claim, dismantle the common view with evidence, offer your alternative framework, invite respectful debate',
+      tips: 'Quick Tips: Lead with the value proposition ("Here\'s how to…" or "X things I wish I knew"), 3-5 numbered points, each crisp and actionable, close with a "save this" or follow CTA',
+    };
+    styleGuide = personalStyleGuides[style] || personalStyleGuides.educational;
+    systemContext = `You are an expert LinkedIn ghostwriter for tech thought leaders. Write in a direct, confident, and human voice — never corporate or generic.`;
+    authorCtx = `Author expertise: ${domains}${cp.name ? ` (written as ${cp.name})` : ''}
+Target audience: ${cp.audience || 'tech professionals and business leaders'}
+Goal: ${cp.goal || 'build personal brand'}`;
+    hashtagContext = `Mix of niche (#MachineLearning) and broad (#AI #Tech). No #LinkedIn, no generic tags like #Motivation.`;
+  }
+
+  const wordCount = mode === 'company' ? '200-320 words' : '150-280 words';
+
+  const userPrompt = `${systemContext}
 
 Write a LinkedIn post on:
 Topic: ${topic}
 Angle: ${angle || 'your best angle'}
 Opening hook to build from: ${hook || 'craft the best hook'}
 Style guide: ${styleGuide}
-Author expertise: ${domains}${name}
-Target audience: ${audience}
-Goal: ${goal}
+${authorCtx}
 
 LinkedIn format rules:
-- First line = scroll-stopper hook. No opener starting with "I". No emojis at the very start.
+- First line = scroll-stopper hook. No opener starting with "I" or "We". No emojis at the very start.
 - Short paragraphs: 1-3 lines max. White space is your friend.
 - Line breaks between every thought.
-- Emojis: 0-2 max, only where they genuinely add emphasis — never decorative.
+- Emojis: 0-2 max, only where genuinely impactful — never decorative.
 - No hashtags in body.
-- End with one sharp engagement question OR a "save this / follow for more" CTA.
-- Word count: 150-280 words.
+- End with one sharp engagement question OR a compelling CTA.
+- Word count: ${wordCount}.
 
 Return ONLY valid JSON:
 {
   "post": "Full post text (use \\n for line breaks between paragraphs)",
   "hashtags": ["hashtag1", "hashtag2", "hashtag3", "hashtag4", "hashtag5"],
-  "imagePrompt": "Detailed DALL-E 3 prompt for a professional LinkedIn-appropriate illustration that reinforces the post theme. No text in the image. Clean, modern style."
+  "imagePrompt": "Detailed image generation prompt for a professional LinkedIn-appropriate illustration reinforcing the post theme. No text, no logos, no people's faces. Clean, modern style."
 }
 
-Hashtag rules: 5-7 tags, mix of niche (#MachineLearning) and broad (#AI #Tech). No #LinkedIn, no generic tags like #Motivation.`;
+Hashtag rules: 5-7 tags. ${hashtagContext}`;
 
   const res = await fetch(OPENAI_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: OPENAI_MODEL,
-      temperature: 0.78,
-      messages: [{ role: 'user', content: userPrompt }],
-    }),
+    body: JSON.stringify({ model: OPENAI_MODEL, temperature: 0.78, messages: [{ role: 'user', content: userPrompt }] }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error?.message || `OpenAI error ${res.status}`);
@@ -815,21 +849,25 @@ Hashtag rules: 5-7 tags, mix of niche (#MachineLearning) and broad (#AI #Tech). 
 
 async function handleGeneratePostImage(prompt) {
   const apiKey = await getApiKey();
-  const fullPrompt = `Professional LinkedIn post illustration: ${prompt}. Style: clean modern flat illustration, corporate yet warm color palette, no text overlay, no logos, high quality.`;
+  const fullPrompt = `Professional LinkedIn post illustration: ${prompt}. Style: clean modern flat illustration, corporate yet warm color palette, no text overlay, no logos, high visual quality.`;
 
   const res = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model: 'dall-e-3',
+      model: 'gpt-image-1',
       prompt: fullPrompt,
       n: 1,
       size: '1024x1024',
-      quality: 'standard',
+      quality: 'medium',
     }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data?.error?.message || `DALL-E error ${res.status}`);
+  if (!res.ok) throw new Error(data?.error?.message || `Image generation error ${res.status}`);
 
-  return { url: data.data?.[0]?.url || null };
+  const b64 = data.data?.[0]?.b64_json;
+  const url = data.data?.[0]?.url;
+  if (b64) return { b64 };
+  if (url) return { url };
+  throw new Error('No image data returned from API');
 }

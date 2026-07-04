@@ -14,7 +14,8 @@
   let pcSelected = null;     // { title, angle, hook }
   let pcStyle = 'educational';
   let pcResult = null;       // { post, hashtags, imagePrompt }
-  let pcImageUrl = null;
+  let pcImageB64 = null;
+  let pcMode = 'personal';   // 'personal' | 'company'
 
   // ─── IndexedDB ────────────────────────────────────────────────────────────────
   const DB_NAME = 'lia-db';
@@ -141,6 +142,24 @@
     document.body.appendChild(postBtn);
   }
 
+  function extractOwnPosts() {
+    const texts = new Set();
+    const selectors = [
+      '.feed-shared-update-v2 .break-words span[dir]',
+      '.update-components-text .break-words span[dir]',
+      '.feed-shared-text span[dir]',
+      '[data-test-id="main-feed-activity-card__commentary"] span[dir]',
+      '.update-components-text span.break-words',
+    ];
+    for (const sel of selectors) {
+      document.querySelectorAll(sel).forEach(el => {
+        const t = el.textContent.trim();
+        if (t.length > 60) texts.add(t.slice(0, 250));
+      });
+    }
+    return [...texts].slice(0, 8);
+  }
+
   function openPostCreator() {
     if (postPanel) {
       postPanel.classList.toggle('lia-pc-open');
@@ -154,12 +173,25 @@
           <span>✍️</span>
           <span>Post Creator</span>
         </div>
+        <div class="lia-pc-mode-toggle" id="lia-pc-mode-toggle">
+          <button class="lia-pc-mode-btn active" data-mode="personal" title="Post as yourself">👤 Me</button>
+          <button class="lia-pc-mode-btn" data-mode="company" title="Post for your company">🏢 Company</button>
+        </div>
         <button class="lia-pc-close" aria-label="Close">&times;</button>
       </div>
       <div class="lia-pc-body" id="lia-pc-body"></div>
     `;
     postPanel.querySelector('.lia-pc-close').addEventListener('click', () => {
       postPanel.classList.remove('lia-pc-open');
+    });
+    postPanel.querySelectorAll('.lia-pc-mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.mode === pcMode) return;
+        pcMode = btn.dataset.mode;
+        postPanel.querySelectorAll('.lia-pc-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === pcMode));
+        pcTopics = []; pcSelected = null; pcResult = null; pcImageB64 = null;
+        renderPcLanding();
+      });
     });
     document.body.appendChild(postPanel);
     setTimeout(() => postPanel.classList.add('lia-pc-open'), 10);
@@ -169,23 +201,40 @@
   async function renderPcLanding() {
     const body = document.getElementById('lia-pc-body');
     if (!body) return;
-    const r = await chrome.storage.local.get('creatorProfile').catch(() => ({}));
-    const cp = r.creatorProfile || {};
-    const hasDomains = Array.isArray(cp.domains) && cp.domains.length;
-    const domainsHtml = hasDomains
-      ? `<div class="lia-pc-domains">${cp.domains.map(d => `<span class="lia-pc-domain-chip">${escHtml(d)}</span>`).join('')}</div>`
+    const stored = await chrome.storage.local.get(['creatorProfile', 'companyProfile']).catch(() => ({}));
+    const cp = stored.creatorProfile || {};
+    const co = stored.companyProfile || {};
+
+    const isCompany = pcMode === 'company';
+    const hasSetup = isCompany ? !!co.name : (Array.isArray(cp.domains) && cp.domains.length);
+
+    let infoHtml = '';
+    if (isCompany) {
+      if (co.name) {
+        infoHtml = `<div class="lia-pc-company-badge">🏢 ${escHtml(co.name)}${co.industry ? ` &middot; ${escHtml(co.industry)}` : ''}</div>`;
+      } else {
+        infoHtml = `<p class="lia-pc-notice">No company profile found. Go to <strong>Settings → Step 4</strong> and fill in your Company Profile first.</p>`;
+      }
+    } else {
+      const hasDomains = Array.isArray(cp.domains) && cp.domains.length;
+      infoHtml = hasDomains
+        ? `<div class="lia-pc-domains">${cp.domains.map(d => `<span class="lia-pc-domain-chip">${escHtml(d)}</span>`).join('')}</div>`
+        : `<p class="lia-pc-notice">Tip: add your domains in Settings → Step 4 for more relevant topics.</p>`;
+    }
+
+    const recentPosts = extractOwnPosts();
+    const postCountNote = recentPosts.length
+      ? `<p class="lia-pc-posts-found">📋 ${recentPosts.length} recent post${recentPosts.length > 1 ? 's' : ''} found on this page — AI will avoid repeating similar topics.</p>`
       : '';
-    const noDomainWarning = !hasDomains
-      ? `<p class="lia-pc-notice">Tip: add your domains in Settings → Step 4 for more relevant topic suggestions.</p>`
-      : '';
+
     body.innerHTML = `
       <div class="lia-pc-section">
-        <p class="lia-pc-intro">Generate a LinkedIn post tailored to your niche${cp.name ? `, <strong>${escHtml(cp.name)}</strong>` : ''}.</p>
-        ${domainsHtml}
-        ${noDomainWarning}
+        <p class="lia-pc-intro">${isCompany ? 'Generate a professional B2B post for your company.' : `Generate a post tailored to your niche${cp.name ? `, <strong>${escHtml(cp.name)}</strong>` : ''}.`}</p>
+        ${infoHtml}
+        ${postCountNote}
       </div>
       <div class="lia-pc-section">
-        <button class="lia-btn-primary lia-pc-full-btn" id="lia-pc-suggest-btn">
+        <button class="lia-btn-primary lia-pc-full-btn" id="lia-pc-suggest-btn"${!hasSetup && isCompany ? ' disabled' : ''}>
           💡 Suggest Trending Topics
         </button>
         <div class="lia-pc-or">— or write about something specific —</div>
@@ -195,12 +244,15 @@
         </div>
       </div>
     `;
-    body.querySelector('#lia-pc-suggest-btn').addEventListener('click', () => loadTopics(cp));
+    body.querySelector('#lia-pc-suggest-btn').addEventListener('click', () => {
+      if (!hasSetup && isCompany) return;
+      loadTopics(cp, co, recentPosts);
+    });
     body.querySelector('#lia-pc-custom-go').addEventListener('click', () => {
       const val = document.getElementById('lia-pc-custom-topic')?.value.trim();
       if (val) {
         pcSelected = { title: val, angle: '', hook: '' };
-        renderPcStylePicker(cp);
+        renderPcStylePicker(cp, co);
       }
     });
     body.querySelector('#lia-pc-custom-topic').addEventListener('keydown', e => {
@@ -208,17 +260,25 @@
     });
   }
 
-  async function loadTopics(cp) {
+  async function loadTopics(cp, co, recentPosts = []) {
     const body = document.getElementById('lia-pc-body');
     if (!body) return;
+    const isCompany = pcMode === 'company';
     body.innerHTML = `
       <div class="lia-pc-loading">
         <div class="lia-spinner"></div>
-        <p>Generating topic ideas for your niche...</p>
+        <p>${isCompany ? 'Generating B2B topic ideas for your company...' : 'Generating topic ideas for your niche...'}</p>
+        ${recentPosts.length ? '<p style="font-size:11px;color:#94a3b8;margin-top:4px">Checking your recent posts to avoid repetition...</p>' : ''}
       </div>
     `;
     const result = await new Promise(resolve => {
-      chrome.runtime.sendMessage({ type: 'SUGGEST_POST_TOPICS', creatorProfile: cp }, resolve);
+      chrome.runtime.sendMessage({
+        type: 'SUGGEST_POST_TOPICS',
+        creatorProfile: cp,
+        companyProfile: co,
+        recentPosts,
+        mode: pcMode,
+      }, resolve);
     });
     if (result?.error) {
       const msg = result.error === 'NO_API_KEY'
@@ -229,10 +289,10 @@
       return;
     }
     pcTopics = result?.topics || [];
-    renderPcTopics(cp);
+    renderPcTopics(cp, co);
   }
 
-  function renderPcTopics(cp) {
+  function renderPcTopics(cp, co) {
     const body = document.getElementById('lia-pc-body');
     if (!body) return;
     body.innerHTML = `
@@ -243,7 +303,7 @@
       <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-topics" style="margin-top:8px">← Back</button>
     `;
     const list = body.querySelector('#lia-pc-topic-list');
-    pcTopics.forEach((t, i) => {
+    pcTopics.forEach(t => {
       const card = document.createElement('div');
       card.className = 'lia-pc-topic-card';
       card.innerHTML = `
@@ -253,22 +313,40 @@
       `;
       card.addEventListener('click', () => {
         pcSelected = t;
-        renderPcStylePicker(cp);
+        renderPcStylePicker(cp, co);
       });
       list.appendChild(card);
     });
     body.querySelector('#lia-pc-back-topics').addEventListener('click', () => renderPcLanding());
   }
 
-  function renderPcStylePicker(cp) {
+  function renderPcStylePicker(cp, co) {
     const body = document.getElementById('lia-pc-body');
     if (!body) return;
-    const styles = [
-      { val: 'educational', label: '📚 Educational', desc: 'Teach something valuable' },
-      { val: 'story',       label: '💬 Story',       desc: 'Personal experience or journey' },
-      { val: 'hottake',     label: '🔥 Hot Take',    desc: 'Bold contrarian opinion' },
-      { val: 'tips',        label: '✅ Quick Tips',  desc: 'Practical, actionable list' },
-    ];
+    const isCompany = pcMode === 'company';
+
+    const styles = isCompany
+      ? [
+          { val: 'thought_leadership', label: '🧠 Thought Leadership', desc: 'Authoritative industry perspective' },
+          { val: 'industry_insight',   label: '📊 Industry Insight',   desc: 'Data-driven trend analysis' },
+          { val: 'case_study',         label: '🏆 Case Study',         desc: 'Client success story' },
+          { val: 'culture',            label: '🤝 Culture / Team',     desc: 'Employer brand storytelling' },
+          { val: 'product_spotlight',  label: '🚀 Product Spotlight',  desc: 'Soft-sell your solution' },
+        ]
+      : [
+          { val: 'educational', label: '📚 Educational', desc: 'Teach something valuable' },
+          { val: 'story',       label: '💬 Story',       desc: 'Personal experience or journey' },
+          { val: 'hottake',     label: '🔥 Hot Take',    desc: 'Bold contrarian opinion' },
+          { val: 'tips',        label: '✅ Quick Tips',  desc: 'Practical, actionable list' },
+        ];
+
+    if (isCompany) {
+      const coDefault = co?.postStyle || 'thought_leadership';
+      if (styles.find(s => s.val === coDefault)) pcStyle = coDefault;
+    } else {
+      if (!['educational','story','hottake','tips'].includes(pcStyle)) pcStyle = 'educational';
+    }
+
     body.innerHTML = `
       <div class="lia-pc-section">
         <div class="lia-pc-selected-topic">
@@ -276,7 +354,7 @@
           <span class="lia-pc-st-title">${escHtml(pcSelected.title)}</span>
         </div>
         <div class="lia-pc-sub-label" style="margin-top:14px">Choose a post style:</div>
-        <div class="lia-pc-style-grid" id="lia-pc-style-grid">
+        <div class="lia-pc-style-grid${isCompany ? ' lia-pc-style-grid-col' : ''}" id="lia-pc-style-grid">
           ${styles.map(s => `
             <button class="lia-pc-style-card${pcStyle === s.val ? ' active' : ''}" data-val="${s.val}">
               <span class="lia-pc-style-label">${s.label}</span>
@@ -293,13 +371,13 @@
         body.querySelectorAll('.lia-pc-style-card').forEach(b => b.classList.toggle('active', b.dataset.val === pcStyle));
       });
     });
-    body.querySelector('#lia-pc-write-btn').addEventListener('click', () => generatePost(cp));
+    body.querySelector('#lia-pc-write-btn').addEventListener('click', () => generatePost(cp, co));
     body.querySelector('#lia-pc-back-style').addEventListener('click', () => {
-      pcTopics.length ? renderPcTopics(cp) : renderPcLanding();
+      pcTopics.length ? renderPcTopics(cp, co) : renderPcLanding();
     });
   }
 
-  async function generatePost(cp) {
+  async function generatePost(cp, co) {
     const body = document.getElementById('lia-pc-body');
     if (!body) return;
     body.innerHTML = `
@@ -315,7 +393,9 @@
         angle: pcSelected.angle,
         hook: pcSelected.hook,
         style: pcStyle,
+        mode: pcMode,
         creatorProfile: cp,
+        companyProfile: co,
       }, resolve);
     });
     if (result?.error) {
@@ -323,15 +403,15 @@
         ? 'No API key found. Add your OpenAI key in Settings → Step 3.'
         : result.error;
       body.innerHTML = `<p class="lia-pc-error">${escHtml(msg)}</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-we">← Back</button>`;
-      body.querySelector('#lia-pc-back-we').addEventListener('click', () => renderPcStylePicker(cp));
+      body.querySelector('#lia-pc-back-we').addEventListener('click', () => renderPcStylePicker(cp, co));
       return;
     }
     pcResult = result;
-    pcImageUrl = null;
-    renderPcPost(cp);
+    pcImageB64 = null;
+    renderPcPost(cp, co);
   }
 
-  function renderPcPost(cp) {
+  function renderPcPost(cp, co) {
     const body = document.getElementById('lia-pc-body');
     if (!body) return;
     const { post = '', hashtags = [], imagePrompt = '' } = pcResult || {};
@@ -341,7 +421,7 @@
     body.innerHTML = `
       <div class="lia-pc-section">
         <div class="lia-pc-sub-label">Your Post</div>
-        <div class="lia-pc-post-box" id="lia-pc-post-box">${escHtml(post).replace(/\n/g, '<br>')}</div>
+        <div class="lia-pc-post-box">${escHtml(post).replace(/\n/g, '<br>')}</div>
         ${hashtagStr ? `<div class="lia-pc-hashtags">${escHtml(hashtagStr)}</div>` : ''}
         <div class="lia-pc-post-actions">
           <button class="lia-btn-primary" id="lia-pc-copy-btn">Copy Post + Hashtags</button>
@@ -354,7 +434,7 @@
         <div class="lia-pc-sub-label">Image</div>
         <div id="lia-pc-image-area">
           <div class="lia-pc-image-prompt">${escHtml(imagePrompt)}</div>
-          <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-gen-image-btn">🎨 Generate Image with DALL-E 3</button>
+          <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-gen-image-btn">🎨 Generate Image (AI)</button>
           <p class="lia-pc-image-note">Uses your OpenAI key · ~$0.04 per image</p>
         </div>
       </div>` : ''}
@@ -370,16 +450,13 @@
       setTimeout(() => { btn.textContent = orig; }, 2000);
     });
 
-    body.querySelector('#lia-pc-regen-btn').addEventListener('click', () => generatePost(cp));
+    body.querySelector('#lia-pc-regen-btn').addEventListener('click', () => generatePost(cp, co));
     body.querySelector('#lia-pc-new-post').addEventListener('click', () => {
-      pcSelected = null; pcTopics = []; pcResult = null; pcImageUrl = null;
+      pcSelected = null; pcTopics = []; pcResult = null; pcImageB64 = null;
       renderPcLanding();
     });
 
-    const genImgBtn = body.querySelector('#lia-pc-gen-image-btn');
-    if (genImgBtn) {
-      genImgBtn.addEventListener('click', () => generateImage(imagePrompt));
-    }
+    body.querySelector('#lia-pc-gen-image-btn')?.addEventListener('click', () => generateImage(imagePrompt));
   }
 
   async function generateImage(prompt) {
@@ -388,7 +465,7 @@
     area.innerHTML = `
       <div class="lia-pc-loading">
         <div class="lia-spinner"></div>
-        <p>Generating image with DALL-E 3...</p>
+        <p>Generating image...</p>
       </div>
     `;
     const result = await new Promise(resolve => {
@@ -402,16 +479,34 @@
       area.querySelector('#lia-pc-retry-img').addEventListener('click', () => generateImage(prompt));
       return;
     }
-    pcImageUrl = result?.url || null;
-    if (pcImageUrl) {
+
+    pcImageB64 = result?.b64 || null;
+    const imgSrc = result?.b64
+      ? `data:image/png;base64,${result.b64}`
+      : (result?.url || null);
+
+    if (imgSrc) {
       area.innerHTML = `
-        <img class="lia-pc-image-preview" src="${escHtml(pcImageUrl)}" alt="Generated post image" />
-        <a class="lia-btn-primary lia-pc-full-btn lia-pc-download-btn" href="${escHtml(pcImageUrl)}" target="_blank" rel="noopener">↗ Open Full Image (right-click → Save)</a>
+        <img class="lia-pc-image-preview" id="lia-pc-img-el" alt="Generated post image" />
+        <button class="lia-btn-primary lia-pc-full-btn" id="lia-pc-download-btn">⬇ Download Image</button>
         <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-regen-img">↺ Regenerate Image</button>
       `;
+      area.querySelector('#lia-pc-img-el').src = imgSrc;
+
+      area.querySelector('#lia-pc-download-btn').addEventListener('click', () => {
+        const a = document.createElement('a');
+        a.href = imgSrc;
+        a.download = 'linkedin-post-image.png';
+        if (result?.b64) {
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        } else {
+          window.open(imgSrc, '_blank');
+        }
+      });
+
       area.querySelector('#lia-pc-regen-img').addEventListener('click', () => generateImage(prompt));
     } else {
-      area.innerHTML = `<p class="lia-pc-error">Image URL not returned by DALL-E. Try again.</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-retry-img">↺ Retry</button>`;
+      area.innerHTML = `<p class="lia-pc-error">No image returned. Try again.</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-retry-img">↺ Retry</button>`;
       area.querySelector('#lia-pc-retry-img').addEventListener('click', () => generateImage(prompt));
     }
   }
@@ -1627,7 +1722,7 @@
     if (postPanel) { postPanel.remove(); postPanel = null; }
     if (postBtn) { postBtn.remove(); postBtn = null; }
     activeTab = 'analysis';
-    pcTopics = []; pcSelected = null; pcResult = null; pcImageUrl = null;
+    pcTopics = []; pcSelected = null; pcResult = null; pcImageB64 = null; pcMode = 'personal';
   }
 
   function removeAll() {

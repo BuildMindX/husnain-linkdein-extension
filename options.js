@@ -488,6 +488,35 @@ document.getElementById('creator-save-btn')?.addEventListener('click', () => {
   });
 });
 
+// ── Company Profile ────────────────────────────────────────────────────────────
+chrome.storage.local.get('companyProfile', r => {
+  const p = r.companyProfile || {};
+  const setVal = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+  setVal('co-name', p.name);
+  setVal('co-industry', p.industry);
+  setVal('co-about', p.about);
+  setVal('co-products', p.products);
+  setVal('co-icp', p.icp);
+  setVal('co-goal', p.goal);
+  setVal('co-style', p.postStyle);
+});
+
+document.getElementById('co-save-btn')?.addEventListener('click', () => {
+  const raw = {
+    name:      document.getElementById('co-name')?.value.trim(),
+    industry:  document.getElementById('co-industry')?.value.trim(),
+    about:     document.getElementById('co-about')?.value.trim(),
+    products:  document.getElementById('co-products')?.value.trim(),
+    icp:       document.getElementById('co-icp')?.value.trim(),
+    goal:      document.getElementById('co-goal')?.value,
+    postStyle: document.getElementById('co-style')?.value,
+  };
+  const companyProfile = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined && v !== ''));
+  chrome.storage.local.set({ companyProfile }, () => {
+    showStatus(document.getElementById('co-status'), 'Company profile saved.', 'success');
+  });
+});
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
