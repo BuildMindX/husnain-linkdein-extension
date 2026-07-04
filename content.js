@@ -10,7 +10,6 @@
   // Post creator state
   let postBtn = null;
   let postPanel = null;
-  let pcStep = 'idle';       // idle | loading-topics | topics | writing | post | imaging | done
   let pcTopics = [];
   let pcSelected = null;     // { title, angle, hook }
   let pcStyle = 'educational';
@@ -222,7 +221,10 @@
       chrome.runtime.sendMessage({ type: 'SUGGEST_POST_TOPICS', creatorProfile: cp }, resolve);
     });
     if (result?.error) {
-      body.innerHTML = `<p class="lia-pc-error">${escHtml(result.error)}</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-from-err">← Back</button>`;
+      const msg = result.error === 'NO_API_KEY'
+        ? 'No API key found. Add your OpenAI key in Settings → Step 3.'
+        : result.error;
+      body.innerHTML = `<p class="lia-pc-error">${escHtml(msg)}</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-from-err">← Back</button>`;
       body.querySelector('#lia-pc-back-from-err').addEventListener('click', () => renderPcLanding());
       return;
     }
@@ -317,7 +319,10 @@
       }, resolve);
     });
     if (result?.error) {
-      body.innerHTML = `<p class="lia-pc-error">${escHtml(result.error)}</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-we">← Back</button>`;
+      const msg = result.error === 'NO_API_KEY'
+        ? 'No API key found. Add your OpenAI key in Settings → Step 3.'
+        : result.error;
+      body.innerHTML = `<p class="lia-pc-error">${escHtml(msg)}</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-we">← Back</button>`;
       body.querySelector('#lia-pc-back-we').addEventListener('click', () => renderPcStylePicker(cp));
       return;
     }
@@ -390,18 +395,24 @@
       chrome.runtime.sendMessage({ type: 'GENERATE_POST_IMAGE', prompt }, resolve);
     });
     if (result?.error) {
-      area.innerHTML = `<p class="lia-pc-error">${escHtml(result.error)}</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-retry-img">↺ Retry</button>`;
+      const msg = result.error === 'NO_API_KEY'
+        ? 'No API key found. Add your OpenAI key in Settings → Step 3.'
+        : result.error;
+      area.innerHTML = `<p class="lia-pc-error">${escHtml(msg)}</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-retry-img">↺ Retry</button>`;
       area.querySelector('#lia-pc-retry-img').addEventListener('click', () => generateImage(prompt));
       return;
     }
-    pcImageUrl = result.url;
+    pcImageUrl = result?.url || null;
     if (pcImageUrl) {
       area.innerHTML = `
         <img class="lia-pc-image-preview" src="${escHtml(pcImageUrl)}" alt="Generated post image" />
-        <a class="lia-btn-primary lia-pc-full-btn lia-pc-download-btn" href="${escHtml(pcImageUrl)}" download="linkedin-post-image.png" target="_blank">⬇ Download Image</a>
+        <a class="lia-btn-primary lia-pc-full-btn lia-pc-download-btn" href="${escHtml(pcImageUrl)}" target="_blank" rel="noopener">↗ Open Full Image (right-click → Save)</a>
         <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-regen-img">↺ Regenerate Image</button>
       `;
       area.querySelector('#lia-pc-regen-img').addEventListener('click', () => generateImage(prompt));
+    } else {
+      area.innerHTML = `<p class="lia-pc-error">Image URL not returned by DALL-E. Try again.</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-retry-img">↺ Retry</button>`;
+      area.querySelector('#lia-pc-retry-img').addEventListener('click', () => generateImage(prompt));
     }
   }
 
@@ -1616,7 +1627,7 @@
     if (postPanel) { postPanel.remove(); postPanel = null; }
     if (postBtn) { postBtn.remove(); postBtn = null; }
     activeTab = 'analysis';
-    pcStep = 'idle'; pcTopics = []; pcSelected = null; pcResult = null; pcImageUrl = null;
+    pcTopics = []; pcSelected = null; pcResult = null; pcImageUrl = null;
   }
 
   function removeAll() {
