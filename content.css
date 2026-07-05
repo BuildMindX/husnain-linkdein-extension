@@ -1064,8 +1064,6 @@
   box-shadow: -4px 2px 14px rgba(124,58,237,0.4);
 }
 
-#lia-post-trigger span:first-child { font-size: 16px; }
-
 /* ── Post Creator Panel ───────────────────────────────────────────────────────── */
 #lia-post-panel {
   position: fixed;
@@ -1515,3 +1513,745 @@
   padding: 9px 12px;
   margin: 0;
 }
+
+/* ── Mode badge in panel header ──────────────────────────────────────────────── */
+.lia-mode-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  background: rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.92);
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.25);
+  white-space: nowrap;
+  margin-left: 2px;
+}
+
+.lia-mode-badge:empty { display: none; }
+
+/* ── ICP warning banner ───────────────────────────────────────────────────────── */
+.lia-icp-warning {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: #fefce8;
+  border: 1px solid #fde68a;
+  border-radius: 9px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #78350f;
+  line-height: 1.45;
+  margin-bottom: 4px;
+}
+
+.lia-icp-warning svg { flex-shrink: 0; color: #d97706; }
+
+.lia-icp-warning-link {
+  background: none;
+  border: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0A66C2;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+/* ── Trigger buttons — premium redesign ──────────────────────────────────────── */
+#lia-trigger {
+  padding: 16px 9px;
+  border-radius: 12px 0 0 12px;
+  box-shadow: -4px 0 20px rgba(10,102,194,0.30), -1px 0 6px rgba(0,0,0,0.08);
+}
+
+#lia-trigger span {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+#lia-post-trigger {
+  border-radius: 12px 0 0 12px;
+  box-shadow: -3px 0 16px rgba(124,58,237,0.28), -1px 0 4px rgba(0,0,0,0.06);
+  padding: 12px 9px;
+}
+
+#lia-post-trigger span:last-child {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  white-space: nowrap;
+}
+
+#lia-post-trigger span:first-child {
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+}
+
+/* ── Should I message recommendation ─────────────────────────────────────────── */
+.lia-reach-card {
+  border-radius: 10px;
+  padding: 11px 14px;
+  margin-bottom: 10px;
+  border: 1.5px solid;
+}
+
+.lia-reach-card.ro-yes  { background: #f0fdf4; border-color: #bbf7d0; }
+.lia-reach-card.ro-maybe { background: #fffbeb; border-color: #fde68a; }
+.lia-reach-card.ro-no   { background: #fff7ed; border-color: #fed7aa; }
+
+.reach-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.reach-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+}
+
+.reach-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 800;
+  border-radius: 20px;
+  padding: 2px 10px;
+}
+
+.reach-verdict.ro-yes  { background: #dcfce7; color: #15803d; }
+.reach-verdict.ro-maybe { background: #fef9c3; color: #854d0e; }
+.reach-verdict.ro-no   { background: #ffedd5; color: #c2410c; }
+
+.reach-reason {
+  font-size: 12px;
+  color: #374151;
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* ── Refine message section ───────────────────────────────────────────────────── */
+.lia-refine-section {
+  margin-top: 10px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.lia-refine-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  background: #f8fafc;
+  border: none;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #374151;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.lia-refine-toggle:hover { background: #f1f5f9; }
+
+.lia-refine-arrow { margin-left: auto; transition: transform 0.2s; color: #94a3b8; }
+
+.lia-refine-body {
+  padding: 12px 14px 14px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.lia-refine-group { margin-bottom: 12px; }
+
+.lia-refine-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 7px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Tone grid */
+.lia-tone-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lia-tone-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 7px 11px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fafafa;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  min-width: 0;
+}
+
+.lia-tone-btn:hover { border-color: #93c5fd; background: #f0f9ff; }
+
+.lia-tone-btn.active {
+  border-color: #0A66C2;
+  background: #eff6ff;
+}
+
+.lia-tone-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.2;
+}
+
+.lia-tone-btn.active .lia-tone-name { color: #0A66C2; }
+
+.lia-tone-desc {
+  font-size: 10.5px;
+  color: #94a3b8;
+  line-height: 1.3;
+  margin-top: 1px;
+}
+
+.lia-tone-btn.active .lia-tone-desc { color: #3b82f6; }
+
+/* ── Remove lia-analyzed-at style (no longer used) ───────────────────────────── */
+.lia-analyzed-at { display: none; }
+
+/* ── Sidebar dock — single fixed container prevents button overlap ───────────── */
+#lia-sidebar-dock {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  pointer-events: none;
+}
+
+#lia-sidebar-dock > * {
+  pointer-events: auto;
+}
+
+/* Override independent positioning when inside the dock */
+#lia-sidebar-dock #lia-trigger,
+#lia-sidebar-dock #lia-post-trigger {
+  position: relative !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+}
+
+#lia-sidebar-dock #lia-trigger:hover,
+#lia-sidebar-dock #lia-post-trigger:hover {
+  transform: translateX(-3px) !important;
+}
+
+/* ── Message tab intelligence block ──────────────────────────────────────────── */
+.lia-msg-intelligence {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 11px 14px;
+  margin-bottom: 14px;
+}
+
+.lia-msg-intelligence-title {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #94a3b8;
+  margin-bottom: 9px;
+}
+
+.lia-insight-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.lia-insight-row:last-child { border-bottom: none; }
+
+.lia-insight-key {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  min-width: 90px;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.lia-insight-val {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0A66C2;
+  line-height: 1.4;
+}
+
+.lia-insight-note {
+  font-size: 11.5px;
+  color: #374151;
+  line-height: 1.5;
+  flex: 1;
+}
+
+.lia-insight-ki {
+  font-size: 11.5px;
+  color: #374151;
+  line-height: 1.5;
+}
+
+/* Score chip inside insight block */
+.lia-insight-score-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.lia-insight-score-chip.high   { background: #dcfce7; color: #15803d; }
+.lia-insight-score-chip.medium { background: #fef9c3; color: #854d0e; }
+.lia-insight-score-chip.low    { background: #fee2e2; color: #b91c1c; }
+.lia-insight-score-chip.strong { background: #dcfce7; color: #15803d; }
+.lia-insight-score-chip.possible { background: #fef9c3; color: #854d0e; }
+
+/* Message tab generate button */
+.lia-msg-gen-btn {
+  width: 100%;
+  padding: 11px;
+  background: #0A66C2;
+  color: #fff;
+  border: none;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.18s;
+  margin-top: 4px;
+}
+
+.lia-msg-gen-btn:hover { background: #004182; }
+.lia-msg-gen-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* Message tab result */
+.lia-msg-tab-result {
+  margin-top: 14px;
+  background: #f0f7ff;
+  border: 1.5px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 13px 14px 10px;
+}
+
+.lia-msg-tab-result-label {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.lia-msg-tab-text {
+  font-size: 13px;
+  color: #1e293b;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.lia-msg-tab-actions {
+  display: flex;
+  gap: 7px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #dbeafe;
+}
+
+.lia-msg-copy-btn {
+  flex: 1;
+  padding: 8px;
+  background: #0A66C2;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.lia-msg-copy-btn:hover { background: #004182; }
+
+/* Refine toggle */
+.lia-refine-toggle {
+  flex: 1;
+  padding: 8px;
+  background: transparent;
+  color: #0A66C2;
+  border: 1.5px solid #bfdbfe;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: background 0.15s;
+}
+
+.lia-refine-toggle:hover { background: #eff6ff; }
+
+.lia-refine-arrow {
+  display: inline-block;
+  transition: transform 0.2s;
+  font-style: normal;
+}
+
+.lia-refine-toggle.open .lia-refine-arrow { transform: rotate(180deg); }
+
+.lia-refine-body {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #dbeafe;
+  display: none;
+}
+
+.lia-refine-body.open { display: block; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SATYRON DARK THEME — Full panel redesign
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Panel shell ─────────────────────────────────────────────────────────── */
+#lia-panel {
+  background: #09091f !important;
+  box-shadow: -8px 0 40px rgba(0,0,0,0.55), -1px 0 8px rgba(0,0,0,0.3) !important;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.lia-header {
+  background: linear-gradient(135deg, #1c0b4a 0%, #110d2e 60%, #09091f 100%) !important;
+  border-bottom: 1px solid rgba(124,58,237,0.25) !important;
+  position: relative !important;
+}
+
+.lia-header::before {
+  content: '';
+  position: absolute;
+  top: -30px; right: -20px;
+  width: 100px; height: 100px;
+  background: radial-gradient(circle, rgba(124,58,237,0.2) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.lia-reanalyze-btn,
+.lia-hs-btn {
+  background: rgba(124,58,237,0.15) !important;
+  border: 1px solid rgba(124,58,237,0.3) !important;
+  color: #c4b5fd !important;
+}
+
+.lia-reanalyze-btn:hover,
+.lia-hs-btn:hover {
+  background: rgba(124,58,237,0.28) !important;
+  color: #fff !important;
+}
+
+/* ── Mode badge ──────────────────────────────────────────────────────────── */
+.lia-mode-badge {
+  background: rgba(124,58,237,0.2) !important;
+  color: #c4b5fd !important;
+  border: 1px solid rgba(124,58,237,0.3) !important;
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────────── */
+.lia-tabs {
+  background: #0d0d25 !important;
+  border-bottom: 1px solid rgba(124,58,237,0.15) !important;
+}
+
+.lia-tab {
+  color: rgba(148,163,184,0.7) !important;
+  background: transparent !important;
+  border-bottom: 2px solid transparent !important;
+}
+
+.lia-tab:hover {
+  color: #c4b5fd !important;
+  background: rgba(124,58,237,0.06) !important;
+}
+
+.lia-tab.active {
+  color: #c4b5fd !important;
+  border-bottom-color: #7c3aed !important;
+  background: rgba(124,58,237,0.08) !important;
+}
+
+/* ── Body / scroll area ──────────────────────────────────────────────────── */
+#lia-body,
+.lia-body-inner,
+.lia-section,
+.lia-post-body {
+  background: #09091f !important;
+  color: #e2e8f0 !important;
+}
+
+/* ── Cards / boxes ────────────────────────────────────────────────────────── */
+.lia-connection-box,
+.lia-score-block,
+.lia-section-card,
+.lia-msg-intelligence,
+.lia-reach-card,
+.lia-msg-tab-result,
+.lia-icp-warning,
+.lia-post-card,
+.lia-follow-block {
+  background: #0d0d25 !important;
+  border-color: rgba(255,255,255,0.09) !important;
+  color: #e2e8f0 !important;
+}
+
+.lia-reach-card.ro-yes  { background: rgba(34,197,94,0.07) !important; border-color: rgba(34,197,94,0.2) !important; }
+.lia-reach-card.ro-maybe { background: rgba(245,158,11,0.07) !important; border-color: rgba(245,158,11,0.2) !important; }
+.lia-reach-card.ro-no   { background: rgba(239,68,68,0.07) !important; border-color: rgba(239,68,68,0.2) !important; }
+
+.lia-msg-tab-result { background: rgba(124,58,237,0.07) !important; border-color: rgba(124,58,237,0.22) !important; }
+
+/* ── Labels / eyebrows ───────────────────────────────────────────────────── */
+.lia-label,
+.lia-section-label,
+.lia-analyzed-label {
+  color: rgba(124,58,237,0.75) !important;
+}
+
+.lia-score-label,
+.lia-msg-intelligence-title {
+  color: rgba(124,58,237,0.7) !important;
+  letter-spacing: 0.08em !important;
+}
+
+/* ── Text ─────────────────────────────────────────────────────────────────── */
+.lia-name,
+.lia-title,
+.lia-score-val,
+.lia-section-title,
+p,
+.lia-follow-text,
+.lia-reach-reason,
+.lia-msg-tab-text {
+  color: #e2e8f0 !important;
+}
+
+.lia-meta,
+.lia-score-sub,
+.lia-optional,
+.lia-char-count,
+.lia-insight-key,
+.lia-tone-desc,
+.lia-refine-label {
+  color: rgba(148,163,184,0.75) !important;
+}
+
+.lia-insight-val { color: #c4b5fd !important; }
+.lia-insight-note { color: #94a3b8 !important; }
+
+/* ── Insight rows ─────────────────────────────────────────────────────────── */
+.lia-insight-row { border-bottom-color: rgba(255,255,255,0.05) !important; }
+
+/* ── Purpose picker ───────────────────────────────────────────────────────── */
+.lia-purpose-btn {
+  background: #0d0d25 !important;
+  border-color: rgba(255,255,255,0.1) !important;
+  color: #94a3b8 !important;
+}
+
+.lia-purpose-btn:hover {
+  border-color: rgba(124,58,237,0.4) !important;
+  background: rgba(124,58,237,0.08) !important;
+  color: #c4b5fd !important;
+}
+
+.lia-purpose-btn.active {
+  background: rgba(124,58,237,0.15) !important;
+  border-color: #7c3aed !important;
+  color: #c4b5fd !important;
+}
+
+/* ── Primary buttons ──────────────────────────────────────────────────────── */
+.lia-btn-primary,
+.lia-analyze-btn,
+.lia-msg-gen-btn,
+.lia-msg-copy-btn {
+  background: linear-gradient(135deg, #7c3aed, #4f46e5) !important;
+  border: none !important;
+  color: #fff !important;
+  box-shadow: 0 4px 14px rgba(124,58,237,0.35) !important;
+}
+
+.lia-btn-primary:hover,
+.lia-analyze-btn:hover,
+.lia-msg-gen-btn:hover,
+.lia-msg-copy-btn:hover {
+  background: linear-gradient(135deg, #6d28d9, #4338ca) !important;
+  box-shadow: 0 4px 20px rgba(124,58,237,0.5) !important;
+}
+
+/* ── Secondary buttons ────────────────────────────────────────────────────── */
+.lia-btn-secondary,
+.lia-copy-btn,
+.lia-refine-toggle {
+  background: transparent !important;
+  border-color: rgba(124,58,237,0.3) !important;
+  color: #a78bfa !important;
+}
+
+.lia-btn-secondary:hover,
+.lia-copy-btn:hover,
+.lia-refine-toggle:hover {
+  background: rgba(124,58,237,0.12) !important;
+  border-color: rgba(124,58,237,0.5) !important;
+  color: #c4b5fd !important;
+}
+
+/* ── Connection request box ───────────────────────────────────────────────── */
+.lia-connection-box { background: rgba(124,58,237,0.06) !important; border-color: rgba(124,58,237,0.2) !important; }
+
+/* ── Char count ───────────────────────────────────────────────────────────── */
+.lia-char-count { border-top-color: rgba(255,255,255,0.06) !important; }
+.char-ok   { color: #4ade80 !important; }
+.char-warn { color: #fbbf24 !important; }
+.char-over { color: #f87171 !important; }
+
+/* ── Verdict badges ───────────────────────────────────────────────────────── */
+.reach-verdict.ro-yes  { background: rgba(34,197,94,0.15) !important; color: #4ade80 !important; }
+.reach-verdict.ro-maybe { background: rgba(245,158,11,0.15) !important; color: #fbbf24 !important; }
+.reach-verdict.ro-no   { background: rgba(239,68,68,0.15) !important; color: #f87171 !important; }
+
+/* ── Score badges ─────────────────────────────────────────────────────────── */
+.ind-score-badge.score-high   { background: rgba(34,197,94,0.15) !important; color: #4ade80 !important; border-color: rgba(34,197,94,0.25) !important; }
+.ind-score-badge.score-medium { background: rgba(245,158,11,0.15) !important; color: #fbbf24 !important; border-color: rgba(245,158,11,0.25) !important; }
+.ind-score-badge.score-low    { background: rgba(239,68,68,0.15) !important; color: #f87171 !important; border-color: rgba(239,68,68,0.25) !important; }
+
+/* ── Inputs / textareas ───────────────────────────────────────────────────── */
+.lia-notes-input,
+.lia-follow-input,
+textarea {
+  background: #0f0f2e !important;
+  border-color: rgba(255,255,255,0.1) !important;
+  color: #e2e8f0 !important;
+}
+
+.lia-notes-input::placeholder,
+.lia-follow-input::placeholder,
+textarea::placeholder { color: rgba(148,163,184,0.4) !important; }
+
+.lia-notes-input:focus,
+.lia-follow-input:focus,
+textarea:focus {
+  border-color: #7c3aed !important;
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.15) !important;
+  background: #12123a !important;
+}
+
+/* ── Tone buttons ─────────────────────────────────────────────────────────── */
+.lia-tone-btn {
+  background: #0d0d25 !important;
+  border-color: rgba(255,255,255,0.1) !important;
+}
+
+.lia-tone-btn:hover {
+  background: rgba(124,58,237,0.08) !important;
+  border-color: rgba(124,58,237,0.35) !important;
+}
+
+.lia-tone-btn.active {
+  background: rgba(124,58,237,0.15) !important;
+  border-color: #7c3aed !important;
+}
+
+.lia-tone-name { color: #e2e8f0 !important; }
+.lia-tone-btn.active .lia-tone-name { color: #c4b5fd !important; }
+.lia-tone-desc { color: rgba(148,163,184,0.6) !important; }
+.lia-tone-btn.active .lia-tone-desc { color: rgba(196,181,253,0.7) !important; }
+
+/* ── ICP warning ─────────────────────────────────────────────────────────── */
+.lia-icp-warning {
+  background: rgba(245,158,11,0.07) !important;
+  border-color: rgba(245,158,11,0.2) !important;
+  color: #fbbf24 !important;
+}
+
+.lia-icp-warning-link { color: #c4b5fd !important; }
+
+/* ── Refine section ───────────────────────────────────────────────────────── */
+.lia-refine-body { border-top-color: rgba(124,58,237,0.15) !important; }
+.lia-msg-tab-actions { border-top-color: rgba(124,58,237,0.15) !important; }
+
+/* ── Error ────────────────────────────────────────────────────────────────── */
+.lia-error-msg {
+  background: rgba(239,68,68,0.1) !important;
+  border-color: rgba(239,68,68,0.2) !important;
+  color: #f87171 !important;
+}
+
+/* ── Trigger buttons (dock) — Satyron purple ──────────────────────────────── */
+#lia-trigger {
+  background: linear-gradient(180deg, #7c3aed 0%, #4f46e5 100%) !important;
+  box-shadow: -4px 0 24px rgba(124,58,237,0.45), -1px 0 6px rgba(0,0,0,0.15) !important;
+  border-radius: 12px 0 0 12px !important;
+}
+
+#lia-trigger:hover {
+  background: linear-gradient(180deg, #6d28d9 0%, #4338ca 100%) !important;
+  box-shadow: -6px 0 28px rgba(124,58,237,0.6) !important;
+}
+
+#lia-trigger.lia-active {
+  background: linear-gradient(180deg, #5b21b6 0%, #3730a3 100%) !important;
+}
+
+/* ── Post Creator panel background ───────────────────────────────────────── */
+#lia-post-panel {
+  background: #09091f !important;
+  border-left: 1px solid rgba(124,58,237,0.2) !important;
+}
+
+.lia-post-header {
+  background: linear-gradient(135deg, #1c0b4a 0%, #110d2e 60%, #09091f 100%) !important;
+  border-bottom: 1px solid rgba(124,58,237,0.2) !important;
+}
+
+.lia-post-title { color: #f8fafc !important; }
+.lia-post-close { color: rgba(196,181,253,0.8) !important; }
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+#lia-panel ::-webkit-scrollbar { width: 5px; }
+#lia-panel ::-webkit-scrollbar-track { background: transparent; }
+#lia-panel ::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.3); border-radius: 3px; }
+#lia-panel ::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,0.5); }

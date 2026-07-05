@@ -1,6 +1,9 @@
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 const OPENAI_MODEL = 'gpt-4o-mini';
 
+const SUPABASE_URL      = 'https://hokgbtrptddjgwgvvhrb.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_AAxP-tTi-9GMyfQxSpmC0A_NOlYt03T';
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'ANALYZE_PROFILE') {
     handleAnalyzeProfile(msg.profileData, msg.intent).then(sendResponse).catch(err => {
@@ -21,7 +24,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === 'GENERATE_FIRST_MESSAGE') {
-    handleGenerateFirstMessage(msg.profileData, msg.analysis, msg.intent).then(sendResponse).catch(err => {
+    handleGenerateFirstMessage(msg.profileData, msg.analysis, msg.intent, msg.tone, msg.userInstructions).then(sendResponse).catch(err => {
       sendResponse({ error: err.message });
     });
     return true;
@@ -84,7 +87,98 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
     return true;
   }
+  if (msg.type === 'REFINE_MESSAGE') {
+    handleRefineMessage(msg.originalMessage, msg.profileData, msg.analysis, msg.intent, msg.tone, msg.instructions).then(sendResponse).catch(err => {
+      sendResponse({ error: err.message });
+    });
+    return true;
+  }
+  if (msg.type === 'GOOGLE_SIGN_IN') {
+    handleGoogleSignIn().then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+  if (msg.type === 'GOOGLE_SIGN_OUT') {
+    handleGoogleSignOut().then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+  if (msg.type === 'START_CHECKOUT') {
+    handleStartCheckout().then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
 });
+
+async function handleGoogleSignIn() {
+  const token = await chrome.identity.getAuthToken({ interactive: true });
+  if (!token) throw new Error('Authentication cancelled.');
+  const resp = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!resp.ok) throw new Error('Failed to fetch Google profile.');
+  const googleUser = await resp.json();
+
+  // Sync to Supabase — creates or updates user row
+  let plan = 'free';
+  let supabaseUserId = null;
+  try {
+    const syncResp = await fetch(`${SUPABASE_URL}/functions/v1/sync-user`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({ googleToken: token }),
+    });
+    if (syncResp.ok) {
+      const { user: sbUser } = await syncResp.json();
+      plan = sbUser?.plan || 'free';
+      supabaseUserId = sbUser?.id || null;
+    }
+  } catch (_) { /* Supabase unavailable — continue offline */ }
+
+  await chrome.storage.local.set({ googleUser, userPlan: plan, supabaseUserId });
+  return { success: true, user: googleUser, plan };
+}
+
+async function handleGoogleSignOut() {
+  try {
+    const tokenResult = await chrome.identity.getAuthToken({ interactive: false });
+    if (tokenResult) await chrome.identity.removeCachedAuthToken({ token: tokenResult });
+  } catch (_) { /* token may already be expired */ }
+  await chrome.storage.local.remove(['googleUser', 'userPlan', 'supabaseUserId']);
+  return { success: true };
+}
+
+// Fire-and-forget — never blocks the main action
+async function trackUsage(eventType, metadata = {}) {
+  try {
+    const token = await chrome.identity.getAuthToken({ interactive: false });
+    if (!token) return; // not signed in — skip silently
+    fetch(`${SUPABASE_URL}/functions/v1/track-usage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({ googleToken: token, eventType, metadata }),
+    }).catch(() => {});
+  } catch (_) {}
+}
+
+async function handleStartCheckout() {
+  const token = await chrome.identity.getAuthToken({ interactive: true });
+  if (!token) throw new Error('Sign in first to upgrade.');
+  const resp = await fetch(`${SUPABASE_URL}/functions/v1/create-checkout`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify({ googleToken: token }),
+  });
+  const data = await resp.json();
+  if (!resp.ok || data.error) throw new Error(data.error || 'Checkout failed.');
+  return { url: data.url };
+}
 
 async function getApiKey() {
   const result = await chrome.storage.local.get('openaiApiKey');
@@ -214,6 +308,7 @@ async function callAI(systemPrompt, userPrompt) {
 }
 
 async function handleAnalyzeProfile(profileData, intent) {
+  trackUsage('analysis', { intent, name: profileData?.name || '' });
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
   const cfg = (!isJobSearch) ? await getSalesConfig() : null;
@@ -591,74 +686,155 @@ function buildAnalysisContext(analysis, intent) {
   return lines.join('\n');
 }
 
-async function handleGenerateFirstMessage(profileData, analysis, intent) {
+async function handleGenerateFirstMessage(profileData, analysis, intent, tone, userInstructions) {
+  trackUsage('message', { intent, tone });
   const isJobSearch = intent === 'job_search';
-  const isB2c = intent === 'b2c_sales';
-  const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
+  const isB2c   = intent === 'b2c_sales';
+  const cfg        = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
   const b2cProfile = isB2c ? await getB2cProfile() : null;
   const jobProfile = isJobSearch ? await getJobProfile() : null;
+  const a = analysis || {};
 
-  const analysisCtx = buildAnalysisContext(analysis || {}, intent);
+  // ── Derive authority + budget tier from analysis ─────────────────────────
+  const dm = a.decisionMakerLevel || a.decisionMaker || '';
+  const isDecisionMaker = /c.level|ceo|cto|coo|cfo|founder|owner|vp|director|head of/i.test(dm);
+  const cs = a.companySize || a.company?.size || '';
+  const hasBudgetSignals = isDecisionMaker || /enterprise|mid.market|series [bcd]|funded/i.test(cs + ' ' + (a.companyName || ''));
+
+  const scoreVal = isJobSearch ? (a.hiringSignal?.score || 'Unlikely')
+    : isB2c ? (a.clientPotential?.score || 'Low')
+    : (a.prospectScore?.score || a.potentialClient?.score || 'Low');
+  const isHighValue = scoreVal === 'High' || scoreVal === 'Strong';
+  const isMidValue  = scoreVal === 'Medium' || scoreVal === 'Possible';
+
+  const toneInstructions = {
+    warm:         'Warm, genuine, like a peer talking to a peer. Human and approachable.',
+    professional: 'Polished and credible. Confident, precise, zero filler.',
+    casual:       'Conversational and relaxed. Like a message to a colleague you respect.',
+    direct:       'Straight to the point. No pleasantries. Clear and confident.',
+    bold:         'Confident and distinctive. Takes a position. Stands out from the noise.',
+  };
+  const toneGuide = toneInstructions[tone] || toneInstructions.warm;
+
+  const analysisCtx = buildAnalysisContext(a, intent);
 
   let systemPrompt;
 
   if (isJobSearch) {
-    systemPrompt = `You write first LinkedIn direct messages for a job seeker. This message is informed by a detailed analysis of the recipient's profile — use the analysis insights to make it feel personally researched, not templated.
+    const approachGuide = scoreVal === 'Strong'
+      ? 'Strong hiring signal — be direct and purposeful. Reference their active hiring context or recent company move. Make it clear you are someone worth talking to, not just someone looking for a job.'
+      : isMidValue
+      ? 'Possible hiring signal — be curious and exploratory. Express genuine interest in their work, and hint at your background in a way that is relevant to their domain.'
+      : 'Weak hiring signal — keep it short and very low-commitment. Pure relationship-building, no hint of job-seeking.';
 
-PRIORITY RULE: Reference something specific from the analysis — their hiring signals, recent activity, or company context. Never mention "I'm looking for opportunities" or "I'm open to work". Sound like a curious professional exploring a conversation.
+    systemPrompt = `You are a senior career coach who has helped hundreds of executives land roles through LinkedIn. You write first messages that get replies because they feel researched, specific, and non-desperate.
 
-Rules:
+TONE: ${toneGuide}
+APPROACH FOR THIS PROSPECT: ${approachGuide}
+
+CORE STRATEGY:
+- Open with THEIR world, not yours — their company, role, content, or industry situation
+- Make it specific: reference at least one concrete detail from the analysis (hiring signal, company context, recent activity, or key insight)
+- Sound like an accomplished professional reaching out to exchange ideas — never like a job seeker asking for a favour
+- Never mention "looking for opportunities", "open to work", "my next role", or anything that frames you as seeking something
+- Create a natural reason to talk — a relevant question, shared domain, or interesting observation
+- End with ONE easy-to-answer question or a soft open door
+
+HARD RULES:
 - Max 300 characters total
-- Zero em dashes, zero hyphens as dashes
-- No corporate speak
-- End with a soft, natural question that invites a reply
-- Do not start with "Hi [Name]" or "Hey [Name]"
+- No em dashes, no hyphens as dashes
 - No emojis
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- Do NOT say "I came across your profile", "I hope this finds you well", "would love to connect"
 - Never reference the analysis itself — weave the insights in naturally
-
-Return ONLY the message text. No quotes.`;
+- Return ONLY the message. No quotes, no explanation.`;
 
     const jobCtx = buildJobContext(jobProfile);
     if (jobCtx) systemPrompt += `\n\n${jobCtx}`;
 
   } else if (isB2c) {
-    systemPrompt = `You write first LinkedIn direct messages for a freelancer or consultant who is already connected with the recipient. This message must be grounded in real insights from the profile analysis — not generic outreach.
+    const approachGuide = isHighValue
+      ? 'High-potential client. They likely work with contractors and have budget. Be specific about a pain point or challenge you spotted. Hint at your expertise without pitching. Create curiosity.'
+      : isMidValue
+      ? 'Mid-tier prospect. Be exploratory — show genuine interest in their work and ask an insightful question that positions your expertise implicitly.'
+      : 'Low-tier prospect. Keep it warm and brief. Pure relationship-building message — no hints at services.';
 
-PRIORITY RULE: Reference one specific pain point, signal, or insight from the analysis. Position the sender as a knowledgeable peer who noticed something relevant — never as a vendor pitching services.
+    systemPrompt = `You are a senior business developer writing a first LinkedIn message on behalf of a freelancer or consultant. You have 15+ years of experience winning enterprise clients through relationship-based outreach.
 
-Rules:
+TONE: ${toneGuide}
+APPROACH FOR THIS PROSPECT: ${approachGuide}
+
+CORE STRATEGY (this is non-negotiable):
+- Lead with THEM: open with an observation, question, or acknowledgment about their business, role, or content
+- Specificity signals research: you must reference at least one concrete detail from the analysis (pain point, freelancer signal, approach angle, key insight, or recent activity)
+- Create relevance BEFORE hinting at value: why is this message relevant to their situation specifically?
+- Establish peer credibility: position the sender as someone who works in the same domain — not a vendor or service provider
+- Curiosity hook: end with one focused question about their situation that is easy to answer
+- Never pitch. Never offer help. Never say "I can help you with X" or "my services include Y"
+
+HARD RULES:
 - Max 350 characters total
-- Zero em dashes, zero hyphens as dashes
-- No pitching, no "I can help you with X", no service offers
-- Sound like a trusted expert starting a genuine conversation
-- End with a soft question about their situation
-- Do not start with "Hi [Name]" or "Hey [Name]"
+- No em dashes, no hyphens as dashes
 - No emojis
-- Do NOT say "I noticed from your profile..." — just reference the insight naturally
-
-Return ONLY the message text. No quotes.`;
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- Never say "I noticed from your profile", "I came across your profile"
+- Do NOT offer services, mention pricing, or ask for a call in the first message
+- Return ONLY the message. No quotes, no explanation.`;
 
     if (b2cProfile && Object.keys(b2cProfile).length) {
-      systemPrompt += `\n\n--- SENDER PROFILE (use for tone and expertise calibration) ---\n${buildB2cContext(b2cProfile)}`;
+      systemPrompt += `\n\n--- SENDER PROFILE ---\n${buildB2cContext(b2cProfile)}`;
     }
 
   } else {
-    systemPrompt = `You write first LinkedIn direct messages for a B2B sales professional who is already connected with the recipient. This message is powered by a detailed profile analysis — use the analysis to write something that feels personally researched and relevant to this specific person and company.
+    // B2B Sales
+    const dmGuide = isDecisionMaker
+      ? `Decision-maker detected (${dm || 'senior level'}). Be direct and business-outcome focused. They are busy — get to the point. Hint at ROI or efficiency gain without pitching.`
+      : `Not a final decision-maker (${dm || 'likely IC or manager'}). Be more exploratory and relationship-focused. Build rapport before hinting at any value exchange.`;
 
-PRIORITY RULE: Reference one specific insight from the analysis (prospect score reasoning, industry fit signals, decision maker level, key insight, or recent activity). The message must feel like the sender actually did their research — not a template.
+    const budgetGuide = hasBudgetSignals
+      ? 'Budget signals: company size and role suggest budget authority. Can be slightly more direct about value relevance.'
+      : 'Budget unclear. Stay in pure curiosity mode — start a conversation, not a sales process.';
 
-Rules:
+    const approachGuide = isHighValue
+      ? 'High-value prospect. Strong ICP fit and decision-making authority. Write with confidence. Reference their specific business context. End with a question that opens a conversation about their priority or challenge.'
+      : isMidValue
+      ? 'Mid-tier prospect. Partial fit. Be curious and helpful. Reference something specific from their profile or company. End with an open question about their current focus.'
+      : 'Low-priority prospect. Short, warm, no-commitment message. Pure relationship-building — no hints at a pitch.';
+
+    systemPrompt = `You are a senior B2B Business Development Executive with 15+ years of enterprise sales experience at high-growth SaaS companies. You write the LinkedIn first messages that actually get replies — because they feel like they were written for this specific person, not pulled from a template.
+
+TONE: ${toneGuide}
+DECISION-MAKER ASSESSMENT: ${dmGuide}
+BUDGET SIGNAL: ${budgetGuide}
+APPROACH FOR THIS PROSPECT: ${approachGuide}
+
+CORE OUTREACH STRATEGY (replicate exactly):
+1. Open with THEM, not you: start with an observation, relevant question, or acknowledgment about their company, role, recent news, or industry situation
+2. Specificity is trust: reference at least one concrete detail from the analysis (score reasoning, company context, key insight, recent activity, or ICP fit signal) — this proves research, builds instant credibility
+3. Bridge to relevance: one sentence that connects their situation to why hearing from you could be valuable — without pitching
+4. One question: end with a single, focused, easy-to-answer question that naturally opens a conversation
+
+FIRST-MESSAGE PHILOSOPHY:
+- Goal of message 1 is to START a conversation, not close a deal
+- Never pitch in message 1. The pitch is reserved for when they respond.
+- For high-value decision-makers: hint at ROI, efficiency, or competitive advantage — not features
+- For mid-tier: focus on their challenges or goals, not your solution
+- Always sound like a peer: smart, direct, respectful of their time
+
+HARD RULES:
 - Max 350 characters total
-- Zero em dashes, zero hyphens as dashes
-- Not salesy — the goal is to start a conversation, not pitch
-- One soft, natural question at the end that invites a reply
-- Do not start with "Hi [Name]" or "Hey [Name]"
+- No em dashes, no hyphens as dashes
 - No emojis
-- Do NOT say "I saw your profile" or "I noticed from your profile" — weave insights in naturally
-
-Return ONLY the message text. No quotes.`;
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- Never say "I came across your profile", "I hope this finds you well", "I'd love to connect", "impressive background"
+- Do NOT mention pricing, calls, demos, or meetings in message 1
+- Return ONLY the message. No quotes, no explanation.`;
 
     if (cfg) systemPrompt += `\n\n--- SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
+  }
+
+  if (userInstructions?.trim()) {
+    systemPrompt += `\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly):\n${userInstructions.trim()}`;
   }
 
   systemPrompt += `\n\n${analysisCtx}`;
@@ -731,6 +907,45 @@ Return ONLY the follow-up message text. No quotes.`;
   }
 
   const userPrompt = `RECIPIENT PROFILE:\n${buildProfileText(profileData)}\n\nEXISTING CONVERSATION:\n${conversationText || '(no conversation provided)'}`;
+  return { text: await callAI(systemPrompt, userPrompt) };
+}
+
+async function handleRefineMessage(originalMessage, profileData, analysis, intent, tone, instructions) {
+  const TONE_GUIDE = {
+    professional: 'Polished, formal, and credible. Every word earns its place. Zero filler.',
+    warm: 'Friendly, genuine, and human. Reads like a message from a trusted peer.',
+    casual: 'Relaxed and conversational. Like texting a colleague you respect.',
+    direct: 'Straight to the point. No pleasantries, no softening. Clear and confident.',
+    bold: 'Confident and memorable. Takes a position. Not afraid to be different.',
+  };
+  const toneGuide = TONE_GUIDE[tone] || TONE_GUIDE.warm;
+
+  const systemPrompt = `You are refining a LinkedIn outreach message. Apply the requested tone and follow the user's instructions precisely.
+
+TONE: ${tone?.toUpperCase() || 'WARM'}
+Tone definition: ${toneGuide}
+
+Rules:
+- Keep the same core meaning and intent as the original
+- Apply the tone throughout — it should feel consistent, not patchy
+- Follow the user's instructions exactly
+- Max 350 characters unless the instructions explicitly request more
+- Zero em dashes, zero hyphens as dashes
+- No emojis
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- Return ONLY the refined message text. No quotes, no explanation.`;
+
+  const userPrompt = `ORIGINAL MESSAGE:
+"${originalMessage}"
+
+RECIPIENT PROFILE:
+${buildProfileText(profileData)}
+
+USER INSTRUCTIONS:
+${instructions?.trim() || 'No specific instructions — just apply the tone consistently.'}
+
+${analysis ? `ANALYSIS CONTEXT:\n${buildAnalysisContext(analysis, intent)}` : ''}`;
+
   return { text: await callAI(systemPrompt, userPrompt) };
 }
 

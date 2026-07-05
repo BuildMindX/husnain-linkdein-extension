@@ -115,20 +115,30 @@
     }
   }).observe(document.body, { subtree: true, childList: true });
 
+  // ─── Sidebar Dock ─────────────────────────────────────────────────────────────
+  let sidebarDock = null;
+  function ensureDock() {
+    if (sidebarDock && document.contains(sidebarDock)) return sidebarDock;
+    sidebarDock = document.createElement('div');
+    sidebarDock.id = 'lia-sidebar-dock';
+    document.body.appendChild(sidebarDock);
+    return sidebarDock;
+  }
+
   // ─── Trigger Button ───────────────────────────────────────────────────────────
   function injectTriggerButton() {
     if (triggerBtn) return;
     triggerBtn = document.createElement('button');
     triggerBtn.id = 'lia-trigger';
-    triggerBtn.setAttribute('aria-label', 'Open Husnain LinkedIn Helper');
+    triggerBtn.setAttribute('aria-label', 'Open LinkPilot AI');
     triggerBtn.innerHTML = `
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
       </svg>
       <span>Analyze</span>
     `;
     triggerBtn.addEventListener('click', handleTriggerClick);
-    document.body.appendChild(triggerBtn);
+    ensureDock().appendChild(triggerBtn);
   }
 
   // ─── Post Creator Button ──────────────────────────────────────────────────────
@@ -137,9 +147,9 @@
     postBtn = document.createElement('button');
     postBtn.id = 'lia-post-trigger';
     postBtn.setAttribute('aria-label', 'Create LinkedIn Post');
-    postBtn.innerHTML = `<span>✍️</span><span>Post</span>`;
+    postBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg><span>Post</span>`;
     postBtn.addEventListener('click', openPostCreator);
-    document.body.appendChild(postBtn);
+    ensureDock().appendChild(postBtn);
   }
 
   function extractOwnPosts() {
@@ -170,12 +180,12 @@
     postPanel.innerHTML = `
       <div class="lia-pc-header">
         <div class="lia-pc-title">
-          <span>✍️</span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           <span>Post Creator</span>
         </div>
         <div class="lia-pc-mode-toggle" id="lia-pc-mode-toggle">
-          <button class="lia-pc-mode-btn active" data-mode="personal" title="Post as yourself">👤 Me</button>
-          <button class="lia-pc-mode-btn" data-mode="company" title="Post for your company">🏢 Company</button>
+          <button class="lia-pc-mode-btn active" data-mode="personal" title="Post as yourself">Personal</button>
+          <button class="lia-pc-mode-btn" data-mode="company" title="Post for your company">Company</button>
         </div>
         <button class="lia-pc-close" aria-label="Close">&times;</button>
       </div>
@@ -416,7 +426,7 @@
             </button>`).join('')}
         </div>
       </div>
-      <button class="lia-btn-primary lia-pc-full-btn" id="lia-pc-write-btn">✍️ Write Post</button>
+      <button class="lia-btn-primary lia-pc-full-btn" id="lia-pc-write-btn">Write Post</button>
       <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-style" style="margin-top:6px">← Back</button>
     `;
     body.querySelectorAll('.lia-pc-style-card').forEach(btn => {
@@ -593,9 +603,9 @@
     const hasCache = !!(stored?.analysis) && cacheIntentMatches;
     const cacheAge = hasCache ? `· ${timeAgo(stored.timestamp)}` : '';
 
-    const modeLabel = currentIntent === 'job_search' ? '🎯 Job Search mode'
-      : currentIntent === 'b2c_sales' ? '🧑‍💻 Freelance mode'
-      : '💼 B2B Sales mode';
+    const modeLabel = currentIntent === 'job_search' ? 'Job Search'
+      : currentIntent === 'b2c_sales' ? 'Freelance'
+      : 'B2B Sales';
 
     const analyzeDesc = hasCache
       ? `View analysis ${cacheAge}`
@@ -609,9 +619,17 @@
       ? 'Get a warm note positioning you as a fellow expert'
       : 'Get a personalized note to send with a connection invite';
 
+    const { targetIndustries } = await chrome.storage.local.get('targetIndustries').catch(() => ({}));
+    const showIcpWarning = (currentIntent === 'b2b_sales') && (!Array.isArray(targetIndustries) || targetIndustries.length === 0);
+
     body.innerHTML = `
       <div class="lia-purpose-picker">
         <div class="lia-mode-indicator">${modeLabel}</div>
+        ${showIcpWarning ? `
+        <div class="lia-icp-warning">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>No target industries set — analysis will be generic. <button class="lia-icp-warning-link" id="lia-set-icp">Set ICP in Settings</button></span>
+        </div>` : ''}
         <p class="lia-purpose-intro">What do you want to do with this profile?</p>
         <button class="lia-purpose-tile" id="lia-purpose-analyze">
           <span class="lia-purpose-icon">
@@ -665,6 +683,7 @@
       </div>
     `;
 
+    body.querySelector('#lia-set-icp')?.addEventListener('click', () => chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' }));
     body.querySelector('#lia-purpose-connection').addEventListener('click', () => runForPurpose('connection'));
     body.querySelector('#lia-purpose-followup').addEventListener('click', () => runForPurpose('followup'));
     body.querySelector('#lia-purpose-analyze').addEventListener('click', () => runForPurpose('analyze'));
@@ -1024,7 +1043,8 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
           </svg>
-          <span>Husnain LinkedIn Helper</span>
+          <span>LinkPilot AI</span>
+          <span class="lia-mode-badge" id="lia-header-mode-badge"></span>
         </div>
         <div class="lia-header-actions">
           <button class="lia-reanalyze-btn" id="lia-reanalyze-btn" aria-label="Re-analyze profile" title="Re-analyze">
@@ -1044,8 +1064,8 @@
       <div class="lia-tabs">
         <button class="lia-tab active" data-tab="analysis">Analysis</button>
         <button class="lia-tab" data-tab="connection">Connection</button>
+        <button class="lia-tab" data-tab="message">Message</button>
         <button class="lia-tab" data-tab="contact">Contact</button>
-        <span class="lia-analyzed-at" id="lia-analyzed-at"></span>
       </div>
       <div class="lia-body" id="lia-body">
         <div class="lia-loading">
@@ -1147,8 +1167,11 @@
     if (!body) return;
     body._rendered = { analysis, connectionRequest, timestamp, intent };
 
-    const tsEl = panel.querySelector('#lia-analyzed-at');
-    if (tsEl && timestamp) tsEl.textContent = `Analyzed ${timeAgo(timestamp)}`;
+    const badge = panel.querySelector('#lia-header-mode-badge');
+    if (badge) {
+      const modeMap = { b2b_sales: 'B2B Sales', b2c_sales: 'Freelance', job_search: 'Job Search' };
+      badge.textContent = modeMap[intent] || 'B2B Sales';
+    }
 
     renderTabContent(analysis, connectionRequest, activeTab, intent);
   }
@@ -1158,6 +1181,39 @@
     if (!body) return;
 
     if (tab === 'analysis') {
+      // ── Should I message? recommendation ─────────────────────────────────
+      let reachOut = 'Maybe';
+      let reachReason = '';
+      if (intent === 'job_search') {
+        const hs = analysis.hiringSignal?.score || 'Unlikely';
+        reachOut = hs === 'Strong' ? 'Yes' : hs === 'Possible' ? 'Maybe' : 'Low priority';
+        reachReason = analysis.hiringSignal?.reasoning || '';
+      } else if (intent === 'b2c_sales') {
+        const cp = analysis.clientPotential?.score || 'Low';
+        reachOut = cp === 'High' ? 'Yes' : cp === 'Medium' ? 'Maybe' : 'Low priority';
+        reachReason = analysis.clientPotential?.reasoning || '';
+      } else {
+        const ps = analysis.prospectScore?.score || 'Low';
+        reachOut = ps === 'High' ? 'Yes' : ps === 'Medium' ? 'Maybe' : 'Low priority';
+        reachReason = analysis.prospectScore?.reasoning || '';
+      }
+      const roClass = reachOut === 'Yes' ? 'ro-yes' : reachOut === 'Maybe' ? 'ro-maybe' : 'ro-no';
+      const roIcon = reachOut === 'Yes'
+        ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`
+        : reachOut === 'Maybe'
+        ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>`
+        : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+
+      const reachLabel = intent === 'job_search' ? 'Reach out?' : 'Should you message?';
+      const recommendationBlock = `
+        <div class="lia-reach-card ${roClass}">
+          <div class="reach-header">
+            <span class="reach-label">${reachLabel}</span>
+            <span class="reach-verdict ${roClass}">${roIcon} ${reachOut}</span>
+          </div>
+          ${reachReason ? `<p class="reach-reason">${escHtml(reachReason)}</p>` : ''}
+        </div>`;
+
       const csVal = analysis.companySize || analysis.company?.size || 'Unknown';
       const csClass = { Enterprise: 'cs-enterprise', 'Mid-market': 'cs-mid', SMB: 'cs-smb', Startup: 'cs-startup', Unknown: 'cs-unknown' }[csVal] || 'cs-unknown';
 
@@ -1367,6 +1423,7 @@
       }
 
       body.innerHTML = `
+        ${recommendationBlock}
         ${excludedBanner}
         <div class="lia-indicators">
 
@@ -1439,57 +1496,170 @@
           </div>
         </div>` : ''}
 
-        <div class="lia-section lia-first-msg-section">
-          <button class="lia-btn-primary" id="lia-gen-first-msg" style="width:100%">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-            </svg>
-            ${intent === 'job_search' ? 'Generate Outreach Message' : 'Generate First Message'}
-          </button>
-          <div id="lia-first-msg-result" style="display:none;margin-top:10px"></div>
-        </div>
       `;
 
-      body.querySelector('#lia-gen-first-msg')?.addEventListener('click', async () => {
-        const btn = body.querySelector('#lia-gen-first-msg');
-        const resultDiv = body.querySelector('#lia-first-msg-result');
-        if (!btn || !resultDiv) return;
+    } else if (tab === 'message') {
+      // ── Message Tab ─────────────────────────────────────────────────────────
+      const TONES = [
+        { val: 'warm',         label: 'Warm',         desc: 'Friendly & genuine' },
+        { val: 'professional', label: 'Professional',  desc: 'Polished & credible' },
+        { val: 'casual',       label: 'Casual',        desc: 'Relaxed & conversational' },
+        { val: 'direct',       label: 'Direct',        desc: 'Straight to the point' },
+        { val: 'bold',         label: 'Bold',          desc: 'Confident & memorable' },
+      ];
+      let msgCurrentText = '';
+      let msgSelectedTone = 'warm';
 
-        btn.disabled = true;
-        btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="lia-spin"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> Writing message...`;
-        resultDiv.style.display = 'none';
+      // Build analysis insights block
+      let insightRows = '';
+      if (intent === 'b2b_sales') {
+        const ps = analysis.prospectScore?.score || analysis.potentialClient?.score || '';
+        const psR = analysis.prospectScore?.reasoning || analysis.potentialClient?.reasoning || '';
+        const dm = analysis.decisionMakerLevel || analysis.decisionMaker || '';
+        const fit = analysis.icpFit?.match || analysis.industryFit?.level || '';
+        const fitR = analysis.icpFit?.reasoning || analysis.industryFit?.reasoning || '';
+        const psClass = { High: 'score-high', Medium: 'score-medium', Low: 'score-low' }[ps] || 'score-low';
+        if (ps) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Prospect Score</span><span class="ind-score-badge ${psClass}" style="font-size:11px;padding:2px 8px">${ps}</span>${psR ? `<span class="lia-insight-note">${escHtml(psR)}</span>` : ''}</div>`;
+        if (dm) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Decision Maker</span><span class="lia-insight-val">${escHtml(dm)}</span></div>`;
+        if (fit) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">ICP Fit</span><span class="lia-insight-val">${escHtml(fit)}</span>${fitR ? `<span class="lia-insight-note">${escHtml(fitR)}</span>` : ''}</div>`;
+      } else if (intent === 'b2c_sales') {
+        const cp = analysis.clientPotential?.score || '';
+        const cpR = analysis.clientPotential?.reasoning || '';
+        const aa = analysis.approachAngle || '';
+        const cpClass = { High: 'score-high', Medium: 'score-medium', Low: 'score-low' }[cp] || 'score-low';
+        if (cp) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Client Potential</span><span class="ind-score-badge ${cpClass}" style="font-size:11px;padding:2px 8px">${cp}</span>${cpR ? `<span class="lia-insight-note">${escHtml(cpR)}</span>` : ''}</div>`;
+        if (aa) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Approach Angle</span><span class="lia-insight-note">${escHtml(aa)}</span></div>`;
+        (analysis.painPoints || []).slice(0, 2).forEach(pp => {
+          insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Pain Point</span><span class="lia-insight-note">${escHtml(pp)}</span></div>`;
+        });
+      } else {
+        const hs = analysis.hiringSignal?.score || '';
+        const hsR = analysis.hiringSignal?.reasoning || '';
+        const hsClass = { Strong: 'score-high', Possible: 'score-medium', Unlikely: 'score-low' }[hs] || 'score-low';
+        if (hs) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Hiring Signal</span><span class="ind-score-badge ${hsClass}" style="font-size:11px;padding:2px 8px">${hs}</span>${hsR ? `<span class="lia-insight-note">${escHtml(hsR)}</span>` : ''}</div>`;
+      }
+      const ki = (analysis.keyInsights || []).slice(0, 3);
+      const insightsSection = (insightRows || ki.length) ? `
+        <div class="lia-msg-intelligence">
+          <div class="lia-label" style="margin-bottom:8px">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            Outreach Intelligence
+          </div>
+          ${insightRows}
+          ${ki.length ? ki.map(i => `<div class="lia-insight-row lia-insight-ki"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0A66C2" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg><span class="lia-insight-note" style="color:#374151">${escHtml(i)}</span></div>`).join('') : ''}
+        </div>` : '';
 
-        try {
-          const profileData = extractProfile();
-          const result = await sendMessage('GENERATE_FIRST_MESSAGE', profileData, { intent, analysis });
-          if (result.error) throw new Error(result.error);
+      body.innerHTML = `
+        ${insightsSection}
+        <div class="lia-section" style="margin-top:0">
+          <div class="lia-refine-label" style="margin-bottom:7px">Tone</div>
+          <div class="lia-tone-grid" id="lia-msgtab-tone">
+            ${TONES.map(t => `
+              <button class="lia-tone-btn${t.val === msgSelectedTone ? ' active' : ''}" data-tone="${t.val}">
+                <span class="lia-tone-name">${t.label}</span>
+                <span class="lia-tone-desc">${t.desc}</span>
+              </button>`).join('')}
+          </div>
+        </div>
+        <div class="lia-section">
+          <div class="lia-refine-label" style="margin-bottom:6px">Instructions <span class="lia-optional">(optional)</span></div>
+          <textarea class="lia-notes-input" id="lia-msgtab-instructions" rows="3" placeholder="e.g. Keep it under 2 sentences, mention their recent AI post, ask about their roadmap..."></textarea>
+        </div>
+        <button class="lia-btn-primary" id="lia-msgtab-generate" style="width:100%;margin-bottom:4px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          ${intent === 'job_search' ? 'Generate Outreach Message' : 'Generate First Message'}
+        </button>
+        <div id="lia-msgtab-result" style="display:none;margin-top:10px"></div>`;
 
-          const text = result.text || '';
-          resultDiv.innerHTML = `
-            <div class="lia-label" style="margin-bottom:6px">${intent === 'job_search' ? 'Outreach Message' : 'First Message'}</div>
-            <div class="lia-connection-box">
-              <p id="lia-first-msg-text">${escHtml(text)}</p>
+      body.querySelectorAll('.lia-tone-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          msgSelectedTone = btn.dataset.tone;
+          body.querySelectorAll('#lia-msgtab-tone .lia-tone-btn').forEach(b => b.classList.toggle('active', b.dataset.tone === msgSelectedTone));
+        });
+      });
+
+      function renderMsgTabResult(text) {
+        const resultDiv = body.querySelector('#lia-msgtab-result');
+        if (!resultDiv) return;
+        msgCurrentText = text;
+        resultDiv.innerHTML = `
+          <div class="lia-connection-box" style="margin-bottom:8px">
+            <p id="lia-msgtab-text">${escHtml(text)}</p>
+          </div>
+          <button class="lia-btn-primary lia-copy-btn" id="lia-msgtab-copy" style="margin-bottom:10px">Copy to Clipboard</button>
+          <div class="lia-refine-section">
+            <button class="lia-refine-toggle" id="lia-msgtab-refine-toggle">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              Refine this message
+              <svg class="lia-refine-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div class="lia-refine-body" id="lia-msgtab-refine-body" style="display:none">
+              <div class="lia-refine-group" style="margin-bottom:8px">
+                <div class="lia-refine-label" style="margin-bottom:6px">Instructions</div>
+                <textarea class="lia-notes-input" id="lia-msgtab-refine-instructions" rows="2" placeholder="e.g. Shorter, add a question, reference their fundraising..."></textarea>
+              </div>
+              <button class="lia-btn-primary" id="lia-msgtab-refine-btn" style="width:100%">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                Refine with AI
+              </button>
+              <div id="lia-msgtab-refine-error" class="lia-error-msg" style="display:none;margin-top:6px"></div>
             </div>
-            <button class="lia-btn-primary lia-copy-btn" id="lia-first-msg-copy">Copy to Clipboard</button>
-          `;
-          resultDiv.style.display = '';
+          </div>`;
+        resultDiv.style.display = '';
 
-          resultDiv.querySelector('#lia-first-msg-copy')?.addEventListener('click', async () => {
-            const copyBtn = resultDiv.querySelector('#lia-first-msg-copy');
-            await navigator.clipboard.writeText(text);
-            copyBtn.textContent = 'Copied!';
-            copyBtn.classList.add('copied');
-            setTimeout(() => { copyBtn.textContent = 'Copy to Clipboard'; copyBtn.classList.remove('copied'); }, 2000);
-          });
+        resultDiv.querySelector('#lia-msgtab-copy')?.addEventListener('click', async () => {
+          const btn = resultDiv.querySelector('#lia-msgtab-copy');
+          await navigator.clipboard.writeText(msgCurrentText);
+          btn.textContent = 'Copied!'; btn.classList.add('copied');
+          setTimeout(() => { btn.textContent = 'Copy to Clipboard'; btn.classList.remove('copied'); }, 2000);
+        });
 
-          btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> Regenerate Message`;
-          btn.disabled = false;
+        const refToggle = resultDiv.querySelector('#lia-msgtab-refine-toggle');
+        const refBody = resultDiv.querySelector('#lia-msgtab-refine-body');
+        refToggle?.addEventListener('click', () => {
+          const open = refBody.style.display !== 'none';
+          refBody.style.display = open ? 'none' : 'block';
+          refToggle.querySelector('.lia-refine-arrow').style.transform = open ? '' : 'rotate(180deg)';
+        });
+
+        resultDiv.querySelector('#lia-msgtab-refine-btn')?.addEventListener('click', async () => {
+          const rb = resultDiv.querySelector('#lia-msgtab-refine-btn');
+          const ed = resultDiv.querySelector('#lia-msgtab-refine-error');
+          const instr = resultDiv.querySelector('#lia-msgtab-refine-instructions')?.value.trim() || '';
+          rb.disabled = true;
+          rb.innerHTML = `<svg width="13" height="13" class="lia-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refining...`;
+          if (ed) ed.style.display = 'none';
+          try {
+            const res = await sendMessage('REFINE_MESSAGE', extractProfile(), { originalMessage: msgCurrentText, analysis, intent, tone: msgSelectedTone, instructions: instr });
+            if (res.error) throw new Error(res.error);
+            renderMsgTabResult(res.text || '');
+          } catch (e) {
+            if (ed) { ed.textContent = e.message; ed.style.display = ''; }
+            rb.disabled = false;
+            rb.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refine with AI`;
+          }
+        });
+      }
+
+      body.querySelector('#lia-msgtab-generate')?.addEventListener('click', async () => {
+        const genBtn = body.querySelector('#lia-msgtab-generate');
+        const resultDiv = body.querySelector('#lia-msgtab-result');
+        if (!genBtn || !resultDiv) return;
+        const userInstructions = body.querySelector('#lia-msgtab-instructions')?.value.trim() || '';
+        genBtn.disabled = true;
+        genBtn.innerHTML = `<svg width="13" height="13" class="lia-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Writing...`;
+        resultDiv.style.display = 'none';
+        try {
+          const result = await sendMessage('GENERATE_FIRST_MESSAGE', extractProfile(), { intent, analysis, tone: msgSelectedTone, userInstructions });
+          if (result.error) throw new Error(result.error);
+          renderMsgTabResult(result.text || '');
+          genBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Regenerate`;
+          genBtn.disabled = false;
         } catch (err) {
-          const msg = err.message === 'NO_API_KEY' ? 'No API key found. Add your OpenAI key in Settings → Step 3.' : err.message;
-          resultDiv.innerHTML = `<p class="lia-error-msg">${escHtml(msg)}</p>`;
-          resultDiv.style.display = '';
-          btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> ${intent === 'job_search' ? 'Generate Outreach Message' : 'Generate First Message'}`;
-          btn.disabled = false;
+          const msg = err.message === 'NO_API_KEY' ? 'No API key — open Settings.' : err.message;
+          resultDiv.innerHTML = `<p class="lia-error-msg">${escHtml(msg)}</p>`; resultDiv.style.display = '';
+          genBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> ${intent === 'job_search' ? 'Generate Outreach Message' : 'Generate First Message'}`;
+          genBtn.disabled = false;
         }
       });
 
