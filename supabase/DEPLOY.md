@@ -33,11 +33,10 @@ npx supabase functions deploy stripe-webhook --project-ref hokgbtrptddjgwgvvhrb
 3. Events to listen: `checkout.session.completed`, `customer.subscription.deleted`, `customer.subscription.updated`
 4. Copy Signing Secret → use as STRIPE_WEBHOOK_SECRET above
 
-## 6. Fix Google OAuth (IMPORTANT)
-The current OAuth client fails because it is the wrong type.
-In Google Cloud Console → Credentials:
-1. DELETE the existing client (592927077998-osav10sc75ghl2rnokm9c60g89tafdhq)
-2. Create Credentials → OAuth 2.0 Client ID
-3. Application type: **Chrome Extension** (NOT Web Application)
-4. Application ID: ofloohhjdcggabbbmimgbbekdpjnkmof
-5. Copy new Client ID → update manifest.json oauth2.client_id
+## 6. Google OAuth ✓ Done
+OAuth client already configured in manifest.json:
+- Type: Chrome Extension (correct)
+- Client ID: `592927077998-058seb6htaan8ma47vhhiqjg724avke3.apps.googleusercontent.com`
+- Extension ID: `ofloohhjdcggabbbmimgbbekdpjnkmof`
+
+No action needed here.
