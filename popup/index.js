@@ -36,7 +36,10 @@ function showSignInGate() {
         status.style.display = 'block';
         return;
       }
-      // Sign-in succeeded — reload popup to show main content
+      // New user → open onboarding in options page, then reload
+      if (response.isNew) {
+        chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' });
+      }
       window.location.reload();
     });
   });

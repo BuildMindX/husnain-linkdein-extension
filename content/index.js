@@ -362,6 +362,7 @@
       }, resolve);
     });
     if (result?.error) {
+      if (result.error === 'LIMIT_REACHED') { renderPcLimitReached(); return; }
       const msg = result.error === 'NO_API_KEY'
         ? 'No API key found. Add your OpenAI key in Settings → Step 3.'
         : result.error;
@@ -480,6 +481,7 @@
       }, resolve);
     });
     if (result?.error) {
+      if (result.error === 'LIMIT_REACHED') { renderPcLimitReached(); return; }
       const msg = result.error === 'NO_API_KEY'
         ? 'No API key found. Add your OpenAI key in Settings → Step 3.'
         : result.error;
@@ -1185,10 +1187,39 @@
     });
   }
 
+  function renderPcLimitReached() {
+    const body = document.getElementById('lia-pc-body');
+    if (!body) return;
+    _renderUpgradeGate(body, 'Monthly Limit Reached', 'You\'ve used all your free post generations this month. Upgrade to Pro for unlimited access.', 'lia-pc-upgrade-btn');
+  }
+
+  function _renderUpgradeGate(bodyEl, heading, desc, btnId) {
+    _renderGate(bodyEl, {
+      iconColor: '#a78bfa',
+      iconGlow: 'rgba(167,139,250,0.35)',
+      iconSvg: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+      heading,
+      desc,
+      btnId,
+      btnLabel: 'Upgrade to Pro',
+    });
+    bodyEl.querySelector(`#${btnId}`).addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' });
+    });
+  }
+
   function renderError(message) {
     const body = document.getElementById('lia-body');
     if (!body) return;
     if (message === 'NO_API_KEY') { renderNoApiKey(); return; }
+    if (message === 'LIMIT_REACHED') {
+      _renderUpgradeGate(body, 'Monthly Limit Reached', 'You\'ve used all your free analyses this month. Upgrade to Pro for unlimited access.', 'lia-upgrade-btn');
+      return;
+    }
+    if (message === 'PRO_REQUIRED') {
+      _renderUpgradeGate(body, 'Pro Feature', 'This feature requires a Pro plan. Upgrade to unlock unlimited analyses and HubSpot CRM.', 'lia-upgrade-btn');
+      return;
+    }
 
     const isStale = /context invalidated|Extension context/i.test(message);
     _renderGate(body, {
@@ -1809,6 +1840,20 @@
     ]);
 
     if (pipelinesResult.error) {
+      if (pipelinesResult.error === 'PRO_REQUIRED') {
+        document.querySelector('.lia-hs-modal-body').innerHTML = `
+          <div style="text-align:center;padding:28px 16px;">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.5" style="margin-bottom:12px;filter:drop-shadow(0 0 10px rgba(167,139,250,0.4))"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <div style="font-size:15px;font-weight:700;color:#ffffff;margin-bottom:8px;">Pro Feature</div>
+            <div style="font-size:13px;color:rgba(196,181,253,0.7);margin-bottom:20px;">HubSpot CRM integration is available on the Pro plan.</div>
+            <button class="lia-btn-primary" id="lia-hs-upgrade-btn" style="width:100%">Upgrade to Pro</button>
+          </div>
+        `;
+        document.getElementById('lia-hs-upgrade-btn').addEventListener('click', () => {
+          chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' });
+        });
+        return;
+      }
       document.querySelector('.lia-hs-modal-body').innerHTML = `
         <p class="lia-hs-error">Failed to load pipelines: ${escHtml(pipelinesResult.error)}</p>
         <button class="lia-btn-secondary" id="lia-hs-close-err">Close</button>

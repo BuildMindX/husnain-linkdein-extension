@@ -1394,3 +1394,271 @@ body {
   .form-row { grid-template-columns: 1fr; }
   .mode-selector { grid-template-columns: 1fr; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ONBOARDING OVERLAY
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(7,7,26,0.92);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.onboarding-card {
+  background: linear-gradient(160deg, #1e1e4a 0%, #16163a 60%, #12122e 100%);
+  border: 1px solid rgba(124,58,237,0.25);
+  border-radius: 24px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+  width: 100%;
+  max-width: 860px;
+  padding: 48px 40px;
+  position: relative;
+  overflow: hidden;
+}
+
+.onboarding-card::before {
+  content: '';
+  position: absolute;
+  top: -80px; right: -80px;
+  width: 280px; height: 280px;
+  background: radial-gradient(circle, rgba(124,58,237,0.18) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* ── Steps ──────────────────────────────────────────────────────────────── */
+.ob-step { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.ob-step.hidden { display: none; }
+
+/* ── Welcome step ──────────────────────────────────────────────────────── */
+.ob-logo { margin-bottom: 20px; }
+
+.ob-welcome-title {
+  font-size: 28px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+
+.ob-welcome-sub {
+  font-size: 13px;
+  color: rgba(196,181,253,0.6);
+  margin-bottom: 24px;
+}
+
+.ob-user-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 50px;
+  padding: 8px 16px 8px 8px;
+  margin-bottom: 24px;
+}
+
+.ob-avatar {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(124,58,237,0.4);
+}
+
+.ob-user-info { text-align: left; }
+.ob-user-name { font-size: 13px; font-weight: 700; color: #ffffff; }
+.ob-user-email { font-size: 11.5px; color: rgba(196,181,253,0.65); }
+
+.ob-welcome-desc {
+  font-size: 14px;
+  color: rgba(196,181,253,0.7);
+  line-height: 1.6;
+  max-width: 440px;
+  margin-bottom: 32px;
+}
+
+.ob-btn-primary {
+  background: linear-gradient(135deg, #7c3aed, #4f46e5);
+  color: #fff;
+  border: none;
+  border-radius: 50px;
+  padding: 13px 32px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(124,58,237,0.4);
+  transition: box-shadow 0.2s, transform 0.15s;
+}
+.ob-btn-primary:hover { box-shadow: 0 8px 28px rgba(124,58,237,0.55); transform: translateY(-1px); }
+
+/* ── Pricing step ──────────────────────────────────────────────────────── */
+.ob-pricing-header { margin-bottom: 28px; }
+.ob-pricing-title { font-size: 24px; font-weight: 800; color: #ffffff; margin-bottom: 6px; }
+.ob-pricing-sub { font-size: 13.5px; color: rgba(196,181,253,0.65); }
+
+.ob-plans {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+.ob-plan {
+  border-radius: 18px;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+  text-align: left;
+}
+
+.ob-plan-free {
+  background: rgba(255,255,255,0.04);
+  border: 1.5px solid rgba(255,255,255,0.1);
+}
+
+.ob-plan-pro {
+  background: linear-gradient(145deg, rgba(124,58,237,0.15) 0%, rgba(79,70,229,0.1) 100%);
+  border: 1.5px solid rgba(124,58,237,0.4);
+  box-shadow: 0 0 40px rgba(124,58,237,0.15);
+}
+
+.ob-plan-badge {
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: rgba(255,255,255,0.08);
+  color: rgba(196,181,253,0.7);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
+  padding: 3px 10px;
+  width: fit-content;
+  margin-bottom: 16px;
+}
+
+.ob-badge-pro {
+  background: rgba(124,58,237,0.25) !important;
+  color: #c4b5fd !important;
+  border-color: rgba(124,58,237,0.4) !important;
+}
+
+.ob-popular-tag {
+  position: absolute;
+  top: -1px; right: 20px;
+  background: linear-gradient(135deg, #7c3aed, #4f46e5);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 0 0 10px 10px;
+  letter-spacing: 0.05em;
+}
+
+.ob-plan-price {
+  margin-bottom: 6px;
+}
+.ob-price-amount { font-size: 36px; font-weight: 800; color: #ffffff; }
+.ob-price-period { font-size: 14px; color: rgba(196,181,253,0.6); margin-left: 4px; }
+
+.ob-plan-desc {
+  font-size: 12.5px;
+  color: rgba(196,181,253,0.55);
+  margin-bottom: 20px;
+}
+
+.ob-plan-features {
+  list-style: none;
+  padding: 0; margin: 0 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.ob-plan-features li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: rgba(241,245,249,0.85);
+  line-height: 1.3;
+}
+
+.ob-feat-muted { color: rgba(148,163,184,0.4) !important; }
+.ob-feat-muted svg { opacity: 0.4; }
+
+.ob-btn-free {
+  width: 100%;
+  padding: 11px;
+  border-radius: 50px;
+  background: rgba(255,255,255,0.07);
+  border: 1.5px solid rgba(255,255,255,0.15);
+  color: rgba(241,245,249,0.8);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s, border-color 0.18s;
+  margin-top: auto;
+}
+.ob-btn-free:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.25); }
+
+.ob-btn-pro {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 12px;
+  border-radius: 50px;
+  background: linear-gradient(135deg, #7c3aed, #4f46e5);
+  border: none;
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(124,58,237,0.4);
+  transition: box-shadow 0.18s, transform 0.15s;
+  margin-top: auto;
+}
+.ob-btn-pro:hover { box-shadow: 0 8px 28px rgba(124,58,237,0.55); transform: translateY(-1px); }
+.ob-btn-pro:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+.ob-pro-note {
+  text-align: center;
+  font-size: 11px;
+  margin-top: 8px;
+  min-height: 16px;
+  color: rgba(196,181,253,0.6);
+}
+
+.ob-skip {
+  text-align: center;
+  margin-top: 4px;
+}
+.ob-skip-btn {
+  background: none;
+  border: none;
+  color: rgba(148,163,184,0.5);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(148,163,184,0.25);
+  transition: color 0.15s;
+}
+.ob-skip-btn:hover { color: rgba(196,181,253,0.7); }
+
+@media (max-width: 600px) {
+  .ob-plans { grid-template-columns: 1fr; }
+  .onboarding-card { padding: 32px 20px; }
+  .ob-welcome-title { font-size: 22px; }
+}

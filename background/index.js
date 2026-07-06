@@ -1,5 +1,5 @@
 import { handleGoogleSignIn, handleGoogleSignOut } from './auth.js';
-import { handleStartCheckout } from './billing.js';
+import { checkAndTrackUsage, handleStartCheckout } from './billing.js';
 import {
   handleAnalyzeProfile,
   handleGenerateConnectionRequest,
@@ -13,37 +13,49 @@ import {
 } from './ai.js';
 import { fetchHubSpotPipelines, fetchHubSpotOwners, pushHubSpotDeal } from './hubspot.js';
 
+async function withUsageGate(eventType, fn) {
+  const usage = await checkAndTrackUsage(eventType);
+  if (!usage.allowed) return { error: 'LIMIT_REACHED', limit: usage.limit, used: usage.used };
+  return fn();
+}
+
+async function withProGate(fn) {
+  const { userPlan } = await chrome.storage.local.get('userPlan');
+  if (userPlan !== 'pro') return { error: 'PRO_REQUIRED' };
+  return fn();
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'ANALYZE_PROFILE') {
-    handleAnalyzeProfile(msg.profileData, msg.intent).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withUsageGate('analysis', () => handleAnalyzeProfile(msg.profileData, msg.intent)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'GENERATE_CONNECTION_REQUEST') {
-    handleGenerateConnectionRequest(msg.profileData, msg.intent, msg.userNotes).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withUsageGate('message', () => handleGenerateConnectionRequest(msg.profileData, msg.intent, msg.userNotes)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'GENERATE_COLD_MESSAGE') {
-    handleGenerateColdMessage(msg.profileData, msg.intent, msg.userNotes).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withUsageGate('message', () => handleGenerateColdMessage(msg.profileData, msg.intent, msg.userNotes)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'GENERATE_FIRST_MESSAGE') {
-    handleGenerateFirstMessage(msg.profileData, msg.analysis, msg.intent, msg.tone, msg.userInstructions).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withUsageGate('message', () => handleGenerateFirstMessage(msg.profileData, msg.analysis, msg.intent, msg.tone, msg.userInstructions)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'GENERATE_FOLLOW_UP') {
-    handleGenerateFollowUp(msg.profileData, msg.conversationText, msg.intent).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withUsageGate('message', () => handleGenerateFollowUp(msg.profileData, msg.conversationText, msg.intent)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'FETCH_HUBSPOT_PIPELINES') {
-    fetchHubSpotPipelines().then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withProGate(() => fetchHubSpotPipelines()).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'FETCH_HUBSPOT_OWNERS') {
-    fetchHubSpotOwners().then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withProGate(() => fetchHubSpotOwners()).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'PUSH_TO_HUBSPOT') {
-    pushHubSpotDeal(msg).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withProGate(() => pushHubSpotDeal(msg)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'OPEN_OPTIONS_PAGE') {
@@ -59,19 +71,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === 'SUGGEST_POST_TOPICS') {
-    handleSuggestPostTopics(msg.creatorProfile, msg.recentPosts, msg.mode, msg.companyProfile).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withUsageGate('post', () => handleSuggestPostTopics(msg.creatorProfile, msg.recentPosts, msg.mode, msg.companyProfile)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'GENERATE_POST') {
-    handleGeneratePost(msg).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withUsageGate('post', () => handleGeneratePost(msg)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'GENERATE_POST_IMAGE') {
-    handleGeneratePostImage(msg.prompt).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withProGate(() => handleGeneratePostImage(msg.prompt)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'REFINE_MESSAGE') {
-    handleRefineMessage(msg.originalMessage, msg.profileData, msg.analysis, msg.intent, msg.tone, msg.instructions).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withUsageGate('message', () => handleRefineMessage(msg.originalMessage, msg.profileData, msg.analysis, msg.intent, msg.tone, msg.instructions)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'GOOGLE_SIGN_IN') {

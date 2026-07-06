@@ -7,6 +7,74 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- ── Onboarding Overlay (shown for new users) ──────────────────────────── -->
+  <div id="onboarding-overlay" class="onboarding-overlay" style="display:none;">
+    <div class="onboarding-card">
+
+      <!-- Step 1: Welcome -->
+      <div class="ob-step" id="ob-step-welcome">
+        <div class="ob-logo">
+          <img src="../assets/extension_icon.png" width="56" height="56" alt="LinkPilot AI" style="border-radius:14px;display:block;" />
+        </div>
+        <div class="ob-welcome-title">Welcome to LinkPilot AI</div>
+        <div class="ob-welcome-sub">by Satyron Private Limited</div>
+        <div class="ob-user-row" id="ob-user-row"></div>
+        <div class="ob-welcome-desc">AI-powered LinkedIn intelligence for B2B sales, freelancing, and job search. Let's get you set up.</div>
+        <button class="ob-btn-primary" id="ob-welcome-next">See Plans &amp; Pricing →</button>
+      </div>
+
+      <!-- Step 2: Pricing -->
+      <div class="ob-step hidden" id="ob-step-pricing">
+        <div class="ob-pricing-header">
+          <div class="ob-pricing-title">Choose your plan</div>
+          <div class="ob-pricing-sub">Start free, upgrade when you need more.</div>
+        </div>
+        <div class="ob-plans">
+
+          <!-- Free -->
+          <div class="ob-plan ob-plan-free">
+            <div class="ob-plan-badge">Free</div>
+            <div class="ob-plan-price"><span class="ob-price-amount">$0</span><span class="ob-price-period">/month</span></div>
+            <div class="ob-plan-desc">Perfect for getting started</div>
+            <ul class="ob-plan-features">
+              <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>50 AI analyses per month</li>
+              <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>All outreach modes (B2B, Freelance, Job)</li>
+              <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>AI post creator</li>
+              <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Connection &amp; follow-up messages</li>
+              <li class="ob-feat-muted"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(148,163,184,0.4)" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>HubSpot CRM integration</li>
+              <li class="ob-feat-muted"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(148,163,184,0.4)" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Unlimited analyses</li>
+            </ul>
+            <button class="ob-btn-free" id="ob-start-free">Start Free</button>
+          </div>
+
+          <!-- Pro -->
+          <div class="ob-plan ob-plan-pro">
+            <div class="ob-plan-badge ob-badge-pro">Pro</div>
+            <div class="ob-popular-tag">Most Popular</div>
+            <div class="ob-plan-price"><span class="ob-price-amount">$29</span><span class="ob-price-period">/month</span></div>
+            <div class="ob-plan-desc">For power users &amp; sales teams</div>
+            <ul class="ob-plan-features">
+              <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Unlimited AI analyses</li>
+              <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>All outreach modes (B2B, Freelance, Job)</li>
+              <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>AI post creator + image generation</li>
+              <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>HubSpot CRM push</li>
+              <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Priority AI (faster responses)</li>
+              <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Early access to new features</li>
+            </ul>
+            <button class="ob-btn-pro" id="ob-start-pro">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              Upgrade to Pro
+            </button>
+            <div class="ob-pro-note" id="ob-pro-status"></div>
+          </div>
+
+        </div>
+        <div class="ob-skip"><button class="ob-skip-btn" id="ob-skip">Maybe later — continue with free</button></div>
+      </div>
+
+    </div>
+  </div>
+
   <div class="settings-root">
 
     <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->

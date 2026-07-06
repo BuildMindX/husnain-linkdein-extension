@@ -1,20 +1,24 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
-// Fire-and-forget — never blocks the main action
-export async function trackUsage(eventType, metadata = {}) {
+// Check limit AND record usage atomically. Returns { allowed, limit, used } or { allowed: true } on error (fail open).
+export async function checkAndTrackUsage(eventType, metadata = {}) {
   try {
     const authResult = await chrome.identity.getAuthToken({ interactive: false });
     const token = typeof authResult === 'string' ? authResult : authResult?.token;
-    if (!token) return;
-    fetch(`${SUPABASE_URL}/functions/v1/track-usage`, {
+    if (!token) return { allowed: true };
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/track-usage`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
       },
       body: JSON.stringify({ googleToken: token, eventType, metadata }),
-    }).catch(() => {});
-  } catch (_) {}
+    });
+    if (!resp.ok) return { allowed: true };
+    return await resp.json();
+  } catch (_) {
+    return { allowed: true };
+  }
 }
 
 export async function handleStartCheckout() {

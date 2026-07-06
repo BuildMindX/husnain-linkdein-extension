@@ -1,3 +1,68 @@
+// ── Onboarding flow ───────────────────────────────────────────────────────────
+function showOnboarding(googleUser) {
+  const overlay = document.getElementById('onboarding-overlay');
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+
+  // Populate user row
+  const userRow = document.getElementById('ob-user-row');
+  if (userRow && googleUser) {
+    userRow.innerHTML = `
+      ${googleUser.picture ? `<img src="${googleUser.picture}" width="40" height="40" alt="" class="ob-avatar" />` : ''}
+      <div class="ob-user-info">
+        <div class="ob-user-name">${googleUser.name || ''}</div>
+        <div class="ob-user-email">${googleUser.email || ''}</div>
+      </div>
+    `;
+  }
+
+  // Step navigation
+  document.getElementById('ob-welcome-next').addEventListener('click', () => {
+    document.getElementById('ob-step-welcome').classList.add('hidden');
+    document.getElementById('ob-step-pricing').classList.remove('hidden');
+  });
+
+  // Start Free
+  document.getElementById('ob-start-free').addEventListener('click', () => {
+    chrome.storage.local.remove('pendingOnboarding');
+    overlay.style.display = 'none';
+    switchTab('account');
+  });
+
+  // Skip
+  document.getElementById('ob-skip').addEventListener('click', () => {
+    chrome.storage.local.remove('pendingOnboarding');
+    overlay.style.display = 'none';
+    switchTab('account');
+  });
+
+  // Upgrade to Pro
+  document.getElementById('ob-start-pro').addEventListener('click', () => {
+    const btn = document.getElementById('ob-start-pro');
+    const status = document.getElementById('ob-pro-status');
+    btn.disabled = true;
+    btn.textContent = 'Opening checkout…';
+    status.textContent = '';
+    chrome.runtime.sendMessage({ type: 'START_CHECKOUT' }, res => {
+      if (res?.url) {
+        chrome.storage.local.remove('pendingOnboarding');
+        chrome.tabs.create({ url: res.url });
+        overlay.style.display = 'none';
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Upgrade to Pro`;
+        status.textContent = res?.error || 'Something went wrong. Try again.';
+        status.style.color = '#f87171';
+      }
+    });
+  });
+}
+
+// Check for pending onboarding on page load
+chrome.storage.local.get(['pendingOnboarding', 'googleUser'], r => {
+  if (r.pendingOnboarding) showOnboarding(r.googleUser || null);
+});
+
 // ── Auth State ────────────────────────────────────────────────────────────────
 let _signedIn = false;
 

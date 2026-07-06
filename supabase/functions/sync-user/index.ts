@@ -27,6 +27,15 @@ Deno.serve(async (req: Request) => {
       { auth: { persistSession: false } }
     )
 
+    // Check if user already exists to detect first-time sign-up
+    const { data: existing } = await supabase
+      .from('users')
+      .select('id')
+      .eq('google_id', g.id)
+      .maybeSingle()
+
+    const isNew = !existing
+
     // Upsert: create on first sign-in, update last_seen on subsequent ones
     const { data: user, error } = await supabase
       .from('users')
@@ -45,7 +54,7 @@ Deno.serve(async (req: Request) => {
 
     if (error) return json({ error: error.message }, 500)
 
-    return json({ user })
+    return json({ user, isNew })
   } catch (err) {
     return json({ error: (err as Error).message }, 500)
   }

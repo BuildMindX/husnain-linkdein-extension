@@ -13,6 +13,7 @@ export async function handleGoogleSignIn() {
 
   let plan = 'free';
   let supabaseUserId = null;
+  let isNew = false;
   try {
     const syncResp = await fetch(`${SUPABASE_URL}/functions/v1/sync-user`, {
       method: 'POST',
@@ -23,14 +24,17 @@ export async function handleGoogleSignIn() {
       body: JSON.stringify({ googleToken: token }),
     });
     if (syncResp.ok) {
-      const { user: sbUser } = await syncResp.json();
-      plan = sbUser?.plan || 'free';
-      supabaseUserId = sbUser?.id || null;
+      const data = await syncResp.json();
+      plan = data.user?.plan || 'free';
+      supabaseUserId = data.user?.id || null;
+      isNew = !!data.isNew;
     }
   } catch (_) { /* Supabase unavailable — continue offline */ }
 
-  await chrome.storage.local.set({ googleUser, userPlan: plan, supabaseUserId });
-  return { success: true, user: googleUser, plan };
+  const storagePayload = { googleUser, userPlan: plan, supabaseUserId };
+  if (isNew) storagePayload.pendingOnboarding = true;
+  await chrome.storage.local.set(storagePayload);
+  return { success: true, user: googleUser, plan, isNew };
 }
 
 export async function handleGoogleSignOut() {
