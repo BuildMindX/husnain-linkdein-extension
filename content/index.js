@@ -555,6 +555,7 @@
       chrome.runtime.sendMessage({ type: 'GENERATE_POST_IMAGE', prompt }, resolve);
     });
     if (result?.error) {
+      if (result.error === 'PRO_REQUIRED') { renderPcLimitReached(); return; }
       const msg = result.error === 'NO_API_KEY'
         ? 'No API key found. Add your OpenAI key in Settings → Step 3.'
         : result.error;

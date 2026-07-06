@@ -98,4 +98,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     handleStartCheckout().then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
     return true;
   }
+  if (msg.type === 'SYNC_PLAN') {
+    (async () => {
+      try {
+        const authResult = await chrome.identity.getAuthToken({ interactive: false });
+        const token = typeof authResult === 'string' ? authResult : authResult?.token;
+        if (!token) { sendResponse({ plan: 'free' }); return; }
+        const { SUPABASE_URL, SUPABASE_ANON_KEY } = await import('./config.js');
+        const resp = await fetch(`${SUPABASE_URL}/functions/v1/sync-user`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+          body: JSON.stringify({ googleToken: token }),
+        });
+        if (!resp.ok) { sendResponse({ plan: 'free' }); return; }
+        const data = await resp.json();
+        const plan = data.user?.plan || 'free';
+        await chrome.storage.local.set({ userPlan: plan });
+        sendResponse({ plan });
+      } catch (_) { sendResponse({ plan: 'free' }); }
+    })();
+    return true;
+  }
 });

@@ -6,9 +6,9 @@ const corsHeaders = {
 }
 
 const FREE_LIMITS: Record<string, number> = {
-  analysis: 20,
-  message:  30,
-  post:     15,
+  analysis: 50,
+  message:  50,
+  post:     50,
 }
 
 Deno.serve(async (req: Request) => {

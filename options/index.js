@@ -591,7 +591,16 @@ function handleUpgrade() {
   });
 }
 
-chrome.storage.local.get(['googleUser', 'userPlan'], r => renderAccountTab(r.googleUser || null, r.userPlan || 'free'));
+chrome.storage.local.get(['googleUser', 'userPlan'], r => {
+  renderAccountTab(r.googleUser || null, r.userPlan || 'free');
+  if (r.googleUser) {
+    chrome.runtime.sendMessage({ type: 'SYNC_PLAN' }, res => {
+      if (res?.plan && res.plan !== (r.userPlan || 'free')) {
+        renderAccountTab(r.googleUser, res.plan);
+      }
+    });
+  }
+});
 
 // ── Clear All Data ────────────────────────────────────────────────────────────
 document.getElementById('clear-all-data-btn')?.addEventListener('click', () => {
