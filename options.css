@@ -197,7 +197,6 @@ body {
   padding: 48px 60px 80px;
   min-width: 0;
   width: 0;
-  max-width: 960px; /* readable line length on very wide screens */
 }
 
 .stab-panel { display: block; }
