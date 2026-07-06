@@ -1,5 +1,4 @@
 import { OPENAI_API_URL, OPENAI_MODEL } from './config.js';
-import { trackUsage } from './billing.js';
 
 // ─── Storage Helpers ──────────────────────────────────────────────────────────
 
@@ -202,7 +201,6 @@ async function callAI(systemPrompt, userPrompt) {
 // ─── Profile Analysis ─────────────────────────────────────────────────────────
 
 export async function handleAnalyzeProfile(profileData, intent) {
-  trackUsage('analysis', { intent, name: profileData?.name || '' });
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
   const cfg = (!isJobSearch) ? await getSalesConfig() : null;
@@ -553,7 +551,6 @@ Return ONLY the message text. Nothing else. No quotes around it.`;
 // ─── First Message ────────────────────────────────────────────────────────────
 
 export async function handleGenerateFirstMessage(profileData, analysis, intent, tone, userInstructions) {
-  trackUsage('message', { intent, tone });
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
