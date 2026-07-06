@@ -252,8 +252,8 @@ body {
   background: var(--bg-secondary);
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
-  padding: 24px 26px;
-  margin-bottom: 14px;
+  padding: 28px 30px;
+  margin-bottom: 18px;
   box-shadow: var(--shadow-card);
   transition: box-shadow 0.2s, border-color 0.2s;
 }
@@ -391,16 +391,17 @@ body {
 .mode-card.active::before { opacity: 1; }
 
 .mode-card-icon {
-  width: 42px; height: 42px;
-  border-radius: 11px;
+  width: 38px; height: 38px;
+  border-radius: 10px;
   background: var(--bg-hover);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 13px;
+  margin-bottom: 14px;
   color: var(--text-secondary);
   transition: all 0.2s;
   border: 1px solid var(--border-dim);
+  flex-shrink: 0;
 }
 
 .mode-card.active .mode-card-icon {
@@ -410,22 +411,25 @@ body {
   box-shadow: 0 0 16px var(--purple-glow);
 }
 
-.mode-card-body {}
+.mode-card-body { width: 100%; }
 
 .mode-card-name {
+  display: block;
   font-size: 13px;
   font-weight: 700;
   color: var(--text-primary);
-  margin-bottom: 5px;
+  margin-bottom: 6px;
   letter-spacing: -0.1px;
+  line-height: 1.3;
 }
 
 .mode-card.active .mode-card-name { color: var(--purple-pale); }
 
 .mode-card-tagline {
+  display: block;
   font-size: 11.5px;
   color: var(--text-secondary);
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
 .mode-card.active .mode-card-tagline { color: rgba(196,181,253,0.65); }
@@ -579,7 +583,7 @@ body {
 /* ══════════════════════════════════════════════════════════════════════════════
    FORMS
    ══════════════════════════════════════════════════════════════════════════════ */
-.form-group { margin-bottom: 18px; }
+.form-group { margin-bottom: 22px; }
 
 .form-group label {
   display: block;
@@ -827,13 +831,45 @@ body {
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.6;
+  cursor: pointer;
+  user-select: none;
 }
 
 .checkbox-row input[type="checkbox"] {
-  margin-top: 3px;
-  width: 15px; height: 15px;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 17px; height: 17px;
+  min-width: 17px;
+  border-radius: 5px;
+  border: 1.5px solid var(--border-medium);
+  background: var(--bg-input);
   cursor: pointer;
-  accent-color: var(--purple);
+  margin-top: 2px;
+  position: relative;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.checkbox-row input[type="checkbox"]:hover {
+  border-color: var(--purple-border);
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.1);
+}
+
+.checkbox-row input[type="checkbox"]:checked {
+  background: linear-gradient(135deg, var(--purple), var(--indigo));
+  border-color: var(--purple);
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.15), 0 2px 8px rgba(124,58,237,0.3);
+}
+
+.checkbox-row input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 4px; top: 1px;
+  width: 6px; height: 10px;
+  border: 2px solid #fff;
+  border-top: none;
+  border-left: none;
+  transform: rotate(45deg);
 }
 
 /* ── Status messages ───────────────────────────────────────────────────────── */

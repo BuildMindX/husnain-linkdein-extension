@@ -108,7 +108,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 async function handleGoogleSignIn() {
-  const token = await chrome.identity.getAuthToken({ interactive: true });
+  const authResult = await chrome.identity.getAuthToken({ interactive: true });
+  const token = typeof authResult === 'string' ? authResult : authResult?.token;
   if (!token) throw new Error('Authentication cancelled.');
   const resp = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
     headers: { Authorization: `Bearer ${token}` },
@@ -141,7 +142,8 @@ async function handleGoogleSignIn() {
 
 async function handleGoogleSignOut() {
   try {
-    const tokenResult = await chrome.identity.getAuthToken({ interactive: false });
+    const authResult = await chrome.identity.getAuthToken({ interactive: false });
+    const tokenResult = typeof authResult === 'string' ? authResult : authResult?.token;
     if (tokenResult) await chrome.identity.removeCachedAuthToken({ token: tokenResult });
   } catch (_) { /* token may already be expired */ }
   await chrome.storage.local.remove(['googleUser', 'userPlan', 'supabaseUserId']);
@@ -151,7 +153,8 @@ async function handleGoogleSignOut() {
 // Fire-and-forget — never blocks the main action
 async function trackUsage(eventType, metadata = {}) {
   try {
-    const token = await chrome.identity.getAuthToken({ interactive: false });
+    const authResult = await chrome.identity.getAuthToken({ interactive: false });
+    const token = typeof authResult === 'string' ? authResult : authResult?.token;
     if (!token) return; // not signed in — skip silently
     fetch(`${SUPABASE_URL}/functions/v1/track-usage`, {
       method: 'POST',
@@ -165,7 +168,8 @@ async function trackUsage(eventType, metadata = {}) {
 }
 
 async function handleStartCheckout() {
-  const token = await chrome.identity.getAuthToken({ interactive: true });
+  const authResult = await chrome.identity.getAuthToken({ interactive: true });
+  const token = typeof authResult === 'string' ? authResult : authResult?.token;
   if (!token) throw new Error('Sign in first to upgrade.');
   const resp = await fetch(`${SUPABASE_URL}/functions/v1/create-checkout`, {
     method: 'POST',
