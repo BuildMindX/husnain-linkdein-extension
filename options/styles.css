@@ -181,6 +181,12 @@ body {
 
 .snav-item.active svg { opacity: 1; color: var(--purple-pale); }
 
+.snav-item.nav-locked {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .sidebar-version {
   padding: 10px 16px 16px;
   font-size: 10px;

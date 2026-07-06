@@ -583,6 +583,8 @@
     }
     createPanel();
     togglePanel(true);
+    const isAuthed = await checkGoogleAuth();
+    if (!isAuthed) { renderSignInRequired(); return; }
     renderPurposePicker();
   }
 
@@ -2105,6 +2107,37 @@
       } catch (e) {
         reject(new Error('Extension context invalidated — please refresh the page.'));
       }
+    });
+  }
+
+  async function checkGoogleAuth() {
+    return new Promise(resolve => {
+      try {
+        chrome.storage.local.get('googleUser', r => resolve(!!r.googleUser));
+      } catch (e) {
+        resolve(false);
+      }
+    });
+  }
+
+  function renderSignInRequired() {
+    const body = document.getElementById('lia-body');
+    if (!body) return;
+    const tabs = panel?.querySelector('.lia-tabs');
+    if (tabs) tabs.style.display = 'none';
+    body.innerHTML = `
+      <div class="lia-empty">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="1.5">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+        <h3>Sign in Required</h3>
+        <p>Sign in with Google in the extension settings to use LinkPilot AI.</p>
+        <button class="lia-btn-primary" id="lia-open-settings-auth">Open Settings</button>
+      </div>
+    `;
+    body.querySelector('#lia-open-settings-auth').addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' });
     });
   }
 

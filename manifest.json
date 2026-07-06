@@ -16,32 +16,33 @@
     "https://hokgbtrptddjgwgvvhrb.supabase.co/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background/index.js",
+    "type": "module"
   },
   "content_scripts": [
     {
       "matches": ["https://www.linkedin.com/in/*"],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "js": ["content/index.js"],
+      "css": ["content/styles.css"],
       "run_at": "document_idle"
     }
   ],
   "options_ui": {
-    "page": "options.html",
+    "page": "options/index.html",
     "open_in_tab": true
   },
   "action": {
     "default_title": "LinkPilot AI",
-    "default_popup": "popup.html",
+    "default_popup": "popup/index.html",
     "default_icon": {
-      "16": "extension_icon.png",
-      "48": "extension_icon.png",
-      "128": "extension_icon.png"
+      "16": "assets/extension_icon.png",
+      "48": "assets/extension_icon.png",
+      "128": "assets/extension_icon.png"
     }
   },
   "icons": {
-    "16": "extension_icon.png",
-    "48": "extension_icon.png",
-    "128": "extension_icon.png"
+    "16": "assets/extension_icon.png",
+    "48": "assets/extension_icon.png",
+    "128": "assets/extension_icon.png"
   }
 }

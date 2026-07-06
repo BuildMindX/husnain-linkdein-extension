@@ -1,10 +1,35 @@
+// ── Auth State ────────────────────────────────────────────────────────────────
+let _signedIn = false;
+
+function setAuthState(signedIn) {
+  _signedIn = signedIn;
+  // Lock/unlock nav items
+  document.querySelectorAll('.snav-item').forEach(btn => {
+    const isAccount = btn.dataset.tab === 'account';
+    btn.classList.toggle('nav-locked', !signedIn && !isAccount);
+  });
+  if (!signedIn) switchTab('account');
+}
+
 // ── Tab Navigation ────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.snav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.stab-panel').forEach(p => p.classList.toggle('hidden', p.id !== `panel-${tab}`));
+}
+
 document.querySelectorAll('.snav-item').forEach(btn => {
   btn.addEventListener('click', () => {
-    const tab = btn.dataset.tab;
-    document.querySelectorAll('.snav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-    document.querySelectorAll('.stab-panel').forEach(p => p.classList.toggle('hidden', p.id !== `panel-${tab}`));
+    if (!_signedIn && btn.dataset.tab !== 'account') return;
+    switchTab(btn.dataset.tab);
   });
+});
+
+// ── Auth Gate: check on load and react to sign-in/sign-out in real time ───────
+chrome.storage.local.get('googleUser', r => setAuthState(!!r.googleUser));
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !('googleUser' in changes)) return;
+  setAuthState(!!changes.googleUser.newValue);
 });
 
 // ── Post Creator: Personal / Company toggle ───────────────────────────────────

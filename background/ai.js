@@ -1,188 +1,7 @@
-const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
-const OPENAI_MODEL = 'gpt-4o-mini';
+import { OPENAI_API_URL, OPENAI_MODEL } from './config.js';
+import { trackUsage } from './billing.js';
 
-const SUPABASE_URL      = 'https://hokgbtrptddjgwgvvhrb.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_AAxP-tTi-9GMyfQxSpmC0A_NOlYt03T';
-
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'ANALYZE_PROFILE') {
-    handleAnalyzeProfile(msg.profileData, msg.intent).then(sendResponse).catch(err => {
-      sendResponse({ error: err.message });
-    });
-    return true;
-  }
-  if (msg.type === 'GENERATE_CONNECTION_REQUEST') {
-    handleGenerateConnectionRequest(msg.profileData, msg.intent, msg.userNotes).then(sendResponse).catch(err => {
-      sendResponse({ error: err.message });
-    });
-    return true;
-  }
-  if (msg.type === 'GENERATE_COLD_MESSAGE') {
-    handleGenerateColdMessage(msg.profileData, msg.intent, msg.userNotes).then(sendResponse).catch(err => {
-      sendResponse({ error: err.message });
-    });
-    return true;
-  }
-  if (msg.type === 'GENERATE_FIRST_MESSAGE') {
-    handleGenerateFirstMessage(msg.profileData, msg.analysis, msg.intent, msg.tone, msg.userInstructions).then(sendResponse).catch(err => {
-      sendResponse({ error: err.message });
-    });
-    return true;
-  }
-  if (msg.type === 'GENERATE_FOLLOW_UP') {
-    handleGenerateFollowUp(msg.profileData, msg.conversationText, msg.intent).then(sendResponse).catch(err => {
-      sendResponse({ error: err.message });
-    });
-    return true;
-  }
-  if (msg.type === 'FETCH_HUBSPOT_PIPELINES') {
-    fetchHubSpotPipelines().then(sendResponse).catch(err => {
-      sendResponse({ error: err.message });
-    });
-    return true;
-  }
-  if (msg.type === 'FETCH_HUBSPOT_OWNERS') {
-    fetchHubSpotOwners().then(sendResponse).catch(err => {
-      sendResponse({ error: err.message });
-    });
-    return true;
-  }
-  if (msg.type === 'PUSH_TO_HUBSPOT') {
-    pushHubSpotDeal(msg).then(sendResponse).catch(err => {
-      sendResponse({ error: err.message });
-    });
-    return true;
-  }
-  if (msg.type === 'OPEN_OPTIONS_PAGE') {
-    chrome.runtime.openOptionsPage();
-    return false;
-  }
-  if (msg.type === 'GET_API_KEY_STATUS') {
-    chrome.storage.local.get('openaiApiKey').then(result => {
-      sendResponse({ hasKey: !!result.openaiApiKey });
-    });
-    return true;
-  }
-  if (msg.type === 'GET_HS_KEY_STATUS') {
-    chrome.storage.local.get('hubspotApiKey').then(result => {
-      sendResponse({ hasKey: !!result.hubspotApiKey });
-    });
-    return true;
-  }
-  if (msg.type === 'SUGGEST_POST_TOPICS') {
-    handleSuggestPostTopics(msg.creatorProfile, msg.recentPosts, msg.mode, msg.companyProfile).then(sendResponse).catch(err => {
-      sendResponse({ error: err.message });
-    });
-    return true;
-  }
-  if (msg.type === 'GENERATE_POST') {
-    handleGeneratePost(msg).then(sendResponse).catch(err => {
-      sendResponse({ error: err.message });
-    });
-    return true;
-  }
-  if (msg.type === 'GENERATE_POST_IMAGE') {
-    handleGeneratePostImage(msg.prompt).then(sendResponse).catch(err => {
-      sendResponse({ error: err.message });
-    });
-    return true;
-  }
-  if (msg.type === 'REFINE_MESSAGE') {
-    handleRefineMessage(msg.originalMessage, msg.profileData, msg.analysis, msg.intent, msg.tone, msg.instructions).then(sendResponse).catch(err => {
-      sendResponse({ error: err.message });
-    });
-    return true;
-  }
-  if (msg.type === 'GOOGLE_SIGN_IN') {
-    handleGoogleSignIn().then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
-    return true;
-  }
-  if (msg.type === 'GOOGLE_SIGN_OUT') {
-    handleGoogleSignOut().then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
-    return true;
-  }
-  if (msg.type === 'START_CHECKOUT') {
-    handleStartCheckout().then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
-    return true;
-  }
-});
-
-async function handleGoogleSignIn() {
-  const authResult = await chrome.identity.getAuthToken({ interactive: true });
-  const token = typeof authResult === 'string' ? authResult : authResult?.token;
-  if (!token) throw new Error('Authentication cancelled.');
-  const resp = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!resp.ok) throw new Error('Failed to fetch Google profile.');
-  const googleUser = await resp.json();
-
-  // Sync to Supabase — creates or updates user row
-  let plan = 'free';
-  let supabaseUserId = null;
-  try {
-    const syncResp = await fetch(`${SUPABASE_URL}/functions/v1/sync-user`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify({ googleToken: token }),
-    });
-    if (syncResp.ok) {
-      const { user: sbUser } = await syncResp.json();
-      plan = sbUser?.plan || 'free';
-      supabaseUserId = sbUser?.id || null;
-    }
-  } catch (_) { /* Supabase unavailable — continue offline */ }
-
-  await chrome.storage.local.set({ googleUser, userPlan: plan, supabaseUserId });
-  return { success: true, user: googleUser, plan };
-}
-
-async function handleGoogleSignOut() {
-  try {
-    const authResult = await chrome.identity.getAuthToken({ interactive: false });
-    const tokenResult = typeof authResult === 'string' ? authResult : authResult?.token;
-    if (tokenResult) await chrome.identity.removeCachedAuthToken({ token: tokenResult });
-  } catch (_) { /* token may already be expired */ }
-  await chrome.storage.local.remove(['googleUser', 'userPlan', 'supabaseUserId']);
-  return { success: true };
-}
-
-// Fire-and-forget — never blocks the main action
-async function trackUsage(eventType, metadata = {}) {
-  try {
-    const authResult = await chrome.identity.getAuthToken({ interactive: false });
-    const token = typeof authResult === 'string' ? authResult : authResult?.token;
-    if (!token) return; // not signed in — skip silently
-    fetch(`${SUPABASE_URL}/functions/v1/track-usage`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify({ googleToken: token, eventType, metadata }),
-    }).catch(() => {});
-  } catch (_) {}
-}
-
-async function handleStartCheckout() {
-  const authResult = await chrome.identity.getAuthToken({ interactive: true });
-  const token = typeof authResult === 'string' ? authResult : authResult?.token;
-  if (!token) throw new Error('Sign in first to upgrade.');
-  const resp = await fetch(`${SUPABASE_URL}/functions/v1/create-checkout`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-    },
-    body: JSON.stringify({ googleToken: token }),
-  });
-  const data = await resp.json();
-  if (!resp.ok || data.error) throw new Error(data.error || 'Checkout failed.');
-  return { url: data.url };
-}
+// ─── Storage Helpers ──────────────────────────────────────────────────────────
 
 async function getApiKey() {
   const result = await chrome.storage.local.get('openaiApiKey');
@@ -190,7 +9,6 @@ async function getApiKey() {
   return result.openaiApiKey;
 }
 
-// ─── Sales / ICP config ───────────────────────────────────────────────────────
 const DEFAULT_EXCLUDES = ['Tech service providers', 'IT outsourcing / staffing', 'Digital / marketing agencies'];
 
 async function getSalesConfig() {
@@ -203,6 +21,18 @@ async function getSalesConfig() {
   };
 }
 
+async function getB2cProfile() {
+  const r = await chrome.storage.local.get('b2cProfile');
+  return r.b2cProfile || {};
+}
+
+async function getJobProfile() {
+  const r = await chrome.storage.local.get('jobProfile');
+  return r.jobProfile || {};
+}
+
+// ─── Context Builders ─────────────────────────────────────────────────────────
+
 function buildIcpContext(cfg, mode = 'b2b') {
   const lines = ['--- YOUR IDEAL CUSTOMER PROFILE (use this to judge fit) ---'];
   const fallback = mode === 'b2c'
@@ -214,7 +44,6 @@ function buildIcpContext(cfg, mode = 'b2b') {
   lines.push(cfg.excludes.length
     ? `EXCLUDED INDUSTRIES (poor fit — set "excluded": true and level "Poor" if their company matches any of these): ${cfg.excludes.join(', ')}`
     : 'EXCLUDED INDUSTRIES: none.');
-
   const b = cfg.business || {};
   const biz = [];
   if (b.offer) biz.push(`What we offer: ${b.offer}`);
@@ -250,11 +79,6 @@ function buildMessageStyle(cfg) {
   return lines.join('\n');
 }
 
-async function getB2cProfile() {
-  const r = await chrome.storage.local.get('b2cProfile');
-  return r.b2cProfile || {};
-}
-
 function buildB2cContext(p) {
   const lines = ['--- YOUR PERSONAL PROFILE (use this to personalise analysis and messaging) ---'];
   if (p.expertise) lines.push(`Your expertise / domain: ${p.expertise}`);
@@ -264,11 +88,6 @@ function buildB2cContext(p) {
   if (p.valueProp) lines.push(`Your unique angle / USP: ${p.valueProp}`);
   if (p.senderName) lines.push(`Your name: ${p.senderName}`);
   return lines.join('\n');
-}
-
-async function getJobProfile() {
-  const r = await chrome.storage.local.get('jobProfile');
-  return r.jobProfile || {};
 }
 
 function buildJobContext(p) {
@@ -283,9 +102,80 @@ function buildJobContext(p) {
   return lines.join('\n');
 }
 
+function buildAnalysisContext(analysis, intent) {
+  const lines = ['--- PROFILE ANALYSIS (use these insights to craft a personalized message) ---'];
+  if (intent === 'b2b_sales') {
+    if (analysis.potentialClient?.score) lines.push(`Prospect Score: ${analysis.potentialClient.score}`);
+    if (analysis.potentialClient?.reasoning) lines.push(`Score reasoning: ${analysis.potentialClient.reasoning}`);
+    if (analysis.decisionMaker) lines.push(`Decision Maker: ${analysis.decisionMaker}`);
+    if (analysis.industryFit?.level) lines.push(`Industry Fit: ${analysis.industryFit.level} — ${analysis.industryFit.reasoning || ''}`);
+    if (analysis.companySize) lines.push(`Company Size: ${analysis.companySize}`);
+  } else if (intent === 'b2c_sales') {
+    if (analysis.clientPotential?.score) lines.push(`Client Potential: ${analysis.clientPotential.score}`);
+    if (analysis.clientPotential?.reasoning) lines.push(`Reasoning: ${analysis.clientPotential.reasoning}`);
+    if (analysis.decisionMaker) lines.push(`Decision Maker: ${analysis.decisionMaker}`);
+    if ((analysis.painPoints || []).length) lines.push(`Pain Points:\n${analysis.painPoints.map(p => `  - ${p}`).join('\n')}`);
+    if (analysis.approachAngle) lines.push(`Recommended Approach: ${analysis.approachAngle}`);
+  } else if (intent === 'job_search') {
+    if (analysis.hiringSignal?.score) lines.push(`Hiring Signal: ${analysis.hiringSignal.score}`);
+    if (analysis.hiringSignal?.reasoning) lines.push(`Hiring reasoning: ${analysis.hiringSignal.reasoning}`);
+    if (analysis.isRecruiter) lines.push(`Is Recruiter: ${analysis.isRecruiter}`);
+    if (analysis.companyName) lines.push(`Company: ${analysis.companyName}`);
+  }
+  if (analysis.industry) lines.push(`Industry: ${analysis.industry}`);
+  if (analysis.recentActivity) lines.push(`Recent Activity: ${analysis.recentActivity}`);
+  if ((analysis.keyInsights || []).length) lines.push(`Key Insights:\n${analysis.keyInsights.map(i => `  - ${i}`).join('\n')}`);
+  if ((analysis.summaryPoints || []).length) lines.push(`Profile Facts:\n${analysis.summaryPoints.slice(0, 3).map(p => `  - ${p}`).join('\n')}`);
+  return lines.join('\n');
+}
+
+function buildProfileText(p, userNotes) {
+  const lines = [];
+  if (p.name) lines.push(`Name: ${p.name}`);
+  if (p.headline) lines.push(`Headline: ${p.headline}`);
+  if (p.location) lines.push(`Location: ${p.location}`);
+  if (p.connections) lines.push(`Connections: ${p.connections}`);
+  if (p.followers) lines.push(`Followers: ${p.followers}`);
+  if (p.experience?.length) {
+    lines.push('\nExperience:');
+    p.experience.forEach((e, i) => {
+      const label = i === 0 ? '  [CURRENT ROLE] ' : '  [PREVIOUS] ';
+      lines.push(`${label}${e.title} at ${e.company}${e.duration ? ` (${e.duration})` : ''}${e.description ? `: ${e.description.slice(0, 200)}` : ''}`);
+    });
+  }
+  if (p.education?.length) {
+    lines.push('\nEducation:');
+    p.education.forEach(e => {
+      lines.push(`  - ${e.school}${e.degree ? `, ${e.degree}` : ''}`);
+    });
+  }
+  if (p.skills?.length) {
+    lines.push(`\nSkills: ${p.skills.slice(0, 10).join(', ')}`);
+  }
+  if (p.posts?.length) {
+    lines.push('\nRecent Posts/Activity (only use if relevant to CURRENT ROLE):');
+    p.posts.slice(0, 3).forEach((post, i) => {
+      lines.push(`  Post ${i + 1}: ${post.slice(0, 300)}`);
+    });
+  }
+  if (p.rawText && lines.length < 4) {
+    lines.push('\nRaw profile text (extract all details from this):');
+    lines.push(p.rawText.slice(0, 3000));
+  } else if (p.rawText) {
+    lines.push('\nAdditional raw profile text:');
+    lines.push(p.rawText.slice(0, 1500));
+  }
+  if (userNotes && userNotes.trim()) {
+    lines.push('\n--- User notes (prioritize these when crafting the message) ---');
+    lines.push(userNotes.trim());
+  }
+  return lines.join('\n');
+}
+
+// ─── Core AI Call ─────────────────────────────────────────────────────────────
+
 async function callAI(systemPrompt, userPrompt) {
   const apiKey = await getApiKey();
-
   const response = await fetch(OPENAI_API_URL, {
     method: 'POST',
     headers: {
@@ -301,17 +191,17 @@ async function callAI(systemPrompt, userPrompt) {
       ],
     }),
   });
-
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err?.error?.message || `API error ${response.status}`);
   }
-
   const data = await response.json();
   return (data.choices[0].message.content || '').trim();
 }
 
-async function handleAnalyzeProfile(profileData, intent) {
+// ─── Profile Analysis ─────────────────────────────────────────────────────────
+
+export async function handleAnalyzeProfile(profileData, intent) {
   trackUsage('analysis', { intent, name: profileData?.name || '' });
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
@@ -509,13 +399,14 @@ ${buildIcpContext(cfg)}`;
 
   const userPrompt = buildProfileText(profileData);
   const raw = await callAI(systemPrompt, userPrompt);
-
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('Invalid AI response — could not parse JSON');
   return JSON.parse(jsonMatch[0]);
 }
 
-async function handleGenerateConnectionRequest(profileData, intent, userNotes) {
+// ─── Connection Request ───────────────────────────────────────────────────────
+
+export async function handleGenerateConnectionRequest(profileData, intent, userNotes) {
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
@@ -540,7 +431,6 @@ Rules:
 - No emojis
 
 Return ONLY the connection request text. Nothing else. No quotes around it.`;
-
     const jobCtx = buildJobContext(jobProfile);
     if (jobCtx) systemPrompt += `\n\n${jobCtx}`;
 
@@ -560,7 +450,6 @@ Rules:
 - Never mention "freelance", "hire me", or any engagement offer
 
 Return ONLY the connection request text. Nothing else. No quotes around it.`;
-
     if (b2cProfile && Object.keys(b2cProfile).length) {
       systemPrompt += `\n\n--- YOUR PROFILE (sender context, for tone calibration only) ---\n${buildB2cContext(b2cProfile)}`;
     }
@@ -580,7 +469,6 @@ Rules:
 - No emojis
 
 Return ONLY the connection request text. Nothing else. No quotes around it.`;
-
     if (cfg) systemPrompt += `\n\n--- MESSAGE STYLE & SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
   }
 
@@ -588,7 +476,9 @@ Return ONLY the connection request text. Nothing else. No quotes around it.`;
   return { text: await callAI(systemPrompt, userPrompt) };
 }
 
-async function handleGenerateColdMessage(profileData, intent, userNotes) {
+// ─── Cold Message ─────────────────────────────────────────────────────────────
+
+export async function handleGenerateColdMessage(profileData, intent, userNotes) {
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
@@ -613,12 +503,11 @@ Rules:
 - No emojis
 
 Return ONLY the message text. Nothing else. No quotes around it.`;
-
     const jobCtx = buildJobContext(jobProfile);
     if (jobCtx) systemPrompt += `\n\n${jobCtx}`;
 
   } else if (isB2c) {
-    systemPrompt = `You write first LinkedIn direct messages for a freelancer or independent consultant reaching out to a potential client they are already connected with. You are positioning the sender as a trusted individual expert — knowledgeable, direct, and worth a conversation.
+    systemPrompt = `You write first LinkedIn direct messages for a freelancer or independent consultant reaching out to a potential client they are already connected with.
 
 PRIORITY RULE: Base the message on their CURRENT role, challenges, or recent posts. Only reference posts clearly tied to their current job. If nothing specific is available, write a warm opener using their current title and company. Always produce a message — never refuse.
 
@@ -634,7 +523,6 @@ Rules:
 - Never say "freelance", "hire me", "my services", "I can help you with", or anything transactional
 
 Return ONLY the message text. Nothing else. No quotes around it.`;
-
     if (b2cProfile && Object.keys(b2cProfile).length) {
       systemPrompt += `\n\n--- YOUR PROFILE (for context and tone calibration) ---\n${buildB2cContext(b2cProfile)}`;
     }
@@ -655,7 +543,6 @@ Rules:
 - No emojis
 
 Return ONLY the message text. Nothing else. No quotes around it.`;
-
     if (cfg) systemPrompt += `\n\n--- MESSAGE STYLE & SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
   }
 
@@ -663,43 +550,17 @@ Return ONLY the message text. Nothing else. No quotes around it.`;
   return { text: await callAI(systemPrompt, userPrompt) };
 }
 
-function buildAnalysisContext(analysis, intent) {
-  const lines = ['--- PROFILE ANALYSIS (use these insights to craft a personalized message) ---'];
-  if (intent === 'b2b_sales') {
-    if (analysis.potentialClient?.score) lines.push(`Prospect Score: ${analysis.potentialClient.score}`);
-    if (analysis.potentialClient?.reasoning) lines.push(`Score reasoning: ${analysis.potentialClient.reasoning}`);
-    if (analysis.decisionMaker) lines.push(`Decision Maker: ${analysis.decisionMaker}`);
-    if (analysis.industryFit?.level) lines.push(`Industry Fit: ${analysis.industryFit.level} — ${analysis.industryFit.reasoning || ''}`);
-    if (analysis.companySize) lines.push(`Company Size: ${analysis.companySize}`);
-  } else if (intent === 'b2c_sales') {
-    if (analysis.clientPotential?.score) lines.push(`Client Potential: ${analysis.clientPotential.score}`);
-    if (analysis.clientPotential?.reasoning) lines.push(`Reasoning: ${analysis.clientPotential.reasoning}`);
-    if (analysis.decisionMaker) lines.push(`Decision Maker: ${analysis.decisionMaker}`);
-    if ((analysis.painPoints || []).length) lines.push(`Pain Points:\n${analysis.painPoints.map(p => `  - ${p}`).join('\n')}`);
-    if (analysis.approachAngle) lines.push(`Recommended Approach: ${analysis.approachAngle}`);
-  } else if (intent === 'job_search') {
-    if (analysis.hiringSignal?.score) lines.push(`Hiring Signal: ${analysis.hiringSignal.score}`);
-    if (analysis.hiringSignal?.reasoning) lines.push(`Hiring reasoning: ${analysis.hiringSignal.reasoning}`);
-    if (analysis.isRecruiter) lines.push(`Is Recruiter: ${analysis.isRecruiter}`);
-    if (analysis.companyName) lines.push(`Company: ${analysis.companyName}`);
-  }
-  if (analysis.industry) lines.push(`Industry: ${analysis.industry}`);
-  if (analysis.recentActivity) lines.push(`Recent Activity: ${analysis.recentActivity}`);
-  if ((analysis.keyInsights || []).length) lines.push(`Key Insights:\n${analysis.keyInsights.map(i => `  - ${i}`).join('\n')}`);
-  if ((analysis.summaryPoints || []).length) lines.push(`Profile Facts:\n${analysis.summaryPoints.slice(0, 3).map(p => `  - ${p}`).join('\n')}`);
-  return lines.join('\n');
-}
+// ─── First Message ────────────────────────────────────────────────────────────
 
-async function handleGenerateFirstMessage(profileData, analysis, intent, tone, userInstructions) {
+export async function handleGenerateFirstMessage(profileData, analysis, intent, tone, userInstructions) {
   trackUsage('message', { intent, tone });
   const isJobSearch = intent === 'job_search';
-  const isB2c   = intent === 'b2c_sales';
-  const cfg        = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
+  const isB2c = intent === 'b2c_sales';
+  const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
   const b2cProfile = isB2c ? await getB2cProfile() : null;
   const jobProfile = isJobSearch ? await getJobProfile() : null;
   const a = analysis || {};
 
-  // ── Derive authority + budget tier from analysis ─────────────────────────
   const dm = a.decisionMakerLevel || a.decisionMaker || '';
   const isDecisionMaker = /c.level|ceo|cto|coo|cfo|founder|owner|vp|director|head of/i.test(dm);
   const cs = a.companySize || a.company?.size || '';
@@ -719,7 +580,6 @@ async function handleGenerateFirstMessage(profileData, analysis, intent, tone, u
     bold:         'Confident and distinctive. Takes a position. Stands out from the noise.',
   };
   const toneGuide = toneInstructions[tone] || toneInstructions.warm;
-
   const analysisCtx = buildAnalysisContext(a, intent);
 
   let systemPrompt;
@@ -752,7 +612,6 @@ HARD RULES:
 - Do NOT say "I came across your profile", "I hope this finds you well", "would love to connect"
 - Never reference the analysis itself — weave the insights in naturally
 - Return ONLY the message. No quotes, no explanation.`;
-
     const jobCtx = buildJobContext(jobProfile);
     if (jobCtx) systemPrompt += `\n\n${jobCtx}`;
 
@@ -784,13 +643,11 @@ HARD RULES:
 - Never say "I noticed from your profile", "I came across your profile"
 - Do NOT offer services, mention pricing, or ask for a call in the first message
 - Return ONLY the message. No quotes, no explanation.`;
-
     if (b2cProfile && Object.keys(b2cProfile).length) {
       systemPrompt += `\n\n--- SENDER PROFILE ---\n${buildB2cContext(b2cProfile)}`;
     }
 
   } else {
-    // B2B Sales
     const dmGuide = isDecisionMaker
       ? `Decision-maker detected (${dm || 'senior level'}). Be direct and business-outcome focused. They are busy — get to the point. Hint at ROI or efficiency gain without pitching.`
       : `Not a final decision-maker (${dm || 'likely IC or manager'}). Be more exploratory and relationship-focused. Build rapport before hinting at any value exchange.`;
@@ -833,21 +690,21 @@ HARD RULES:
 - Never say "I came across your profile", "I hope this finds you well", "I'd love to connect", "impressive background"
 - Do NOT mention pricing, calls, demos, or meetings in message 1
 - Return ONLY the message. No quotes, no explanation.`;
-
     if (cfg) systemPrompt += `\n\n--- SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
   }
 
   if (userInstructions?.trim()) {
     systemPrompt += `\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly):\n${userInstructions.trim()}`;
   }
-
   systemPrompt += `\n\n${analysisCtx}`;
 
   const userPrompt = buildProfileText(profileData);
   return { text: await callAI(systemPrompt, userPrompt) };
 }
 
-async function handleGenerateFollowUp(profileData, conversationText, intent) {
+// ─── Follow-Up ────────────────────────────────────────────────────────────────
+
+export async function handleGenerateFollowUp(profileData, conversationText, intent) {
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
@@ -870,7 +727,6 @@ Rules:
 - Never mention "I'm looking for a job" or "open to work"
 
 Return ONLY the follow-up message text. No quotes.`;
-
     const jobCtx = buildJobContext(jobProfile);
     if (jobCtx) systemPrompt += `\n\n${jobCtx}`;
 
@@ -888,7 +744,6 @@ Rules:
 - No emojis
 
 Return ONLY the follow-up message text. No quotes.`;
-
     if (b2cProfile && Object.keys(b2cProfile).length) {
       systemPrompt += `\n\n--- SENDER PROFILE ---\n${buildB2cContext(b2cProfile)}`;
     }
@@ -906,7 +761,6 @@ Rules:
 - No emojis
 
 Return ONLY the follow-up message text. No quotes.`;
-
     if (cfg) systemPrompt += `\n\n--- SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
   }
 
@@ -914,7 +768,9 @@ Return ONLY the follow-up message text. No quotes.`;
   return { text: await callAI(systemPrompt, userPrompt) };
 }
 
-async function handleRefineMessage(originalMessage, profileData, analysis, intent, tone, instructions) {
+// ─── Refine Message ───────────────────────────────────────────────────────────
+
+export async function handleRefineMessage(originalMessage, profileData, analysis, intent, tone, instructions) {
   const TONE_GUIDE = {
     professional: 'Polished, formal, and credible. Every word earns its place. Zero filler.',
     warm: 'Friendly, genuine, and human. Reads like a message from a trusted peer.',
@@ -953,144 +809,9 @@ ${analysis ? `ANALYSIS CONTEXT:\n${buildAnalysisContext(analysis, intent)}` : ''
   return { text: await callAI(systemPrompt, userPrompt) };
 }
 
-async function getHubSpotKey() {
-  const result = await chrome.storage.local.get('hubspotApiKey');
-  if (!result.hubspotApiKey) throw new Error('NO_HUBSPOT_KEY');
-  return result.hubspotApiKey;
-}
-
-async function hubspotFetch(path, options = {}) {
-  const token = await getHubSpotKey();
-  const res = await fetch(`https://api.hubapi.com${path}`, {
-    ...options,
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    const msg = data?.message || data?.error || `HubSpot API error ${res.status}`;
-    throw new Error(msg);
-  }
-  return data;
-}
-
-async function fetchHubSpotPipelines() {
-  const data = await hubspotFetch('/crm/v3/pipelines/deal');
-  return (data.results || []).map(p => ({
-    id: p.id,
-    label: p.label,
-    stages: (p.stages || [])
-      .sort((a, b) => a.displayOrder - b.displayOrder)
-      .map(s => ({ id: s.id, label: s.label })),
-  }));
-}
-
-async function fetchHubSpotOwners() {
-  const data = await hubspotFetch('/crm/v3/owners?limit=100');
-  return (data.results || []).map(o => ({
-    id: o.id,
-    label: [o.firstName, o.lastName].filter(Boolean).join(' ') || o.email,
-  }));
-}
-
-async function pushHubSpotDeal({ name, linkedinUrl, contactText, remarks, pipelineId, stageId, ownerId }) {
-  const dealName = name || 'LinkedIn Lead';
-
-  // 1. Create deal
-  const deal = await hubspotFetch('/crm/v3/objects/deals', {
-    method: 'POST',
-    body: JSON.stringify({
-      properties: {
-        dealname: dealName,
-        pipeline: pipelineId,
-        dealstage: stageId,
-        ...(ownerId ? { hubspot_owner_id: ownerId } : {}),
-      },
-    }),
-  });
-
-  // 2. Build note body
-  const noteParts = [];
-  if (remarks && remarks.trim()) noteParts.push(remarks.trim());
-  noteParts.push(`LinkedIn: ${linkedinUrl}`);
-  if (contactText) noteParts.push(`Connection Request:\n${contactText}`);
-
-  // 3. Create note
-  const note = await hubspotFetch('/crm/v3/objects/notes', {
-    method: 'POST',
-    body: JSON.stringify({
-      properties: {
-        hs_note_body: noteParts.join('\n\n'),
-        hs_timestamp: Date.now().toString(),
-      },
-    }),
-  });
-
-  // 4. Associate note with deal
-  await hubspotFetch(`/crm/v4/objects/note/${note.id}/associations/default/deal/${deal.id}`, {
-    method: 'PUT',
-  });
-
-  return { success: true };
-}
-
-function buildProfileText(p, userNotes) {
-  const lines = [];
-
-  if (p.name) lines.push(`Name: ${p.name}`);
-  if (p.headline) lines.push(`Headline: ${p.headline}`);
-  if (p.location) lines.push(`Location: ${p.location}`);
-  if (p.connections) lines.push(`Connections: ${p.connections}`);
-  if (p.followers) lines.push(`Followers: ${p.followers}`);
-
-  if (p.experience?.length) {
-    lines.push('\nExperience:');
-    p.experience.forEach((e, i) => {
-      const label = i === 0 ? '  [CURRENT ROLE] ' : '  [PREVIOUS] ';
-      lines.push(`${label}${e.title} at ${e.company}${e.duration ? ` (${e.duration})` : ''}${e.description ? `: ${e.description.slice(0, 200)}` : ''}`);
-    });
-  }
-
-  if (p.education?.length) {
-    lines.push('\nEducation:');
-    p.education.forEach(e => {
-      lines.push(`  - ${e.school}${e.degree ? `, ${e.degree}` : ''}`);
-    });
-  }
-
-  if (p.skills?.length) {
-    lines.push(`\nSkills: ${p.skills.slice(0, 10).join(', ')}`);
-  }
-
-  if (p.posts?.length) {
-    lines.push('\nRecent Posts/Activity (only use if relevant to CURRENT ROLE):');
-    p.posts.slice(0, 3).forEach((post, i) => {
-      lines.push(`  Post ${i + 1}: ${post.slice(0, 300)}`);
-    });
-  }
-
-  if (p.rawText && lines.length < 4) {
-    lines.push('\nRaw profile text (extract all details from this):');
-    lines.push(p.rawText.slice(0, 3000));
-  } else if (p.rawText) {
-    lines.push('\nAdditional raw profile text:');
-    lines.push(p.rawText.slice(0, 1500));
-  }
-
-  if (userNotes && userNotes.trim()) {
-    lines.push('\n--- User notes (prioritize these when crafting the message) ---');
-    lines.push(userNotes.trim());
-  }
-
-  return lines.join('\n');
-}
-
 // ─── Post Creator ─────────────────────────────────────────────────────────────
 
-async function handleSuggestPostTopics(creatorProfile, recentPosts = [], mode = 'personal', companyProfile = null) {
+export async function handleSuggestPostTopics(creatorProfile, recentPosts = [], mode = 'personal', companyProfile = null) {
   const apiKey = await getApiKey();
 
   let context, styleDesc, topicTypes;
@@ -1165,7 +886,7 @@ Requirements:
   }
 }
 
-async function handleGeneratePost({ topic, angle, hook, style, creatorProfile, mode, companyProfile }) {
+export async function handleGeneratePost({ topic, angle, hook, style, creatorProfile, mode, companyProfile }) {
   const apiKey = await getApiKey();
 
   let systemContext, authorCtx, styleGuide, hashtagContext;
@@ -1249,7 +970,7 @@ Hashtag rules: 5-7 tags. ${hashtagContext}`;
   }
 }
 
-async function handleGeneratePostImage(prompt) {
+export async function handleGeneratePostImage(prompt) {
   const apiKey = await getApiKey();
   const fullPrompt = `Cinematic photorealistic concept photography for a professional LinkedIn post: ${prompt}. Style: high-end editorial photography, dramatic natural or studio lighting, shallow depth of field, rich realistic textures, professional color grading. Absolutely NO cartoons, NO vector illustrations, NO flat design, NO clip art. NO text overlay, NO logos, NO identifiable human faces. The image must look like a real photograph or a hyper-realistic render — visually striking, modern, and conceptually meaningful. 4K quality, ultra-detailed.`;
 
