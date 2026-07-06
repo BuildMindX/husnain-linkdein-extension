@@ -580,6 +580,86 @@
   line-height: 1.55;
 }
 
+/* ── Sign-in Gate (inside panel) ──────────────────────────────────────────── */
+.lia-sign-gate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 48px 24px 32px;
+  gap: 0;
+}
+
+.lia-sign-gate-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  box-shadow: 0 8px 24px rgba(124,58,237,0.28);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.lia-sign-gate-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 8px;
+  line-height: 1.3;
+}
+
+.lia-sign-gate-desc {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0 0 24px;
+  line-height: 1.55;
+  max-width: 260px;
+}
+
+.lia-sign-gate-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  max-width: 260px;
+  background: #fff;
+  color: #1e293b;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 24px;
+  padding: 10px 18px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  transition: box-shadow 0.18s, border-color 0.18s;
+  font-family: inherit;
+  margin-bottom: 20px;
+}
+
+.lia-sign-gate-btn:hover {
+  box-shadow: 0 4px 14px rgba(0,0,0,0.13);
+  border-color: #c7d2fe;
+}
+
+.lia-sign-gate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.lia-sign-gate-footer {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
 /* ── Contact List ──────────────────────────────────────────────────────────── */
 .lia-contact-list {
   list-style: none;
@@ -1039,7 +1119,7 @@
   top: 50%;
   transform: translateY(calc(-50% + 52px));
   z-index: 2147483645;
-  background: #7c3aed;
+  background: #059669;
   color: #fff;
   border: none;
   border-radius: 10px 0 0 10px;
@@ -1053,15 +1133,15 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  box-shadow: -2px 2px 10px rgba(124,58,237,0.35);
+  box-shadow: -2px 2px 10px rgba(5,150,105,0.35);
   transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
   writing-mode: horizontal-tb;
 }
 
 #lia-post-trigger:hover {
-  background: #6d28d9;
+  background: #047857;
   transform: translateY(calc(-50% + 52px)) translateX(-3px);
-  box-shadow: -4px 2px 14px rgba(124,58,237,0.4);
+  box-shadow: -4px 2px 14px rgba(5,150,105,0.4);
 }
 
 /* ── Post Creator Panel ───────────────────────────────────────────────────────── */
@@ -1575,7 +1655,7 @@
 
 #lia-post-trigger {
   border-radius: 12px 0 0 12px;
-  box-shadow: -3px 0 16px rgba(124,58,237,0.28), -1px 0 4px rgba(0,0,0,0.06);
+  box-shadow: -3px 0 16px rgba(5,150,105,0.28), -1px 0 4px rgba(0,0,0,0.06);
   padding: 12px 9px;
 }
 
@@ -1950,13 +2030,13 @@
 
 /* ── Panel shell ─────────────────────────────────────────────────────────── */
 #lia-panel {
-  background: #09091f !important;
-  box-shadow: -8px 0 40px rgba(0,0,0,0.55), -1px 0 8px rgba(0,0,0,0.3) !important;
+  background: #0c0c24 !important;
+  box-shadow: -8px 0 40px rgba(0,0,0,0.45), -1px 0 8px rgba(0,0,0,0.2) !important;
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
 .lia-header {
-  background: linear-gradient(135deg, #1c0b4a 0%, #110d2e 60%, #09091f 100%) !important;
+  background: linear-gradient(135deg, #1c0b4a 0%, #130f35 60%, #0c0c24 100%) !important;
   border-bottom: 1px solid rgba(124,58,237,0.25) !important;
   position: relative !important;
 }
@@ -1992,8 +2072,8 @@
 
 /* ── Tabs ────────────────────────────────────────────────────────────────── */
 .lia-tabs {
-  background: #0d0d25 !important;
-  border-bottom: 1px solid rgba(124,58,237,0.15) !important;
+  background: #10102e !important;
+  border-bottom: 1px solid rgba(124,58,237,0.2) !important;
 }
 
 .lia-tab {
@@ -2018,8 +2098,8 @@
 .lia-body-inner,
 .lia-section,
 .lia-post-body {
-  background: #09091f !important;
-  color: #e2e8f0 !important;
+  background: #0c0c24 !important;
+  color: #f1f5f9 !important;
 }
 
 /* ── Cards / boxes ────────────────────────────────────────────────────────── */
@@ -2032,9 +2112,9 @@
 .lia-icp-warning,
 .lia-post-card,
 .lia-follow-block {
-  background: #0d0d25 !important;
-  border-color: rgba(255,255,255,0.09) !important;
-  color: #e2e8f0 !important;
+  background: #161640 !important;
+  border-color: rgba(255,255,255,0.1) !important;
+  color: #f1f5f9 !important;
 }
 
 .lia-reach-card.ro-yes  { background: rgba(34,197,94,0.07) !important; border-color: rgba(34,197,94,0.2) !important; }
@@ -2061,11 +2141,12 @@
 .lia-title,
 .lia-score-val,
 .lia-section-title,
-p,
+#lia-panel p,
+#lia-post-panel p,
 .lia-follow-text,
 .lia-reach-reason,
 .lia-msg-tab-text {
-  color: #e2e8f0 !important;
+  color: #f1f5f9 !important;
 }
 
 .lia-meta,
@@ -2086,9 +2167,9 @@ p,
 
 /* ── Purpose picker ───────────────────────────────────────────────────────── */
 .lia-purpose-btn {
-  background: #0d0d25 !important;
-  border-color: rgba(255,255,255,0.1) !important;
-  color: #94a3b8 !important;
+  background: #161640 !important;
+  border-color: rgba(255,255,255,0.12) !important;
+  color: #8b9eb8 !important;
 }
 
 .lia-purpose-btn:hover {
@@ -2161,19 +2242,22 @@ p,
 /* ── Inputs / textareas ───────────────────────────────────────────────────── */
 .lia-notes-input,
 .lia-follow-input,
-textarea {
-  background: #0f0f2e !important;
-  border-color: rgba(255,255,255,0.1) !important;
-  color: #e2e8f0 !important;
+#lia-panel textarea,
+#lia-post-panel textarea {
+  background: #10102e !important;
+  border-color: rgba(255,255,255,0.12) !important;
+  color: #f1f5f9 !important;
 }
 
 .lia-notes-input::placeholder,
 .lia-follow-input::placeholder,
-textarea::placeholder { color: rgba(148,163,184,0.4) !important; }
+#lia-panel textarea::placeholder,
+#lia-post-panel textarea::placeholder { color: rgba(148,163,184,0.4) !important; }
 
 .lia-notes-input:focus,
 .lia-follow-input:focus,
-textarea:focus {
+#lia-panel textarea:focus,
+#lia-post-panel textarea:focus {
   border-color: #7c3aed !important;
   box-shadow: 0 0 0 3px rgba(124,58,237,0.15) !important;
   background: #12123a !important;
@@ -2181,8 +2265,8 @@ textarea:focus {
 
 /* ── Tone buttons ─────────────────────────────────────────────────────────── */
 .lia-tone-btn {
-  background: #0d0d25 !important;
-  border-color: rgba(255,255,255,0.1) !important;
+  background: #161640 !important;
+  border-color: rgba(255,255,255,0.12) !important;
 }
 
 .lia-tone-btn:hover {
@@ -2195,7 +2279,7 @@ textarea:focus {
   border-color: #7c3aed !important;
 }
 
-.lia-tone-name { color: #e2e8f0 !important; }
+.lia-tone-name { color: #f1f5f9 !important; }
 .lia-tone-btn.active .lia-tone-name { color: #c4b5fd !important; }
 .lia-tone-desc { color: rgba(148,163,184,0.6) !important; }
 .lia-tone-btn.active .lia-tone-desc { color: rgba(196,181,253,0.7) !important; }
@@ -2238,12 +2322,12 @@ textarea:focus {
 
 /* ── Post Creator panel background ───────────────────────────────────────── */
 #lia-post-panel {
-  background: #09091f !important;
+  background: #0c0c24 !important;
   border-left: 1px solid rgba(124,58,237,0.2) !important;
 }
 
 .lia-post-header {
-  background: linear-gradient(135deg, #1c0b4a 0%, #110d2e 60%, #09091f 100%) !important;
+  background: linear-gradient(135deg, #1c0b4a 0%, #130f35 60%, #0c0c24 100%) !important;
   border-bottom: 1px solid rgba(124,58,237,0.2) !important;
 }
 

@@ -442,3 +442,36 @@ body {
   text-align: center;
   line-height: 1.4;
 }
+
+.sig-powered {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  width: 100%;
+}
+
+.sig-powered-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sig-powered-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(124,58,237,0.7);
+  line-height: 1;
+}
+
+.sig-powered-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(241,245,249,0.85);
+  line-height: 1.2;
+}
