@@ -2030,14 +2030,14 @@
 
 /* ── Panel shell ─────────────────────────────────────────────────────────── */
 #lia-panel {
-  background: #0c0c24 !important;
-  box-shadow: -8px 0 40px rgba(0,0,0,0.45), -1px 0 8px rgba(0,0,0,0.2) !important;
+  background: linear-gradient(160deg, #1e1e4a 0%, #18183e 40%, #141432 100%) !important;
+  box-shadow: -8px 0 40px rgba(0,0,0,0.4), -1px 0 8px rgba(0,0,0,0.15) !important;
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
 .lia-header {
-  background: linear-gradient(135deg, #1c0b4a 0%, #130f35 60%, #0c0c24 100%) !important;
-  border-bottom: 1px solid rgba(124,58,237,0.25) !important;
+  background: linear-gradient(135deg, #2a1060 0%, #1c1248 60%, #16163a 100%) !important;
+  border-bottom: 1px solid rgba(124,58,237,0.3) !important;
   position: relative !important;
 }
 
@@ -2063,6 +2063,13 @@
   color: #fff !important;
 }
 
+/* ── Mode indicator (purpose picker) ─────────────────────────────────────── */
+.lia-mode-indicator {
+  background: rgba(124,58,237,0.15) !important;
+  color: #c4b5fd !important;
+  border: 1px solid rgba(124,58,237,0.3) !important;
+}
+
 /* ── Mode badge ──────────────────────────────────────────────────────────── */
 .lia-mode-badge {
   background: rgba(124,58,237,0.2) !important;
@@ -2072,8 +2079,8 @@
 
 /* ── Tabs ────────────────────────────────────────────────────────────────── */
 .lia-tabs {
-  background: #10102e !important;
-  border-bottom: 1px solid rgba(124,58,237,0.2) !important;
+  background: rgba(20,20,48,0.9) !important;
+  border-bottom: 1px solid rgba(124,58,237,0.25) !important;
 }
 
 .lia-tab {
@@ -2098,8 +2105,8 @@
 .lia-body-inner,
 .lia-section,
 .lia-post-body {
-  background: #0c0c24 !important;
-  color: #f1f5f9 !important;
+  background: transparent !important;
+  color: #ffffff !important;
 }
 
 /* ── Cards / boxes ────────────────────────────────────────────────────────── */
@@ -2112,7 +2119,7 @@
 .lia-icp-warning,
 .lia-post-card,
 .lia-follow-block {
-  background: #161640 !important;
+  background: rgba(255,255,255,0.05) !important;
   border-color: rgba(255,255,255,0.1) !important;
   color: #f1f5f9 !important;
 }
@@ -2146,7 +2153,7 @@
 .lia-follow-text,
 .lia-reach-reason,
 .lia-msg-tab-text {
-  color: #f1f5f9 !important;
+  color: #ffffff !important;
 }
 
 .lia-meta,
@@ -2156,7 +2163,7 @@
 .lia-insight-key,
 .lia-tone-desc,
 .lia-refine-label {
-  color: rgba(148,163,184,0.75) !important;
+  color: rgba(196,181,253,0.7) !important;
 }
 
 .lia-insight-val { color: #c4b5fd !important; }
@@ -2166,18 +2173,125 @@
 .lia-insight-row { border-bottom-color: rgba(255,255,255,0.05) !important; }
 
 /* ── Purpose picker ───────────────────────────────────────────────────────── */
+.lia-purpose-intro {
+  color: rgba(196,181,253,0.75) !important;
+  font-size: 10px !important;
+  letter-spacing: 0.12em !important;
+}
+
+/* Base tile */
+.lia-purpose-tile {
+  background: rgba(255,255,255,0.04) !important;
+  border: 1.5px solid rgba(255,255,255,0.1) !important;
+  color: #f1f5f9 !important;
+  box-shadow: none !important;
+}
+
+/* Show descriptions inside tiles */
+.lia-purpose-desc {
+  display: block !important;
+  font-size: 10.5px !important;
+  color: rgba(148,163,184,0.75) !important;
+  line-height: 1.45 !important;
+  margin-top: 3px !important;
+  font-weight: 400 !important;
+}
+
+.lia-purpose-title {
+  color: #ffffff !important;
+  font-size: 13px !important;
+}
+
+/* Analyze — purple */
+#lia-purpose-analyze {
+  border-color: rgba(124,58,237,0.3) !important;
+}
+#lia-purpose-analyze .lia-purpose-icon {
+  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 12px rgba(124,58,237,0.4) !important;
+}
+#lia-purpose-analyze:hover {
+  background: rgba(124,58,237,0.1) !important;
+  border-color: rgba(124,58,237,0.55) !important;
+  box-shadow: 0 4px 20px rgba(124,58,237,0.2) !important;
+  transform: translateY(-2px) !important;
+}
+#lia-purpose-analyze:hover .lia-purpose-icon {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%) !important;
+}
+
+/* Connection Request — blue */
+#lia-purpose-connection {
+  border-color: rgba(10,102,194,0.3) !important;
+}
+#lia-purpose-connection .lia-purpose-icon {
+  background: linear-gradient(135deg, #0A66C2 0%, #0284c7 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 12px rgba(10,102,194,0.4) !important;
+}
+#lia-purpose-connection:hover {
+  background: rgba(10,102,194,0.1) !important;
+  border-color: rgba(10,102,194,0.55) !important;
+  box-shadow: 0 4px 20px rgba(10,102,194,0.2) !important;
+  transform: translateY(-2px) !important;
+}
+#lia-purpose-connection:hover .lia-purpose-icon {
+  background: linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%) !important;
+}
+
+/* Follow-up — teal */
+#lia-purpose-followup {
+  grid-column: 1 / -1 !important;
+  flex-direction: row !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
+  gap: 14px !important;
+  padding: 15px 16px !important;
+  border-color: rgba(5,150,105,0.3) !important;
+}
+#lia-purpose-followup .lia-purpose-icon {
+  background: linear-gradient(135deg, #059669 0%, #0d9488 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 12px rgba(5,150,105,0.4) !important;
+  flex-shrink: 0 !important;
+}
+#lia-purpose-followup .lia-purpose-content {
+  text-align: left !important;
+}
+#lia-purpose-followup:hover {
+  background: rgba(5,150,105,0.1) !important;
+  border-color: rgba(5,150,105,0.55) !important;
+  box-shadow: 0 4px 20px rgba(5,150,105,0.2) !important;
+  transform: translateY(-2px) !important;
+}
+#lia-purpose-followup:hover .lia-purpose-icon {
+  background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%) !important;
+}
+
+/* ICP warning — handled by .lia-icp-warning-* rules in gate section */
+
+/* Refresh link */
+.lia-purpose-refresh {
+  color: rgba(148,163,184,0.6) !important;
+  text-decoration-color: rgba(148,163,184,0.25) !important;
+}
+.lia-purpose-refresh:hover {
+  color: #c4b5fd !important;
+  text-decoration-color: rgba(196,181,253,0.4) !important;
+}
+
+/* Post-creator mode buttons */
 .lia-purpose-btn {
-  background: #161640 !important;
+  background: rgba(255,255,255,0.05) !important;
   border-color: rgba(255,255,255,0.12) !important;
   color: #8b9eb8 !important;
 }
-
 .lia-purpose-btn:hover {
   border-color: rgba(124,58,237,0.4) !important;
   background: rgba(124,58,237,0.08) !important;
   color: #c4b5fd !important;
 }
-
 .lia-purpose-btn.active {
   background: rgba(124,58,237,0.15) !important;
   border-color: #7c3aed !important;
@@ -2244,7 +2358,7 @@
 .lia-follow-input,
 #lia-panel textarea,
 #lia-post-panel textarea {
-  background: #10102e !important;
+  background: rgba(255,255,255,0.06) !important;
   border-color: rgba(255,255,255,0.12) !important;
   color: #f1f5f9 !important;
 }
@@ -2265,7 +2379,7 @@
 
 /* ── Tone buttons ─────────────────────────────────────────────────────────── */
 .lia-tone-btn {
-  background: #161640 !important;
+  background: rgba(255,255,255,0.05) !important;
   border-color: rgba(255,255,255,0.12) !important;
 }
 
@@ -2279,7 +2393,7 @@
   border-color: #7c3aed !important;
 }
 
-.lia-tone-name { color: #f1f5f9 !important; }
+.lia-tone-name { color: #ffffff !important; }
 .lia-tone-btn.active .lia-tone-name { color: #c4b5fd !important; }
 .lia-tone-desc { color: rgba(148,163,184,0.6) !important; }
 .lia-tone-btn.active .lia-tone-desc { color: rgba(196,181,253,0.7) !important; }
@@ -2322,17 +2436,281 @@
 
 /* ── Post Creator panel background ───────────────────────────────────────── */
 #lia-post-panel {
-  background: #0c0c24 !important;
-  border-left: 1px solid rgba(124,58,237,0.2) !important;
+  background: linear-gradient(160deg, #1e1e4a 0%, #18183e 40%, #141432 100%) !important;
+  border-left: 1px solid rgba(124,58,237,0.25) !important;
 }
 
 .lia-post-header {
-  background: linear-gradient(135deg, #1c0b4a 0%, #130f35 60%, #0c0c24 100%) !important;
-  border-bottom: 1px solid rgba(124,58,237,0.2) !important;
+  background: linear-gradient(135deg, #2a1060 0%, #1c1248 60%, #16163a 100%) !important;
+  border-bottom: 1px solid rgba(124,58,237,0.25) !important;
 }
 
 .lia-post-title { color: #f8fafc !important; }
 .lia-post-close { color: rgba(196,181,253,0.8) !important; }
+
+/* ── Post Creator: all elements ──────────────────────────────────────────── */
+.lia-pc-intro {
+  color: #ffffff !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+}
+
+.lia-pc-or {
+  color: rgba(196,181,253,0.6) !important;
+}
+
+.lia-pc-sub-label {
+  color: #c4b5fd !important;
+  letter-spacing: 0.1em !important;
+}
+
+.lia-pc-label {
+  color: #c4b5fd !important;
+  letter-spacing: 0.1em !important;
+}
+
+.lia-pc-back-btn {
+  color: #c4b5fd !important;
+}
+
+.lia-pc-domain-chip {
+  background: rgba(124,58,237,0.2) !important;
+  color: #c4b5fd !important;
+  border-color: rgba(124,58,237,0.35) !important;
+}
+
+.lia-pc-notice {
+  background: rgba(255,255,255,0.06) !important;
+  border-color: rgba(255,255,255,0.12) !important;
+  color: #c4b5fd !important;
+}
+
+.lia-pc-company-badge {
+  background: rgba(234,88,12,0.15) !important;
+  color: #fb923c !important;
+  border-color: rgba(234,88,12,0.3) !important;
+}
+
+.lia-pc-posts-found {
+  background: rgba(14,165,233,0.1) !important;
+  border-color: rgba(14,165,233,0.25) !important;
+  color: #7dd3fc !important;
+}
+
+.lia-pc-custom-input {
+  background: rgba(255,255,255,0.08) !important;
+  border-color: rgba(255,255,255,0.15) !important;
+  color: #ffffff !important;
+}
+
+.lia-pc-custom-input::placeholder {
+  color: rgba(196,181,253,0.45) !important;
+}
+
+.lia-pc-custom-input:focus {
+  border-color: rgba(124,58,237,0.7) !important;
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.2) !important;
+  background: rgba(255,255,255,0.1) !important;
+}
+
+.lia-pc-topic-card {
+  background: rgba(255,255,255,0.05) !important;
+  border-color: rgba(255,255,255,0.12) !important;
+}
+
+.lia-pc-topic-card:hover {
+  border-color: rgba(124,58,237,0.5) !important;
+  background: rgba(124,58,237,0.1) !important;
+  box-shadow: 0 4px 16px rgba(124,58,237,0.2) !important;
+}
+
+.lia-pc-topic-title {
+  color: #ffffff !important;
+}
+
+.lia-pc-topic-angle {
+  color: rgba(196,181,253,0.8) !important;
+}
+
+.lia-pc-topic-why {
+  color: #a78bfa !important;
+}
+
+.lia-pc-selected-topic {
+  background: rgba(124,58,237,0.12) !important;
+  border-color: rgba(124,58,237,0.4) !important;
+}
+
+.lia-pc-st-label {
+  color: #c4b5fd !important;
+}
+
+.lia-pc-st-title {
+  color: #ffffff !important;
+}
+
+.lia-pc-style-card {
+  background: rgba(255,255,255,0.05) !important;
+  border-color: rgba(255,255,255,0.12) !important;
+}
+
+.lia-pc-style-card:hover {
+  border-color: rgba(124,58,237,0.5) !important;
+  background: rgba(124,58,237,0.1) !important;
+}
+
+.lia-pc-style-card.active {
+  background: rgba(124,58,237,0.18) !important;
+  border-color: #7c3aed !important;
+}
+
+.lia-pc-style-label {
+  color: #ffffff !important;
+}
+
+.lia-pc-style-desc {
+  color: rgba(196,181,253,0.7) !important;
+}
+
+.lia-pc-post-box {
+  background: rgba(255,255,255,0.06) !important;
+  border-color: rgba(255,255,255,0.12) !important;
+  color: #ffffff !important;
+}
+
+.lia-pc-hashtags {
+  color: #a78bfa !important;
+}
+
+.lia-pc-imgonly-input {
+  background: rgba(255,255,255,0.08) !important;
+  border-color: rgba(255,255,255,0.15) !important;
+  color: #ffffff !important;
+}
+
+.lia-pc-imgonly-input::placeholder {
+  color: rgba(196,181,253,0.4) !important;
+}
+
+.lia-pc-error {
+  color: #f87171 !important;
+}
+
+/* ── Gate screen (API key, sign-in, errors) ──────────────────────────────── */
+.lia-gate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 52px 24px 36px;
+  gap: 0;
+}
+
+.lia-gate-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.06);
+  border: 1.5px solid rgba(255,255,255,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 22px;
+  box-shadow: 0 0 32px var(--glow, rgba(6,182,212,0.3)), inset 0 1px 0 rgba(255,255,255,0.1);
+  flex-shrink: 0;
+}
+
+.lia-gate-heading {
+  font-size: 16px;
+  font-weight: 700;
+  color: #c4b5fd;
+  margin-bottom: 10px;
+  letter-spacing: 0.01em;
+}
+
+.lia-gate-desc {
+  font-size: 13px;
+  color: rgba(196,181,253,0.65);
+  line-height: 1.6;
+  margin-bottom: 28px;
+  max-width: 260px;
+}
+
+.lia-gate-btn {
+  width: 100%;
+  max-width: 240px;
+}
+
+/* ── Dark-theme .lia-empty heading/para override ────────────────────────── */
+#lia-panel .lia-empty h3,
+#lia-post-panel .lia-empty h3 {
+  color: #c4b5fd !important;
+}
+
+#lia-panel .lia-empty p,
+#lia-post-panel .lia-empty p {
+  color: rgba(196,181,253,0.7) !important;
+}
+
+/* ── ICP Warning — premium card ─────────────────────────────────────────── */
+.lia-icp-warning {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 10px !important;
+  background: rgba(245,158,11,0.08) !important;
+  border: 1px solid rgba(245,158,11,0.22) !important;
+  border-radius: 12px !important;
+  padding: 11px 13px !important;
+  color: inherit !important;
+  grid-column: 1 / -1 !important;
+}
+
+.lia-icp-warning-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(245,158,11,0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fbbf24;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.lia-icp-warning-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.lia-icp-warning-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fbbf24;
+}
+
+.lia-icp-warning-text {
+  font-size: 11.5px;
+  color: rgba(251,191,36,0.75);
+  line-height: 1.5;
+}
+
+.lia-icp-warning-link {
+  color: #c4b5fd !important;
+  background: none !important;
+  border: none !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  font-size: inherit !important;
+  font-weight: 600 !important;
+  text-decoration: none !important;
+}
+
+.lia-icp-warning-link:hover {
+  color: #a78bfa !important;
+  text-decoration: underline !important;
+}
 
 /* ── Scrollbar ────────────────────────────────────────────────────────────── */
 #lia-panel ::-webkit-scrollbar { width: 5px; }

@@ -226,6 +226,8 @@
   async function renderPcLanding() {
     const body = document.getElementById('lia-pc-body');
     if (!body) return;
+    const hasKey = await checkApiKey();
+    if (!hasKey) { renderPcNoApiKey(); return; }
     const stored = await chrome.storage.local.get(['creatorProfile', 'companyProfile']).catch(() => ({}));
     const cp = stored.creatorProfile || {};
     const co = stored.companyProfile || {};
@@ -644,8 +646,13 @@
         <div class="lia-mode-indicator">${modeLabel}</div>
         ${showIcpWarning ? `
         <div class="lia-icp-warning">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          <span>No target industries set — analysis will be generic. <button class="lia-icp-warning-link" id="lia-set-icp">Set ICP in Settings</button></span>
+          <div class="lia-icp-warning-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </div>
+          <div class="lia-icp-warning-body">
+            <div class="lia-icp-warning-title">No ICP Industries Set</div>
+            <div class="lia-icp-warning-text">Analysis will be generic without target industries. <button class="lia-icp-warning-link" id="lia-set-icp">Set ICP →</button></div>
+          </div>
         </div>` : ''}
         <p class="lia-purpose-intro">What do you want to do with this profile?</p>
         <button class="lia-purpose-tile" id="lia-purpose-analyze">
@@ -1131,21 +1138,49 @@
     `;
   }
 
+  function _renderGate(bodyEl, { iconColor, iconGlow, iconSvg, heading, desc, btnId, btnLabel }) {
+    bodyEl.innerHTML = `
+      <div class="lia-gate">
+        <div class="lia-gate-icon" style="--glow:${iconGlow};">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${iconSvg}</svg>
+        </div>
+        <div class="lia-gate-heading">${heading}</div>
+        <div class="lia-gate-desc">${desc}</div>
+        <button class="lia-btn-primary lia-gate-btn" id="${btnId}">${btnLabel}</button>
+      </div>
+    `;
+  }
+
   function renderNoApiKey() {
     const body = document.getElementById('lia-body');
     if (!body) return;
-    body.innerHTML = `
-      <div class="lia-empty">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#0A66C2" stroke-width="1.5">
-          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-        </svg>
-        <h3>API Key Required</h3>
-        <p>Enter your OpenAI API key to enable AI analysis.</p>
-        <button class="lia-btn-primary" id="lia-open-settings">Open Settings</button>
-      </div>
-    `;
+    _renderGate(body, {
+      iconColor: '#06b6d4',
+      iconGlow: 'rgba(6,182,212,0.35)',
+      iconSvg: '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+      heading: 'API Key Required',
+      desc: 'Enter your OpenAI API key in Settings to enable AI-powered analysis.',
+      btnId: 'lia-open-settings',
+      btnLabel: 'Open Settings',
+    });
     body.querySelector('#lia-open-settings').addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' });
+    });
+  }
+
+  function renderPcNoApiKey() {
+    const body = document.getElementById('lia-pc-body');
+    if (!body) return;
+    _renderGate(body, {
+      iconColor: '#06b6d4',
+      iconGlow: 'rgba(6,182,212,0.35)',
+      iconSvg: '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+      heading: 'API Key Required',
+      desc: 'Enter your OpenAI API key in Settings to generate AI-powered posts.',
+      btnId: 'lia-pc-open-settings',
+      btnLabel: 'Open Settings',
+    });
+    body.querySelector('#lia-pc-open-settings').addEventListener('click', () => {
       chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' });
     });
   }
@@ -1153,28 +1188,22 @@
   function renderError(message) {
     const body = document.getElementById('lia-body');
     if (!body) return;
-    const isNoKey = message === 'NO_API_KEY';
-    if (isNoKey) { renderNoApiKey(); return; }
+    if (message === 'NO_API_KEY') { renderNoApiKey(); return; }
 
     const isStale = /context invalidated|Extension context/i.test(message);
-
-    body.innerHTML = `
-      <div class="lia-empty">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="${isStale ? '#d97706' : '#dc2626'}" stroke-width="1.5">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="8" x2="12" y2="12"></line>
-          <line x1="12" y1="16" x2="12.01" y2="16"></line>
-        </svg>
-        <h3>${isStale ? 'Extension Updated' : 'Analysis Failed'}</h3>
-        <p>${isStale ? 'The extension was reloaded. Refresh this page to reconnect.' : escHtml(message)}</p>
-        <button class="lia-btn-primary" id="lia-retry">${isStale ? 'Refresh Page' : 'Try Again'}</button>
-      </div>
-    `;
+    _renderGate(body, {
+      iconColor: isStale ? '#f59e0b' : '#ef4444',
+      iconGlow: isStale ? 'rgba(245,158,11,0.35)' : 'rgba(239,68,68,0.35)',
+      iconSvg: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
+      heading: isStale ? 'Extension Updated' : 'Something Went Wrong',
+      desc: isStale ? 'The extension was reloaded. Refresh this page to reconnect.' : escHtml(message),
+      btnId: 'lia-retry',
+      btnLabel: isStale ? 'Refresh Page' : 'Try Again',
+    });
     body.querySelector('#lia-retry').addEventListener('click', async () => {
       if (isStale) { location.reload(); return; }
       await dbDelete(currentProfileUrl).catch(() => {});
-      panel.remove();
-      panel = null;
+      panel.remove(); panel = null;
       handleTriggerClick();
     });
   }
