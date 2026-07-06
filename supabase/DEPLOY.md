@@ -37,6 +37,6 @@ npx supabase functions deploy stripe-webhook --project-ref hokgbtrptddjgwgvvhrb
 OAuth client already configured in manifest.json:
 - Type: Chrome Extension (correct)
 - Client ID: `592927077998-058seb6htaan8ma47vhhiqjg724avke3.apps.googleusercontent.com`
-- Extension ID: `ofloohhjdcggabbbmimgbbekdpjnkmof`
+- Extension ID: `cidjcnappdecphoecngmnpkgcnhnmipd`
 
 No action needed here.

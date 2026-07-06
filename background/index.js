@@ -1,5 +1,6 @@
 import { handleGoogleSignIn, handleGoogleSignOut } from './auth.js';
 import { checkAndTrackUsage, handleStartCheckout } from './billing.js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 import {
   handleAnalyzeProfile,
   handleGenerateConnectionRequest,
@@ -104,7 +105,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const authResult = await chrome.identity.getAuthToken({ interactive: false });
         const token = typeof authResult === 'string' ? authResult : authResult?.token;
         if (!token) { sendResponse({ plan: 'free' }); return; }
-        const { SUPABASE_URL, SUPABASE_ANON_KEY } = await import('./config.js');
         const resp = await fetch(`${SUPABASE_URL}/functions/v1/sync-user`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
