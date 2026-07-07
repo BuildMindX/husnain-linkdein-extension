@@ -53,8 +53,8 @@ Deno.serve(async (req: Request) => {
       mode: 'subscription',
       line_items: [{ price: Deno.env.get('STRIPE_PRICE_ID')!, quantity: 1 }],
       allow_promotion_codes: true,
-      success_url: 'https://satyrontech.com/linkpilot/success?session_id={CHECKOUT_SESSION_ID}',
-      cancel_url:  'https://satyrontech.com/linkpilot/cancel',
+      success_url: 'https://hokgbtrptddjgwgvvhrb.supabase.co/functions/v1/success-page?session_id={CHECKOUT_SESSION_ID}',
+      cancel_url:  'https://hokgbtrptddjgwgvvhrb.supabase.co/functions/v1/cancel-page',
       metadata: { supabase_user_id: user.id },
     })
 

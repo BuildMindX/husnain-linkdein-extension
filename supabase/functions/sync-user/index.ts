@@ -49,12 +49,12 @@ Deno.serve(async (req: Request) => {
         },
         { onConflict: 'google_id', ignoreDuplicates: false }
       )
-      .select('id, google_id, email, name, avatar_url, plan, plan_expires_at, created_at')
+      .select('id, google_id, email, name, avatar_url, plan, plan_expires_at, created_at, settings')
       .single()
 
     if (error) return json({ error: error.message }, 500)
 
-    return json({ user, isNew })
+    return json({ user, isNew, settings: user.settings || {} })
   } catch (err) {
     return json({ error: (err as Error).message }, 500)
   }

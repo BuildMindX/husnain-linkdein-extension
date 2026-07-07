@@ -99,6 +99,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     handleStartCheckout().then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
     return true;
   }
+  if (msg.type === 'SAVE_SETTINGS') {
+    (async () => {
+      try {
+        const authResult = await chrome.identity.getAuthToken({ interactive: false });
+        const token = typeof authResult === 'string' ? authResult : authResult?.token;
+        if (!token) { sendResponse({ ok: false }); return; }
+        const resp = await fetch(`${SUPABASE_URL}/functions/v1/save-settings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+          body: JSON.stringify({ googleToken: token, settings: msg.settings }),
+        });
+        sendResponse({ ok: resp.ok });
+      } catch (_) { sendResponse({ ok: false }); }
+    })();
+    return true;
+  }
   if (msg.type === 'SYNC_PLAN') {
     (async () => {
       try {

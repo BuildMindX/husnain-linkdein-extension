@@ -1,5 +1,12 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
+const SETTINGS_KEYS = [
+  'openaiApiKey', 'hubspotApiKey', 'analysisIntent',
+  'targetIndustries', 'excludeIndustries', 'businessProfile',
+  'messagePresets', 'b2cProfile', 'jobProfile',
+  'creatorProfile', 'companyProfile',
+];
+
 export async function handleGoogleSignIn() {
   const authResult = await chrome.identity.getAuthToken({ interactive: true });
   const token = typeof authResult === 'string' ? authResult : authResult?.token;
@@ -14,6 +21,7 @@ export async function handleGoogleSignIn() {
   let plan = 'free';
   let supabaseUserId = null;
   let isNew = false;
+  let cloudSettings = {};
   try {
     const syncResp = await fetch(`${SUPABASE_URL}/functions/v1/sync-user`, {
       method: 'POST',
@@ -28,11 +36,16 @@ export async function handleGoogleSignIn() {
       plan = data.user?.plan || 'free';
       supabaseUserId = data.user?.id || null;
       isNew = !!data.isNew;
+      cloudSettings = data.settings || {};
     }
   } catch (_) { /* Supabase unavailable — continue offline */ }
 
   const storagePayload = { googleUser, userPlan: plan, supabaseUserId };
   if (isNew) storagePayload.pendingOnboarding = true;
+  // Restore all saved settings from cloud onto local storage
+  for (const key of SETTINGS_KEYS) {
+    if (cloudSettings[key] !== undefined) storagePayload[key] = cloudSettings[key];
+  }
   await chrome.storage.local.set(storagePayload);
   return { success: true, user: googleUser, plan, isNew };
 }
@@ -43,6 +56,6 @@ export async function handleGoogleSignOut() {
     const tokenResult = typeof authResult === 'string' ? authResult : authResult?.token;
     if (tokenResult) await chrome.identity.removeCachedAuthToken({ token: tokenResult });
   } catch (_) { /* token may already be expired */ }
-  await chrome.storage.local.remove(['googleUser', 'userPlan', 'supabaseUserId']);
+  await chrome.storage.local.remove(['googleUser', 'userPlan', 'supabaseUserId', ...SETTINGS_KEYS]);
   return { success: true };
 }

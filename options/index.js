@@ -93,9 +93,23 @@ document.querySelectorAll('.snav-item').forEach(btn => {
 chrome.storage.local.get('googleUser', r => setAuthState(!!r.googleUser));
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local' || !('googleUser' in changes)) return;
-  setAuthState(!!changes.googleUser.newValue);
+  if (area !== 'local') return;
+  if ('googleUser' in changes) setAuthState(!!changes.googleUser.newValue);
+  if (_signedIn && SYNC_KEYS.some(k => k in changes)) syncSettingsToCloud();
 });
+
+const SYNC_KEYS = [
+  'openaiApiKey', 'hubspotApiKey', 'analysisIntent',
+  'targetIndustries', 'excludeIndustries', 'businessProfile',
+  'messagePresets', 'b2cProfile', 'jobProfile',
+  'creatorProfile', 'companyProfile',
+];
+
+function syncSettingsToCloud() {
+  chrome.storage.local.get(SYNC_KEYS, settings => {
+    chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings });
+  });
+}
 
 // ── Post Creator: Personal / Company toggle ───────────────────────────────────
 document.querySelectorAll('.pc-stoggle').forEach(btn => {

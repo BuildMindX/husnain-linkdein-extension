@@ -1,0 +1,239 @@
+const html = String.raw`
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>You're on Pro — LinkPilot AI</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0e0e28;
+    --surface:   #16163a;
+    --border:    rgba(124,58,237,0.22);
+    --purple:    #7c3aed;
+    --purple-lt: #a78bfa;
+    --lavender:  #c4b5fd;
+    --green:     #10b981;
+    --green-lt:  #6ee7b7;
+    --text:      #f1f5f9;
+    --muted:     rgba(196,181,253,0.65);
+  }
+
+  body {
+    min-height: 100vh;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    color: var(--text);
+    background-image:
+      radial-gradient(ellipse 60% 50% at 50% -10%, rgba(124,58,237,0.18) 0%, transparent 70%),
+      radial-gradient(ellipse 40% 40% at 80% 80%, rgba(16,185,129,0.08) 0%, transparent 60%);
+  }
+
+  .card {
+    width: 100%;
+    max-width: 480px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 48px 40px 40px;
+    text-align: center;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04);
+    animation: rise 0.5s cubic-bezier(0.22,1,0.36,1) both;
+  }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(20px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0)    scale(1); }
+  }
+
+  .icon-wrap {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(16,185,129,0.2) 0%, transparent 70%);
+    border: 1.5px solid rgba(16,185,129,0.35);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 24px;
+    animation: pulse-ring 2.5s ease-in-out 0.4s infinite;
+    position: relative;
+  }
+
+  @keyframes pulse-ring {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.25); }
+    50%       { box-shadow: 0 0 0 10px rgba(16,185,129,0); }
+  }
+
+  .check-svg {
+    animation: draw-check 0.45s cubic-bezier(0.22,1,0.36,1) 0.25s both;
+  }
+
+  @keyframes draw-check {
+    from { stroke-dashoffset: 40; opacity: 0; }
+    to   { stroke-dashoffset: 0;  opacity: 1; }
+  }
+
+  .check-svg polyline {
+    stroke-dasharray: 40;
+    stroke-dashoffset: 40;
+    animation: draw-check 0.45s cubic-bezier(0.22,1,0.36,1) 0.25s forwards;
+  }
+
+  .pro-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(124,58,237,0.2);
+    border: 1px solid rgba(124,58,237,0.4);
+    color: var(--lavender);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 4px 12px;
+    border-radius: 20px;
+    margin-bottom: 16px;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--text);
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin-bottom: 10px;
+  }
+
+  .sub {
+    font-size: 15px;
+    color: var(--muted);
+    line-height: 1.6;
+    margin-bottom: 32px;
+    text-wrap: balance;
+  }
+
+  .features {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    text-align: left;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: 28px;
+  }
+
+  .features li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13.5px;
+    color: rgba(241,245,249,0.85);
+  }
+
+  .feat-icon {
+    flex-shrink: 0;
+    color: var(--green-lt);
+  }
+
+  .btn-primary {
+    width: 100%;
+    padding: 13px;
+    border-radius: 50px;
+    background: linear-gradient(135deg, #7c3aed, #4f46e5);
+    border: none;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(124,58,237,0.4);
+    transition: box-shadow 0.2s, transform 0.15s;
+    text-decoration: none;
+    display: block;
+    margin-bottom: 12px;
+  }
+  .btn-primary:hover { box-shadow: 0 8px 28px rgba(124,58,237,0.55); transform: translateY(-1px); }
+
+  .close-hint {
+    font-size: 12px;
+    color: rgba(148,163,184,0.45);
+  }
+
+  .wordmark {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    font-size: 11.5px;
+    color: rgba(148,163,184,0.35);
+    letter-spacing: 0.03em;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+
+  <div class="icon-wrap">
+    <svg class="check-svg" width="34" height="34" viewBox="0 0 24 24" fill="none"
+         stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+  </div>
+
+  <div class="pro-badge">
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+    </svg>
+    Pro Activated
+  </div>
+
+  <h1>You're all set.</h1>
+  <p class="sub">Your LinkPilot AI Pro plan is now active. Head back to LinkedIn to start using your full features.</p>
+
+  <ul class="features">
+    <li>
+      <svg class="feat-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+      Unlimited AI analyses & outreach messages
+    </li>
+    <li>
+      <svg class="feat-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+      HubSpot CRM push — one click per lead
+    </li>
+    <li>
+      <svg class="feat-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+      AI post creator + image generation
+    </li>
+    <li>
+      <svg class="feat-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+      Priority AI responses
+    </li>
+  </ul>
+
+  <a href="https://www.linkedin.com" class="btn-primary">Go to LinkedIn →</a>
+  <p class="close-hint">You can also close this tab — your plan is saved.</p>
+
+  <div class="wordmark">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.5">
+      <rect x="2" y="2" width="20" height="20" rx="5"/>
+      <path d="M7 10h2v7H7zm0-3h2v2H7zm4 3h2v1.5a2.5 2.5 0 0 1 5 0V17h-2v-5.5a.5.5 0 0 0-1 0V17h-2v-4a2 2 0 0 0-2-2z"/>
+    </svg>
+    LinkPilot AI by Satyron Private Limited
+  </div>
+
+</div>
+</body>
+</html>
+`
+
+Deno.serve(() => new Response(html, {
+  headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' },
+}))
