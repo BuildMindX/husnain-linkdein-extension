@@ -475,3 +475,88 @@ body {
   color: rgba(241,245,249,0.85);
   line-height: 1.2;
 }
+
+/* ── Usage Stats ─────────────────────────────────────────────────────────── */
+.usage-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.usage-row { display: flex; flex-direction: column; gap: 5px; }
+
+.usage-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.usage-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: rgba(241,245,249,0.75);
+}
+
+.usage-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(196,181,253,0.65);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-bar-track {
+  height: 4px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.usage-bar-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
+
+/* ── Upgrade CTA ─────────────────────────────────────────────────────────── */
+.popup-upgrade-cta {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  margin: 0 14px 2px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(124,58,237,0.18) 0%, rgba(79,70,229,0.12) 100%);
+  border: 1px solid rgba(124,58,237,0.3);
+  border-radius: 12px;
+}
+
+.puc-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #c4b5fd;
+  line-height: 1.3;
+}
+
+.puc-sub {
+  font-size: 10.5px;
+  color: rgba(196,181,253,0.55);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.puc-btn {
+  padding: 7px 14px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #7c3aed, #4f46e5);
+  border: none;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 3px 12px rgba(124,58,237,0.4);
+  transition: box-shadow 0.15s, transform 0.1s;
+  flex-shrink: 0;
+}
+.puc-btn:hover { box-shadow: 0 4px 16px rgba(124,58,237,0.55); transform: translateY(-1px); }
+.puc-btn:disabled { opacity: 0.5; cursor: default; transform: none; }

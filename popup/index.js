@@ -46,6 +46,36 @@ function showSignInGate() {
 }
 
 function renderMainContent(result) {
+  // ── User line in header ──
+  const user = result.googleUser;
+  const userLine = document.getElementById('popup-user-line');
+  if (userLine && user?.name) {
+    userLine.textContent = user.name;
+  }
+
+  // ── Upgrade CTA for free users ──
+  const plan = result.userPlan || 'free';
+  const ctaEl = document.getElementById('popup-upgrade-cta');
+  if (ctaEl && plan !== 'pro') {
+    ctaEl.style.display = '';
+    document.getElementById('popup-upgrade-btn')?.addEventListener('click', () => {
+      const btn = document.getElementById('popup-upgrade-btn');
+      const statusEl = document.getElementById('popup-upgrade-status');
+      btn.disabled = true;
+      btn.textContent = '…';
+      chrome.runtime.sendMessage({ type: 'START_CHECKOUT' }, res => {
+        if (chrome.runtime.lastError || !res?.url) {
+          btn.disabled = false;
+          btn.textContent = 'Upgrade';
+          if (statusEl) { statusEl.textContent = res?.error || 'Try again.'; statusEl.style.display = ''; }
+          return;
+        }
+        chrome.tabs.create({ url: res.url, active: true });
+        window.close();
+      });
+    });
+  }
+
   // ── Connections ──
   const hasOpenAI = !!result.openaiApiKey;
   const hasHubSpot = !!result.hubspotApiKey;
@@ -112,15 +142,53 @@ function renderMainContent(result) {
     <span class="post-mode-badge">${postModeIcon} ${postModeLabel}</span>`;
 }
 
+function renderUsageStats(plan, usageStats) {
+  const section = document.getElementById('usage-section');
+  const grid = document.getElementById('usage-grid');
+  if (!section || !grid) return;
+
+  const isPro = plan === 'pro';
+  const FREE_LIMIT = 50;
+
+  const items = [
+    { key: 'analysis', label: 'Analyses' },
+    { key: 'message',  label: 'Messages' },
+    { key: 'post',     label: 'Posts' },
+  ];
+
+  const hasAnyUsage = items.some(i => (usageStats[i.key] ?? 0) > 0);
+  if (!hasAnyUsage && !isPro) { section.style.display = 'none'; return; }
+
+  grid.innerHTML = items.map(({ key, label }) => {
+    const used = usageStats[key] ?? 0;
+    const pct = isPro ? 100 : Math.min(100, Math.round((used / FREE_LIMIT) * 100));
+    const barColor = isPro ? '#7c3aed' : pct >= 90 ? '#ef4444' : pct >= 70 ? '#f59e0b' : '#7c3aed';
+    const limitLabel = isPro ? '∞' : `/ ${FREE_LIMIT}`;
+    return `
+      <div class="usage-row">
+        <div class="usage-row-top">
+          <span class="usage-label">${label}</span>
+          <span class="usage-count">${used} ${limitLabel}</span>
+        </div>
+        <div class="usage-bar-track">
+          <div class="usage-bar-fill" style="width:${pct}%;background:${barColor}"></div>
+        </div>
+      </div>`;
+  }).join('');
+
+  section.style.display = '';
+}
+
 // ── Boot: check auth before rendering anything ────────────────────────────────
 chrome.storage.local.get(
-  ['googleUser', 'openaiApiKey', 'hubspotApiKey', 'analysisIntent', 'creatorProfile', 'companyProfile', 'userPlan'],
+  ['googleUser', 'openaiApiKey', 'hubspotApiKey', 'analysisIntent', 'creatorProfile', 'companyProfile', 'userPlan', 'usageStats'],
   result => {
     if (!result.googleUser) {
       showSignInGate();
       return;
     }
     renderMainContent(result);
+    renderUsageStats(result.userPlan || 'free', result.usageStats || {});
   }
 );
 

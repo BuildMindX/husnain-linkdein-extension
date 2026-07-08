@@ -620,10 +620,18 @@ function renderAccountTab(user, plan) {
       <div class="pro-active-card">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
         Pro plan active — all features unlocked
-      </div>`}`;
+        <button type="button" id="manage-sub-btn" class="btn-manage-sub">Manage subscription</button>
+        <div id="manage-sub-status" class="account-status-msg" style="display:none;margin-top:6px"></div>
+      </div>`}
+      <button type="button" id="view-plans-btn" class="btn-view-plans">View plans &amp; pricing</button>`;
 
     document.getElementById('sign-out-btn')?.addEventListener('click', handleGoogleSignOut);
     document.getElementById('upgrade-btn')?.addEventListener('click', handleUpgrade);
+    document.getElementById('manage-sub-btn')?.addEventListener('click', handleManageSubscription);
+    document.getElementById('view-plans-btn')?.addEventListener('click', () => {
+      const overlay = document.getElementById('onboarding-overlay');
+      if (overlay) overlay.style.display = 'flex';
+    });
   } else {
     section.innerHTML = `
       <button type="button" id="google-sign-in-btn" class="btn-google">
@@ -683,6 +691,24 @@ function handleUpgrade() {
   });
 }
 
+function handleManageSubscription() {
+  const btn = document.getElementById('manage-sub-btn');
+  const statusEl = document.getElementById('manage-sub-status');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = 'Opening…';
+  if (statusEl) statusEl.style.display = 'none';
+  chrome.runtime.sendMessage({ type: 'OPEN_BILLING_PORTAL' }, response => {
+    btn.disabled = false;
+    btn.textContent = 'Manage subscription';
+    if (chrome.runtime.lastError || !response?.url) {
+      if (statusEl) { statusEl.textContent = response?.error || 'Could not open billing portal. Try again.'; statusEl.style.display = ''; }
+      return;
+    }
+    chrome.tabs.create({ url: response.url, active: true });
+  });
+}
+
 chrome.storage.local.get(['googleUser', 'userPlan'], r => {
   renderAccountTab(r.googleUser || null, r.userPlan || 'free');
   if (r.googleUser) {
@@ -692,6 +718,11 @@ chrome.storage.local.get(['googleUser', 'userPlan'], r => {
       }
     });
   }
+});
+
+// ── Privacy Policy ────────────────────────────────────────────────────────────
+document.getElementById('open-privacy-btn')?.addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('privacy.html'), active: true });
 });
 
 // ── Clear All Data ────────────────────────────────────────────────────────────

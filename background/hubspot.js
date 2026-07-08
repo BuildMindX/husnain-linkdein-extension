@@ -41,39 +41,105 @@ export async function fetchHubSpotOwners() {
   }));
 }
 
-export async function pushHubSpotDeal({ name, linkedinUrl, contactText, remarks, pipelineId, stageId, ownerId }) {
-  const dealName = name || 'LinkedIn Lead';
+// Find an existing contact by LinkedIn URL, falling back to name search.
+async function findOrCreateContact(name, linkedinUrl) {
+  const nameParts = (name || '').trim().split(/\s+/);
+  const firstName = nameParts[0] || 'LinkedIn';
+  const lastName = nameParts.slice(1).join(' ') || 'Lead';
 
-  const deal = await hubspotFetch('/crm/v3/objects/deals', {
+  // Search by LinkedIn URL first (most precise)
+  if (linkedinUrl) {
+    try {
+      const searchRes = await hubspotFetch('/crm/v3/objects/contacts/search', {
+        method: 'POST',
+        body: JSON.stringify({
+          filterGroups: [{
+            filters: [{ propertyName: 'hs_linkedinid', operator: 'EQ', value: linkedinUrl }],
+          }],
+          properties: ['hs_object_id'],
+          limit: 1,
+        }),
+      });
+      if (searchRes.total > 0) return searchRes.results[0].id;
+    } catch (_) { /* fall through to create */ }
+  }
+
+  // Create new contact
+  const contact = await hubspotFetch('/crm/v3/objects/contacts', {
     method: 'POST',
     body: JSON.stringify({
       properties: {
-        dealname: dealName,
-        pipeline: pipelineId,
-        dealstage: stageId,
-        ...(ownerId ? { hubspot_owner_id: ownerId } : {}),
+        firstname: firstName,
+        lastname: lastName,
+        hs_linkedinid: linkedinUrl || '',
       },
     }),
   });
+  return contact.id;
+}
 
+export async function pushHubSpotDeal({ name, linkedinUrl, contactText, remarks, pipelineId, stageId, ownerId }) {
+  const dealName = name || 'LinkedIn Lead';
+
+  // Step 1: Find or create contact
+  const contactId = await findOrCreateContact(name, linkedinUrl);
+
+  // Step 2: Create deal
+  let deal;
+  try {
+    deal = await hubspotFetch('/crm/v3/objects/deals', {
+      method: 'POST',
+      body: JSON.stringify({
+        properties: {
+          dealname: dealName,
+          pipeline: pipelineId,
+          dealstage: stageId,
+          ...(ownerId ? { hubspot_owner_id: ownerId } : {}),
+        },
+      }),
+    });
+  } catch (err) {
+    throw err;
+  }
+
+  // Step 3: Associate deal with contact (rollback deal if this fails)
+  try {
+    await hubspotFetch(`/crm/v4/objects/deal/${deal.id}/associations/default/contact/${contactId}`, {
+      method: 'PUT',
+    });
+  } catch (_) {
+    // Best effort rollback
+    hubspotFetch(`/crm/v3/objects/deals/${deal.id}`, { method: 'DELETE' }).catch(() => {});
+    throw new Error('Created deal but failed to link contact — deal rolled back.');
+  }
+
+  // Step 4: Create note
   const noteParts = [];
   if (remarks && remarks.trim()) noteParts.push(remarks.trim());
   noteParts.push(`LinkedIn: ${linkedinUrl}`);
   if (contactText) noteParts.push(`Connection Request:\n${contactText}`);
 
-  const note = await hubspotFetch('/crm/v3/objects/notes', {
-    method: 'POST',
-    body: JSON.stringify({
-      properties: {
-        hs_note_body: noteParts.join('\n\n'),
-        hs_timestamp: Date.now().toString(),
-      },
-    }),
-  });
+  let note;
+  try {
+    note = await hubspotFetch('/crm/v3/objects/notes', {
+      method: 'POST',
+      body: JSON.stringify({
+        properties: {
+          hs_note_body: noteParts.join('\n\n'),
+          hs_timestamp: Date.now().toString(),
+        },
+      }),
+    });
+  } catch (_) {
+    // Note creation failed — deal + contact association still saved, not fatal
+    return { success: true };
+  }
 
-  await hubspotFetch(`/crm/v4/objects/note/${note.id}/associations/default/deal/${deal.id}`, {
-    method: 'PUT',
-  });
+  // Step 5: Associate note with deal and contact (best effort)
+  await Promise.allSettled([
+    hubspotFetch(`/crm/v4/objects/note/${note.id}/associations/default/deal/${deal.id}`, { method: 'PUT' }),
+    hubspotFetch(`/crm/v4/objects/note/${note.id}/associations/default/contact/${contactId}`, { method: 'PUT' }),
+  ]);
 
   return { success: true };
 }

@@ -15,10 +15,37 @@ export async function checkAndTrackUsage(eventType, metadata = {}) {
       body: JSON.stringify({ googleToken: token, eventType, metadata }),
     });
     if (!resp.ok) return { allowed: true };
-    return await resp.json();
+    const data = await resp.json();
+    // Cache usage count for popup display
+    if (data.used !== undefined) {
+      chrome.storage.local.get('usageStats', r => {
+        const stats = r.usageStats || {};
+        stats[eventType] = data.used;
+        chrome.storage.local.set({ usageStats: stats });
+      });
+    }
+    return data;
   } catch (_) {
     return { allowed: true };
   }
+}
+
+export async function handleOpenBillingPortal() {
+  const authResult = await chrome.identity.getAuthToken({ interactive: false });
+  const token = typeof authResult === 'string' ? authResult : authResult?.token;
+  if (!token) throw new Error('Sign in first to manage your subscription.');
+
+  const resp = await fetch(`${SUPABASE_URL}/functions/v1/create-portal-session`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify({ googleToken: token }),
+  });
+  const data = await resp.json();
+  if (!resp.ok || data.error) throw new Error(data.error || 'Could not open billing portal.');
+  return { url: data.url };
 }
 
 export async function handleStartCheckout() {

@@ -47,9 +47,19 @@
       </div>
       <div class="popup-header-text">
         <div class="popup-title">LinkPilot AI</div>
-        <div class="popup-sub">by Satyron Private Limited</div>
+        <div class="popup-sub" id="popup-user-line">by Satyron Private Limited</div>
       </div>
       <span id="popup-plan-badge" class="popup-plan-badge plan-free">Free</span>
+    </div>
+
+    <!-- ── Upgrade CTA (free users only) ────────────────────────────────── -->
+    <div id="popup-upgrade-cta" class="popup-upgrade-cta" style="display:none;">
+      <div class="puc-text">
+        <div class="puc-title">Go Pro — Unlimited everything</div>
+        <div class="puc-sub">HubSpot, unlimited analyses &amp; messages</div>
+      </div>
+      <button id="popup-upgrade-btn" class="puc-btn">Upgrade</button>
+      <div id="popup-upgrade-status" style="display:none;font-size:11px;color:#f87171;margin-top:4px;grid-column:1/-1;"></div>
     </div>
 
     <!-- ── Connections ────────────────────────────────────────────────────── -->
@@ -84,6 +94,15 @@
       </div>
       <div id="mode-card" class="mode-card"></div>
       <div id="post-mode-row" class="post-mode-row"></div>
+    </div>
+
+    <!-- ── Usage This Month ──────────────────────────────────────────────── -->
+    <div class="popup-section" id="usage-section" style="display:none;">
+      <div class="section-eyebrow">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
+        This Month
+      </div>
+      <div class="usage-grid" id="usage-grid"></div>
     </div>
 
     <!-- ── Footer ─────────────────────────────────────────────────────────── -->

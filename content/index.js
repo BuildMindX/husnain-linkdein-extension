@@ -75,6 +75,11 @@
   }
 
   function isProfilePage() {
+    return /linkedin\.com\/in\/[^\/]+/.test(location.href) ||
+           /linkedin\.com\/sales\/(people|lead)\/[^\/]+/.test(location.href);
+  }
+
+  function isNativeLinkedInProfile() {
     return /linkedin\.com\/in\/[^\/]+/.test(location.href);
   }
 
@@ -603,6 +608,16 @@
     }
     createPanel();
     togglePanel(true);
+    if (!isNativeLinkedInProfile()) {
+      const body = document.getElementById('lia-body');
+      if (body) body.innerHTML = `
+        <div style="padding:28px 20px;text-align:center;">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="rgba(167,139,250,0.6)" stroke-width="1.5" style="margin-bottom:12px"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
+          <div style="font-size:14px;font-weight:700;color:#f1f5f9;margin-bottom:6px;">Sales Navigator Support</div>
+          <div style="font-size:12.5px;color:rgba(196,181,253,0.6);line-height:1.6;">Full analysis on Sales Navigator profiles is coming soon. Open the person's standard LinkedIn profile (<code style="font-size:11px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">linkedin.com/in/…</code>) to use LinkPilot AI.</div>
+        </div>`;
+      return;
+    }
     const isAuthed = await checkGoogleAuth();
     if (!isAuthed) { renderSignInRequired(); return; }
     renderPurposePicker();

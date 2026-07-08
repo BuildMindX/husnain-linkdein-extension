@@ -1,5 +1,5 @@
 import { handleGoogleSignIn, handleGoogleSignOut } from './auth.js';
-import { checkAndTrackUsage, handleStartCheckout } from './billing.js';
+import { checkAndTrackUsage, handleStartCheckout, handleOpenBillingPortal } from './billing.js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 import {
   handleAnalyzeProfile,
@@ -102,6 +102,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'OPEN_TAB') {
     chrome.tabs.create({ url: msg.url, active: true });
     return false;
+  }
+  if (msg.type === 'OPEN_BILLING_PORTAL') {
+    handleOpenBillingPortal().then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
   }
   if (msg.type === 'SAVE_SETTINGS') {
     (async () => {

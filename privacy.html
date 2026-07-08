@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy — LinkPilot AI</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0e0e28; --surface: #16163a; --border: rgba(124,58,237,0.18);
+    --purple: #7c3aed; --lavender: #c4b5fd; --text: #f1f5f9;
+    --muted: rgba(196,181,253,0.6); --subtle: rgba(241,245,249,0.7);
+  }
+  body {
+    min-height: 100vh;
+    background: var(--bg);
+    background-image: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(124,58,237,0.1) 0%, transparent 70%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 14.5px;
+    line-height: 1.75;
+    padding: 48px 24px 80px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+
+  .brand {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 48px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .brand-name { font-size: 17px; font-weight: 700; color: var(--text); }
+  .brand-maker { font-size: 12px; color: var(--muted); margin-top: 1px; }
+
+  h1 {
+    font-size: 30px; font-weight: 800; letter-spacing: -0.02em;
+    color: var(--text); margin-bottom: 6px;
+  }
+  .effective { font-size: 13px; color: var(--muted); margin-bottom: 40px; }
+
+  h2 {
+    font-size: 16px; font-weight: 700; color: var(--lavender);
+    margin: 36px 0 10px; letter-spacing: -0.01em;
+  }
+  p { color: var(--subtle); margin-bottom: 12px; }
+  ul { padding-left: 20px; color: var(--subtle); margin-bottom: 12px; }
+  li { margin-bottom: 6px; }
+  strong { color: var(--text); font-weight: 600; }
+  a { color: var(--lavender); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .highlight-box {
+    background: rgba(124,58,237,0.08);
+    border: 1px solid rgba(124,58,237,0.2);
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin: 24px 0;
+    color: var(--subtle);
+  }
+  .highlight-box strong { color: var(--lavender); }
+
+  footer {
+    margin-top: 56px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    font-size: 12.5px;
+    color: rgba(148,163,184,0.45);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="brand">
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="rgba(124,58,237,0.9)">
+      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+    </svg>
+    <div>
+      <div class="brand-name">LinkPilot AI</div>
+      <div class="brand-maker">by Satyron Private Limited</div>
+    </div>
+  </div>
+
+  <h1>Privacy Policy</h1>
+  <p class="effective">Effective date: July 2026 &nbsp;·&nbsp; Version 1.3</p>
+
+  <div class="highlight-box">
+    <strong>Short version:</strong> Your API keys and LinkedIn data never leave your browser to our servers.
+    AI calls go directly from your browser to OpenAI. We only store your Google account info,
+    plan status, and non-sensitive settings in our database.
+  </div>
+
+  <h2>1. Who We Are</h2>
+  <p>LinkPilot AI is a Chrome extension developed by <strong>Satyron Private Limited</strong>.
+  Contact us at <a href="mailto:husnain@callopa.com">husnain@callopa.com</a> for privacy-related questions.</p>
+
+  <h2>2. What Data We Collect</h2>
+
+  <p><strong>Data stored on our servers (Supabase):</strong></p>
+  <ul>
+    <li>Your Google account ID, email address, display name, and profile photo URL — collected when you sign in</li>
+    <li>Your subscription plan (Free or Pro) and its expiry date</li>
+    <li>Non-sensitive settings you choose to sync across devices: your chosen analysis mode (B2B / Freelance / Job Search), target industries, excluded industries, business profile text, message presets, job profile, and creator/company profile</li>
+    <li>Usage event counts (how many analyses, messages, and posts you've generated this month) — used to enforce free-plan limits</li>
+    <li>Stripe customer ID — to manage your subscription; payment details are held solely by Stripe</li>
+  </ul>
+
+  <p><strong>Data stored only on your device (Chrome's local storage):</strong></p>
+  <ul>
+    <li>Your OpenAI API key — never transmitted to our servers</li>
+    <li>Your HubSpot API token — never transmitted to our servers</li>
+    <li>Cached LinkedIn profile analyses (stored in IndexedDB in your browser)</li>
+  </ul>
+
+  <h2>3. What Data We Do NOT Collect</h2>
+  <ul>
+    <li>LinkedIn profile content — extracted locally and sent directly to OpenAI, never to our servers</li>
+    <li>Your OpenAI API key or HubSpot token</li>
+    <li>Browsing history or LinkedIn activity beyond the profile currently being analysed</li>
+    <li>Message content generated by the AI</li>
+  </ul>
+
+  <h2>4. How We Use Your Data</h2>
+  <ul>
+    <li><strong>Google account data</strong> — to authenticate you and sync your settings across devices</li>
+    <li><strong>Usage counts</strong> — to enforce free-plan limits (50 analyses / messages / posts per month)</li>
+    <li><strong>Settings</strong> — to restore your configuration when you sign in on a new device</li>
+    <li><strong>Stripe customer ID</strong> — to manage billing and let you access the billing portal</li>
+  </ul>
+
+  <h2>5. Third-Party Services</h2>
+  <ul>
+    <li><strong>OpenAI</strong> — LinkedIn profile text is sent directly from your browser to OpenAI's API for AI analysis. Subject to <a href="https://openai.com/policies/privacy-policy" target="_blank">OpenAI's Privacy Policy</a>.</li>
+    <li><strong>HubSpot</strong> — If you connect HubSpot, deal and contact data you choose to push is sent directly from your browser to HubSpot's API. Subject to <a href="https://legal.hubspot.com/privacy-policy" target="_blank">HubSpot's Privacy Policy</a>.</li>
+    <li><strong>Google OAuth</strong> — We use Google Sign-In for authentication. Subject to <a href="https://policies.google.com/privacy" target="_blank">Google's Privacy Policy</a>.</li>
+    <li><strong>Stripe</strong> — We use Stripe for payment processing. Your payment details are handled solely by Stripe. Subject to <a href="https://stripe.com/privacy" target="_blank">Stripe's Privacy Policy</a>.</li>
+    <li><strong>Supabase</strong> — Our backend (authentication, database, edge functions) runs on Supabase, hosted in the EU (Frankfurt). Subject to <a href="https://supabase.com/privacy" target="_blank">Supabase's Privacy Policy</a>.</li>
+  </ul>
+
+  <h2>6. Data Retention</h2>
+  <p>Your account data is retained as long as your account is active. Usage events older than 12 months are automatically purged. You can delete all locally stored data at any time from Settings → Account → Clear All Local Data. To request deletion of your server-side data, email us at <a href="mailto:husnain@callopa.com">husnain@callopa.com</a>.</p>
+
+  <h2>7. Your Rights</h2>
+  <p>You have the right to access, correct, export, or delete your personal data. To exercise these rights, contact <a href="mailto:husnain@callopa.com">husnain@callopa.com</a>. We will respond within 30 days.</p>
+
+  <h2>8. Security</h2>
+  <p>All communication between your browser and our servers is encrypted via HTTPS/TLS. API keys are stored locally in Chrome's encrypted storage and are never transmitted to our servers. Server-side data is stored in a Supabase database with row-level access controls.</p>
+
+  <h2>9. Children's Privacy</h2>
+  <p>LinkPilot AI is not directed at children under 13. We do not knowingly collect personal data from children.</p>
+
+  <h2>10. Changes to This Policy</h2>
+  <p>We may update this policy as the product evolves. Material changes will be communicated via the extension's update notes. Continued use after changes constitutes acceptance.</p>
+
+  <h2>11. Contact</h2>
+  <p>Satyron Private Limited<br>
+  Email: <a href="mailto:husnain@callopa.com">husnain@callopa.com</a></p>
+
+  <footer>
+    © 2026 Satyron Private Limited. All rights reserved. &nbsp;·&nbsp;
+    LinkPilot AI v1.3.0
+  </footer>
+
+</div>
+</body>
+</html>
