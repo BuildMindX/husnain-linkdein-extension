@@ -99,16 +99,20 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 const SYNC_KEYS = [
-  'openaiApiKey', 'hubspotApiKey', 'analysisIntent',
+  'analysisIntent',
   'targetIndustries', 'excludeIndustries', 'businessProfile',
   'messagePresets', 'b2cProfile', 'jobProfile',
   'creatorProfile', 'companyProfile',
 ];
 
+let _syncDebounceTimer = null;
 function syncSettingsToCloud() {
-  chrome.storage.local.get(SYNC_KEYS, settings => {
-    chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings });
-  });
+  clearTimeout(_syncDebounceTimer);
+  _syncDebounceTimer = setTimeout(() => {
+    chrome.storage.local.get(SYNC_KEYS, settings => {
+      chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings });
+    });
+  }, 1500);
 }
 
 // ── Post Creator: Personal / Company toggle ───────────────────────────────────
@@ -504,6 +508,79 @@ document.getElementById('co-save-btn')?.addEventListener('click', () => {
   chrome.storage.local.set({ companyProfile }, () => showStatus(document.getElementById('co-status'), 'Company profile saved.', 'success'));
 });
 
+// ── Reload all form fields from storage (called after sign-in) ────────────────
+function loadAllSettings() {
+  chrome.storage.local.get([
+    'analysisIntent', 'targetIndustries', 'excludeIndustries',
+    'businessProfile', 'messagePresets', 'b2cProfile', 'jobProfile',
+    'openaiApiKey', 'hubspotApiKey', 'creatorProfile', 'companyProfile',
+  ], r => {
+    // Mode
+    const intent = r.analysisIntent || 'b2b_sales';
+    modeCards.forEach(c => c.classList.toggle('active', c.dataset.intent === intent));
+    applyIntentVisibility(intent);
+
+    // ICP
+    tagState.targets = Array.isArray(r.targetIndustries) ? r.targetIndustries : [];
+    tagState.excludes = Array.isArray(r.excludeIndustries) ? r.excludeIndustries : [...DEFAULT_EXCLUDES];
+    renderTags('targets');
+    renderTags('excludes');
+
+    // Business profile
+    const b = r.businessProfile || {};
+    Object.entries(bizFields).forEach(([k, id]) => { const el = document.getElementById(id); if (el) el.value = b[k] || ''; });
+
+    // Message presets
+    const mp = r.messagePresets || {};
+    msgState.tone = mp.tone || 'warm';
+    msgState.length = mp.length || 'standard';
+    msgState.includeCta = !!mp.includeCta;
+    msgState.ctaText = mp.ctaText || '';
+    renderSeg('tone-seg', msgState.tone);
+    renderSeg('length-seg', msgState.length);
+    if (ctaToggle) ctaToggle.checked = msgState.includeCta;
+    if (ctaTextEl) ctaTextEl.value = msgState.ctaText;
+
+    // B2C profile
+    const b2c = r.b2cProfile || {};
+    Object.entries(b2cFields).forEach(([k, id]) => { const el = document.getElementById(id); if (el) el.value = b2c[k] || ''; });
+
+    // Job profile
+    const job = r.jobProfile || {};
+    const sv = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+    sv('job-name', job.senderName); sv('job-title', job.currentTitle);
+    sv('job-background', job.background); sv('job-years', job.yearsExp);
+    jobTagState.roles = Array.isArray(job.targetRoles) ? job.targetRoles : [];
+    jobTagState.industries = Array.isArray(job.targetIndustries) ? job.targetIndustries : [];
+    renderJobTags('roles');
+    renderJobTags('industries');
+
+    // API keys
+    if (apiKeyInput) {
+      apiKeyInput.value = r.openaiApiKey || '';
+      if (r.openaiApiKey) showStatus(statusMsg, 'API key is saved and active.', 'success');
+    }
+    if (hsKeyInput) {
+      hsKeyInput.value = r.hubspotApiKey || '';
+      if (r.hubspotApiKey) showStatus(hsStatusMsg, 'HubSpot token is saved and active.', 'success');
+    }
+
+    // Creator profile
+    const cp = r.creatorProfile || {};
+    const svc = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+    svc('creator-name', cp.name); svc('creator-linkedin-url', cp.linkedinUrl);
+    svc('creator-audience', cp.audience); svc('creator-goal', cp.goal); svc('creator-style', cp.postStyle);
+    creatorDomainTagState.domains = Array.isArray(cp.domains) ? cp.domains : [];
+    renderCreatorDomainTags();
+
+    // Company profile
+    const co = r.companyProfile || {};
+    const sco = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+    sco('co-name', co.name); sco('co-industry', co.industry); sco('co-about', co.about);
+    sco('co-products', co.products); sco('co-icp', co.icp); sco('co-goal', co.goal); sco('co-style', co.postStyle);
+  });
+}
+
 // ── Google Account ────────────────────────────────────────────────────────────
 function renderAccountTab(user, plan) {
   const section = document.getElementById('google-auth-section');
@@ -572,6 +649,7 @@ function handleGoogleSignIn() {
     }
     renderAccountTab(response.user, response.plan || 'free');
     showStatus(accountStatus, `Signed in as ${response.user.email}`, 'success');
+    loadAllSettings();
   });
 }
 
@@ -601,7 +679,7 @@ function handleUpgrade() {
       if (statusEl) { statusEl.textContent = response?.error || 'Upgrade failed. Try again.'; statusEl.style.display = ''; }
       return;
     }
-    chrome.tabs.create({ url: response.url });
+    chrome.tabs.create({ url: response.url, active: true });
   });
 }
 

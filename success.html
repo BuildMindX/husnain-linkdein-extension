@@ -1,4 +1,3 @@
-const html = String.raw`
 <!doctype html>
 <html lang="en">
 <head>
@@ -68,19 +67,15 @@ const html = String.raw`
     50%       { box-shadow: 0 0 0 10px rgba(16,185,129,0); }
   }
 
-  .check-svg {
-    animation: draw-check 0.45s cubic-bezier(0.22,1,0.36,1) 0.25s both;
+  .check-svg polyline {
+    stroke-dasharray: 40;
+    stroke-dashoffset: 40;
+    animation: draw-check 0.45s cubic-bezier(0.22,1,0.36,1) 0.25s forwards;
   }
 
   @keyframes draw-check {
     from { stroke-dashoffset: 40; opacity: 0; }
     to   { stroke-dashoffset: 0;  opacity: 1; }
-  }
-
-  .check-svg polyline {
-    stroke-dasharray: 40;
-    stroke-dashoffset: 40;
-    animation: draw-check 0.45s cubic-bezier(0.22,1,0.36,1) 0.25s forwards;
   }
 
   .pro-badge {
@@ -137,10 +132,7 @@ const html = String.raw`
     color: rgba(241,245,249,0.85);
   }
 
-  .feat-icon {
-    flex-shrink: 0;
-    color: var(--green-lt);
-  }
+  .feat-icon { flex-shrink: 0; color: var(--green-lt); }
 
   .btn-primary {
     width: 100%;
@@ -202,7 +194,7 @@ const html = String.raw`
   <ul class="features">
     <li>
       <svg class="feat-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-      Unlimited AI analyses & outreach messages
+      Unlimited AI analyses &amp; outreach messages
     </li>
     <li>
       <svg class="feat-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
@@ -230,14 +222,10 @@ const html = String.raw`
   </div>
 
 </div>
+<script>
+  if (typeof chrome !== 'undefined' && chrome.runtime) {
+    chrome.runtime.sendMessage({ type: 'SYNC_PLAN' });
+  }
+</script>
 </body>
 </html>
-`
-
-Deno.serve((_req: Request) => {
-  const headers = new Headers()
-  headers.set('Content-Type', 'text/html; charset=utf-8')
-  headers.set('Cache-Control', 'no-store, no-cache')
-  headers.set('X-Content-Type-Options', 'nosniff')
-  return new Response(html, { status: 200, headers })
-})

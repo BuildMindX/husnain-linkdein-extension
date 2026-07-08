@@ -1,7 +1,7 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
 const SETTINGS_KEYS = [
-  'openaiApiKey', 'hubspotApiKey', 'analysisIntent',
+  'analysisIntent',
   'targetIndustries', 'excludeIndustries', 'businessProfile',
   'messagePresets', 'b2cProfile', 'jobProfile',
   'creatorProfile', 'companyProfile',

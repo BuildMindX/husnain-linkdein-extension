@@ -1029,7 +1029,10 @@
     });
   }
 
+  let _analyzing = false;
+
   async function runAnalysis() {
+    if (_analyzing) return;
     const hasKey = await checkApiKey();
     if (!hasKey) { renderNoApiKey(); return; }
 
@@ -1037,6 +1040,7 @@
     const tabs = panel?.querySelector('.lia-tabs');
     if (tabs) tabs.style.display = '';
 
+    _analyzing = true;
     setLoadingState();
     const profileData = extractProfile();
 
@@ -1057,6 +1061,8 @@
       renderResults(record.analysis, record.connectionRequest, Date.now(), intent);
     } catch (err) {
       renderError(err.message);
+    } finally {
+      _analyzing = false;
     }
   }
 
@@ -1204,8 +1210,18 @@
       btnId,
       btnLabel: 'Upgrade to Pro',
     });
-    bodyEl.querySelector(`#${btnId}`).addEventListener('click', () => {
-      chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' });
+    const upgradeBtn = bodyEl.querySelector(`#${btnId}`);
+    upgradeBtn.addEventListener('click', () => {
+      upgradeBtn.disabled = true;
+      upgradeBtn.textContent = 'Opening checkout…';
+      chrome.runtime.sendMessage({ type: 'START_CHECKOUT' }, res => {
+        if (chrome.runtime.lastError || !res?.url) {
+          upgradeBtn.disabled = false;
+          upgradeBtn.textContent = 'Upgrade to Pro';
+          return;
+        }
+        chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: res.url });
+      });
     });
   }
 
@@ -1213,6 +1229,10 @@
     const body = document.getElementById('lia-body');
     if (!body) return;
     if (message === 'NO_API_KEY') { renderNoApiKey(); return; }
+    if (message === 'INVALID_KEY') { message = 'Your OpenAI API key is invalid. Please update it in Settings.'; }
+    if (message === 'RATE_LIMITED') { message = 'OpenAI rate limit reached. Please wait a moment and try again.'; }
+    if (message === 'API_DOWN') { message = 'OpenAI is temporarily unavailable. Please try again shortly.'; }
+    if (message === 'TRUNCATED_RESPONSE') { message = 'The AI response was cut short. Please try again.'; }
     if (message === 'LIMIT_REACHED') {
       _renderUpgradeGate(body, 'Monthly Limit Reached', 'You\'ve used all your free analyses this month. Upgrade to Pro for unlimited access.', 'lia-upgrade-btn');
       return;
@@ -1271,9 +1291,9 @@
         reachOut = cp === 'High' ? 'Yes' : cp === 'Medium' ? 'Maybe' : 'Low priority';
         reachReason = analysis.clientPotential?.reasoning || '';
       } else {
-        const ps = analysis.prospectScore?.score || 'Low';
+        const ps = analysis.potentialClient?.score || 'Low';
         reachOut = ps === 'High' ? 'Yes' : ps === 'Medium' ? 'Maybe' : 'Low priority';
-        reachReason = analysis.prospectScore?.reasoning || '';
+        reachReason = analysis.potentialClient?.reasoning || '';
       }
       const roClass = reachOut === 'Yes' ? 'ro-yes' : reachOut === 'Maybe' ? 'ro-maybe' : 'ro-no';
       const roIcon = reachOut === 'Yes'
@@ -1851,7 +1871,17 @@
           </div>
         `;
         document.getElementById('lia-hs-upgrade-btn').addEventListener('click', () => {
-          chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' });
+          const btn = document.getElementById('lia-hs-upgrade-btn');
+          btn.disabled = true;
+          btn.textContent = 'Opening checkout…';
+          chrome.runtime.sendMessage({ type: 'START_CHECKOUT' }, res => {
+            if (chrome.runtime.lastError || !res?.url) {
+              btn.disabled = false;
+              btn.textContent = 'Upgrade to Pro';
+              return;
+            }
+            chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: res.url });
+          });
         });
         return;
       }

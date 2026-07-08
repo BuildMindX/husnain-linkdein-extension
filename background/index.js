@@ -99,6 +99,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     handleStartCheckout().then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
     return true;
   }
+  if (msg.type === 'OPEN_TAB') {
+    chrome.tabs.create({ url: msg.url, active: true });
+    return false;
+  }
   if (msg.type === 'SAVE_SETTINGS') {
     (async () => {
       try {
@@ -129,10 +133,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!resp.ok) { sendResponse({ plan: 'free' }); return; }
         const data = await resp.json();
         const plan = data.user?.plan || 'free';
-        await chrome.storage.local.set({ userPlan: plan });
+        const update = { userPlan: plan };
+        if (plan === 'pro') update.pendingOnboarding = null;
+        await chrome.storage.local.set(update);
+        if (plan === 'pro') await chrome.storage.local.remove('pendingOnboarding');
         sendResponse({ plan });
       } catch (_) { sendResponse({ plan: 'free' }); }
     })();
     return true;
   }
+  sendResponse({ error: 'UNKNOWN_TYPE' });
+  return false;
+});
+
+chrome.alarms.create('daily-plan-sync', { delayInMinutes: 60, periodInMinutes: 1440 });
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name !== 'daily-plan-sync') return;
+  chrome.identity.getAuthToken({ interactive: false }, token => {
+    if (!token || chrome.runtime.lastError) return;
+    fetch(`${SUPABASE_URL}/functions/v1/sync-user`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ googleToken: token }),
+    }).then(r => r.ok ? r.json() : null).then(data => {
+      if (!data?.user?.plan) return;
+      chrome.storage.local.set({ userPlan: data.user.plan });
+    }).catch(() => {});
+  });
 });

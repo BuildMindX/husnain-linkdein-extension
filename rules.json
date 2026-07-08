@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": { "extensionPath": "/success.html" }
+    },
+    "condition": {
+      "urlFilter": "||hokgbtrptddjgwgvvhrb.supabase.co/functions/v1/success-page",
+      "resourceTypes": ["main_frame"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": { "extensionPath": "/cancel.html" }
+    },
+    "condition": {
+      "urlFilter": "||hokgbtrptddjgwgvvhrb.supabase.co/functions/v1/cancel-page",
+      "resourceTypes": ["main_frame"]
+    }
+  }
+]

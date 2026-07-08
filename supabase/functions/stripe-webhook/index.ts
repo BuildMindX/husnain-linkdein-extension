@@ -59,6 +59,25 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  if (event.type === 'invoice.payment_failed') {
+    const invoice = event.data.object as Stripe.Invoice
+    const subId = typeof invoice.subscription === 'string'
+      ? invoice.subscription
+      : (invoice.subscription as Stripe.Subscription | null)?.id
+
+    if (subId) {
+      const { data: user } = await supabase
+        .from('users')
+        .select('id')
+        .eq('stripe_subscription_id', subId)
+        .single()
+
+      if (user) {
+        await supabase.from('users').update({ plan: 'free', plan_expires_at: null }).eq('id', user.id)
+      }
+    }
+  }
+
   return new Response(JSON.stringify({ received: true }), {
     headers: { 'Content-Type': 'application/json' },
   })

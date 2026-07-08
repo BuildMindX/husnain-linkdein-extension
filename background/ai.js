@@ -183,7 +183,7 @@ async function callAI(systemPrompt, userPrompt) {
     },
     body: JSON.stringify({
       model: OPENAI_MODEL,
-      max_tokens: 1500,
+      max_tokens: 2000,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -191,6 +191,9 @@ async function callAI(systemPrompt, userPrompt) {
     }),
   });
   if (!response.ok) {
+    if (response.status === 401) throw new Error('INVALID_KEY');
+    if (response.status === 429) throw new Error('RATE_LIMITED');
+    if (response.status === 503) throw new Error('API_DOWN');
     const err = await response.json().catch(() => ({}));
     throw new Error(err?.error?.message || `API error ${response.status}`);
   }
@@ -398,8 +401,12 @@ ${buildIcpContext(cfg)}`;
   const userPrompt = buildProfileText(profileData);
   const raw = await callAI(systemPrompt, userPrompt);
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('Invalid AI response — could not parse JSON');
-  return JSON.parse(jsonMatch[0]);
+  if (!jsonMatch) throw new Error('TRUNCATED_RESPONSE');
+  try {
+    return JSON.parse(jsonMatch[0]);
+  } catch {
+    throw new Error('TRUNCATED_RESPONSE');
+  }
 }
 
 // ─── Connection Request ───────────────────────────────────────────────────────
