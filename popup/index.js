@@ -105,7 +105,6 @@ function renderMainContent(result) {
   }
 
   // ── Plan badge in header ──
-  const plan = result.userPlan || 'free';
   const planBadgeEl = document.getElementById('popup-plan-badge');
   if (planBadgeEl) {
     planBadgeEl.textContent = plan === 'pro' ? 'Pro' : 'Free';
