@@ -1144,6 +1144,175 @@
   box-shadow: -4px 2px 14px rgba(5,150,105,0.4);
 }
 
+#lia-time-trigger {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(calc(-50% + 100px));
+  z-index: 2147483645;
+  background: #d97706;
+  color: #fff;
+  border: none;
+  border-radius: 10px 0 0 10px;
+  padding: 9px 10px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  box-shadow: -2px 2px 10px rgba(217,119,6,0.35);
+  transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+  writing-mode: horizontal-tb;
+}
+
+#lia-time-trigger:hover {
+  background: #b45309;
+  transform: translateY(calc(-50% + 100px)) translateX(-3px);
+  box-shadow: -4px 2px 14px rgba(217,119,6,0.4);
+}
+
+/* ── World Clock / Time Converter Panel ──────────────────────────────────────── */
+#lia-time-panel {
+  position: fixed;
+  top: 0;
+  right: -400px;
+  width: 340px;
+  height: 100vh;
+  background: linear-gradient(160deg, #1e1e4a 0%, #18183e 40%, #141432 100%);
+  border-left: 1px solid rgba(124,58,237,0.25);
+  box-shadow: -4px 0 28px rgba(0,0,0,0.12);
+  z-index: 2147483646;
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  transition: right 0.28s cubic-bezier(0.4,0,0.2,1);
+  overflow: hidden;
+}
+
+#lia-time-panel.lia-pc-open { right: 0; }
+
+.lia-time-clocks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lia-time-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(124,58,237,0.2);
+  border-radius: 10px;
+}
+
+.lia-time-row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.lia-time-row-date {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: rgba(196,181,253,0.6);
+}
+
+.lia-time-row-clock {
+  font-size: 15px;
+  font-weight: 700;
+  color: #c4b5fd;
+  font-variant-numeric: tabular-nums;
+}
+
+.lia-time-convert-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lia-time-convert-row .lia-notes-input {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.lia-time-convert-row .lia-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 9px 16px;
+}
+
+.lia-time-convert-result {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lia-time-convert-out-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  color: #e2e8f0;
+  padding: 6px 10px;
+  background: rgba(124,58,237,0.12);
+  border-radius: 8px;
+}
+
+.lia-time-convert-out-row b {
+  color: #c4b5fd;
+  font-variant-numeric: tabular-nums;
+}
+
+.lia-time-convert-err {
+  font-size: 12px;
+  color: #f87171;
+}
+
+.lia-time-zones-toggle {
+  background: transparent;
+  border: none;
+  color: rgba(196,181,253,0.85);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.lia-time-zones-toggle:hover { color: #fff; }
+
+.lia-time-zone-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.lia-time-zone-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
 /* ── Post Creator Panel ───────────────────────────────────────────────────────── */
 #lia-post-panel {
   position: fixed;
@@ -1836,7 +2005,8 @@
 
 /* Override independent positioning when inside the dock */
 #lia-sidebar-dock #lia-trigger,
-#lia-sidebar-dock #lia-post-trigger {
+#lia-sidebar-dock #lia-post-trigger,
+#lia-sidebar-dock #lia-time-trigger {
   position: relative !important;
   right: auto !important;
   top: auto !important;
@@ -1845,7 +2015,8 @@
 }
 
 #lia-sidebar-dock #lia-trigger:hover,
-#lia-sidebar-dock #lia-post-trigger:hover {
+#lia-sidebar-dock #lia-post-trigger:hover,
+#lia-sidebar-dock #lia-time-trigger:hover {
   transform: translateX(-3px) !important;
 }
 
@@ -2717,3 +2888,186 @@
 #lia-panel ::-webkit-scrollbar-track { background: transparent; }
 #lia-panel ::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.3); border-radius: 3px; }
 #lia-panel ::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,0.5); }
+
+/* ── Save Button ─────────────────────────────────────────────────────────── */
+.lia-save-btn {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 7px !important;
+  background: rgba(255,255,255,0.06) !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  color: rgba(203,213,225,0.6) !important;
+  cursor: pointer !important;
+  transition: all 0.15s !important;
+  flex-shrink: 0 !important;
+  padding: 0 !important;
+}
+.lia-save-btn:hover {
+  background: rgba(234,179,8,0.15) !important;
+  border-color: rgba(234,179,8,0.3) !important;
+  color: #fbbf24 !important;
+}
+.lia-save-btn-active {
+  background: rgba(234,179,8,0.18) !important;
+  border-color: rgba(234,179,8,0.4) !important;
+  color: #fbbf24 !important;
+}
+.lia-save-btn-active svg {
+  fill: #fbbf24 !important;
+  stroke: #fbbf24 !important;
+}
+
+/* ── Search Results Banner ───────────────────────────────────────────────── */
+#lia-search-banner {
+  margin: 8px 0 4px;
+  padding: 0 16px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif;
+  position: relative;
+  z-index: 1;
+}
+.lia-search-banner-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: rgba(13,13,50,0.94);
+  border: 1px solid rgba(124,58,237,0.35);
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+}
+.lia-search-banner-label {
+  flex: 1;
+  font-size: 12px;
+  color: rgba(196,181,253,0.85);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lia-search-score-btn {
+  padding: 5px 13px;
+  background: linear-gradient(135deg, #7c3aed, #4f46e5);
+  border: none;
+  border-radius: 20px;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  box-shadow: 0 2px 8px rgba(124,58,237,0.4);
+  transition: box-shadow 0.15s, transform 0.1s;
+  flex-shrink: 0;
+}
+.lia-search-score-btn:hover {
+  box-shadow: 0 3px 12px rgba(124,58,237,0.55);
+  transform: translateY(-1px);
+}
+
+/* ─── Messaging Follow-up Bar ─────────────────────────────────────────────── */
+#lia-followup-bar {
+  width: 100%;
+  padding: 6px 12px;
+  box-sizing: border-box;
+}
+.lia-followup-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: rgba(13,13,50,0.94);
+  border: 1px solid rgba(124,58,237,0.35);
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif;
+}
+.lia-followup-bar-label {
+  font-size: 12px;
+  color: rgba(196,181,253,0.85);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lia-followup-status {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 500;
+  color: transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lia-followup-status-ok  { color: #4ade80; }
+.lia-followup-status-err { color: #f87171; }
+.lia-followup-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 13px;
+  background: linear-gradient(135deg, #7c3aed, #4f46e5);
+  border: none;
+  border-radius: 20px;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif;
+  box-shadow: 0 2px 8px rgba(124,58,237,0.4);
+  transition: box-shadow 0.15s, transform 0.1s, opacity 0.1s;
+  flex-shrink: 0;
+}
+.lia-followup-btn:hover:not(:disabled) {
+  box-shadow: 0 3px 12px rgba(124,58,237,0.55);
+  transform: translateY(-1px);
+}
+.lia-followup-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+.lia-followup-instr-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: rgba(124,58,237,0.15);
+  border: 1px solid rgba(124,58,237,0.35);
+  border-radius: 6px;
+  color: rgba(196,181,253,0.85);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.lia-followup-instr-toggle:hover {
+  background: rgba(124,58,237,0.3);
+}
+.lia-followup-instr-row {
+  padding: 6px 12px 0;
+}
+.lia-followup-instr-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  background: rgba(13,13,50,0.94);
+  border: 1px solid rgba(124,58,237,0.35);
+  border-radius: 8px;
+  color: #f3f0ff;
+  font-size: 11.5px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif;
+  outline: none;
+}
+.lia-followup-instr-input::placeholder {
+  color: rgba(196,181,253,0.45);
+}
+.lia-followup-instr-input:focus {
+  border-color: rgba(124,58,237,0.6);
+}
+@keyframes lia-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}

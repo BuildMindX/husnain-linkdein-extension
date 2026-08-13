@@ -7,6 +7,7 @@ import {
   handleGenerateColdMessage,
   handleGenerateFirstMessage,
   handleGenerateFollowUp,
+  handleGenerateChatFollowup,
   handleRefineMessage,
   handleSuggestPostTopics,
   handleGeneratePost,
@@ -15,6 +16,8 @@ import {
 import { fetchHubSpotPipelines, fetchHubSpotOwners, pushHubSpotDeal } from './hubspot.js';
 
 async function withUsageGate(eventType, fn) {
+  const { openaiApiKey } = await chrome.storage.local.get('openaiApiKey');
+  if (!openaiApiKey) return { error: 'NO_API_KEY' };
   const usage = await checkAndTrackUsage(eventType);
   if (!usage.allowed) return { error: 'LIMIT_REACHED', limit: usage.limit, used: usage.used };
   return fn();
@@ -44,7 +47,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === 'GENERATE_FOLLOW_UP') {
-    withUsageGate('message', () => handleGenerateFollowUp(msg.profileData, msg.conversationText, msg.intent)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withUsageGate('message', () => handleGenerateFollowUp(msg.profileData, msg.conversationText, msg.intent, msg.userInstructions)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    return true;
+  }
+  if (msg.type === 'GENERATE_CHAT_FOLLOWUP') {
+    withUsageGate('message', () => handleGenerateChatFollowup(msg)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'FETCH_HUBSPOT_PIPELINES') {
@@ -137,9 +144,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!resp.ok) { sendResponse({ plan: 'free' }); return; }
         const data = await resp.json();
         const plan = data.user?.plan || 'free';
-        const update = { userPlan: plan };
-        if (plan === 'pro') update.pendingOnboarding = null;
-        await chrome.storage.local.set(update);
+        await chrome.storage.local.set({ userPlan: plan });
         if (plan === 'pro') await chrome.storage.local.remove('pendingOnboarding');
         sendResponse({ plan });
       } catch (_) { sendResponse({ plan: 'free' }); }
@@ -150,11 +155,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return false;
 });
 
-chrome.alarms.create('daily-plan-sync', { delayInMinutes: 60, periodInMinutes: 1440 });
+chrome.alarms.get('daily-plan-sync', existing => {
+  if (!existing) chrome.alarms.create('daily-plan-sync', { delayInMinutes: 60, periodInMinutes: 1440 });
+});
 chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name !== 'daily-plan-sync') return;
   chrome.identity.getAuthToken({ interactive: false }, token => {
-    if (!token || chrome.runtime.lastError) return;
+    if (chrome.runtime.lastError || !token) return;
     fetch(`${SUPABASE_URL}/functions/v1/sync-user`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },

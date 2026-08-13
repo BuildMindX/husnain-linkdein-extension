@@ -141,6 +141,40 @@ function renderMainContent(result) {
     <span class="post-mode-badge">${postModeIcon} ${postModeLabel}</span>`;
 }
 
+function renderUsageWarning(plan, usageStats) {
+  const warning = document.getElementById('usage-warning');
+  if (!warning || plan === 'pro') return;
+  const FREE_LIMIT = 50;
+  const WARN_AT = 40; // 80%
+  const keys = ['analysis', 'message', 'post'];
+  const labels = { analysis: 'analyses', message: 'messages', post: 'posts' };
+  const exhausted = keys.filter(k => (usageStats[k] ?? 0) >= FREE_LIMIT);
+  const nearLimit = keys.filter(k => !exhausted.includes(k) && (usageStats[k] ?? 0) >= WARN_AT);
+  if (exhausted.length) {
+    const label = exhausted.map(k => labels[k]).join(' & ');
+    warning.innerHTML = `
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span>Monthly ${label} limit reached. <button class="usage-warn-btn" id="usage-warn-upgrade">Upgrade to Pro →</button></span>`;
+    warning.className = 'usage-warning usage-warn-critical';
+    warning.style.display = 'flex';
+  } else if (nearLimit.length) {
+    const label = nearLimit.map(k => labels[k]).join(' & ');
+    warning.innerHTML = `
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span>Running low on free ${label}. <button class="usage-warn-btn" id="usage-warn-upgrade">Upgrade →</button></span>`;
+    warning.className = 'usage-warning usage-warn-caution';
+    warning.style.display = 'flex';
+  }
+  document.getElementById('usage-warn-upgrade')?.addEventListener('click', () => {
+    const btn = document.getElementById('usage-warn-upgrade');
+    if (btn) btn.textContent = '…';
+    chrome.runtime.sendMessage({ type: 'START_CHECKOUT' }, res => {
+      if (res?.url) { chrome.tabs.create({ url: res.url, active: true }); window.close(); }
+      else if (btn) btn.textContent = 'Upgrade →';
+    });
+  });
+}
+
 function renderUsageStats(plan, usageStats) {
   const section = document.getElementById('usage-section');
   const grid = document.getElementById('usage-grid');
@@ -178,9 +212,71 @@ function renderUsageStats(plan, usageStats) {
   section.style.display = '';
 }
 
+function renderSavedContacts(contacts) {
+  const section = document.getElementById('saved-section');
+  const list = document.getElementById('saved-list');
+  if (!section || !list) return;
+  if (!contacts || contacts.length === 0) { section.style.display = 'none'; return; }
+
+  const SCORE_COLOR = {
+    High: '#16a34a', Medium: '#d97706', Low: '#6b7280',
+    Strong: '#16a34a', Possible: '#d97706', Unlikely: '#6b7280',
+  };
+
+  list.innerHTML = contacts.slice(0, 10).map(c => {
+    const color = SCORE_COLOR[c.score] || '#6b7280';
+    const name = c.name ? c.name.split(' ').slice(0, 2).join(' ') : 'Unknown';
+    const detail = c.company || c.headline || '';
+    return `
+      <div class="saved-contact-row">
+        <div class="saved-contact-info">
+          <span class="saved-contact-name">${escHtmlPopup(name)}</span>
+          ${detail ? `<span class="saved-contact-detail">${escHtmlPopup(detail.slice(0, 38))}</span>` : ''}
+        </div>
+        <div class="saved-contact-right">
+          <span class="saved-score-badge" style="color:${color};border-color:${color}40;background:${color}12">${escHtmlPopup(c.score || '–')}</span>
+          <a href="${escHtmlPopup(c.url)}" target="_blank" class="saved-open-link" title="Open on LinkedIn">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          </a>
+        </div>
+      </div>`;
+  }).join('');
+  section.style.display = '';
+}
+
+function escHtmlPopup(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function exportContactsCSV(contacts) {
+  const rows = [['Name', 'URL', 'Score', 'Intent', 'Headline', 'Company', 'Saved Date']];
+  contacts.forEach(c => {
+    rows.push([
+      c.name || '',
+      c.url || '',
+      c.score || '',
+      c.intent || '',
+      c.headline || '',
+      c.company || '',
+      c.savedAt ? new Date(c.savedAt).toLocaleDateString() : '',
+    ]);
+  });
+  const csv = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `linkpilot-contacts-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // ── Boot: check auth before rendering anything ────────────────────────────────
 chrome.storage.local.get(
-  ['googleUser', 'openaiApiKey', 'hubspotApiKey', 'analysisIntent', 'creatorProfile', 'companyProfile', 'userPlan', 'usageStats'],
+  ['googleUser', 'openaiApiKey', 'hubspotApiKey', 'analysisIntent', 'creatorProfile', 'companyProfile', 'userPlan', 'usageStats', 'savedContacts'],
   result => {
     if (!result.googleUser) {
       showSignInGate();
@@ -188,6 +284,14 @@ chrome.storage.local.get(
     }
     renderMainContent(result);
     renderUsageStats(result.userPlan || 'free', result.usageStats || {});
+    renderUsageWarning(result.userPlan || 'free', result.usageStats || {});
+    renderSavedContacts(result.savedContacts || []);
+
+    document.getElementById('export-csv-btn')?.addEventListener('click', () => {
+      chrome.storage.local.get('savedContacts', r => {
+        exportContactsCSV(r.savedContacts || []);
+      });
+    });
   }
 );
 

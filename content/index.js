@@ -10,12 +10,26 @@
   // Post creator state
   let postBtn = null;
   let postPanel = null;
+
+  // Search results state
+  let _searchObserver = null;
+  let _searchScored = false;
+
+  // Messaging follow-up state
+  let _msgFollowupBar = null;
+  let _msgObserver = null;
   let pcTopics = [];
   let pcSelected = null;     // { title, angle, hook }
   let pcStyle = 'educational';
   let pcResult = null;       // { post, hashtags, imagePrompt }
   let pcImageB64 = null;
   let pcMode = 'personal';   // 'personal' | 'company'
+
+  // Time / world clock state
+  let timeBtn = null;
+  let timePanel = null;
+  let _timeInterval = null;
+  let timeZones = null; // array of IANA zone ids, loaded from storage lazily
 
   // ─── IndexedDB ────────────────────────────────────────────────────────────────
   const DB_NAME = 'lia-db';
@@ -83,55 +97,94 @@
     return /linkedin\.com\/in\/[^\/]+/.test(location.href);
   }
 
-  async function isOwnProfile() {
-    try {
-      const r = await chrome.storage.local.get('creatorProfile');
-      const myUrl = r.creatorProfile?.linkedinUrl;
-      if (!myUrl) return false;
-      const myPath = new URL(myUrl).pathname.replace(/\/$/, '').toLowerCase();
-      const curPath = location.pathname.replace(/\/$/, '').toLowerCase();
-      return curPath === myPath;
-    } catch { return false; }
+  function isSearchResultsPage() {
+    return /linkedin\.com\/search\/results\/people/.test(location.href);
+  }
+
+  function isMessagingPage() {
+    return /linkedin\.com\/messaging/.test(location.href);
+  }
+
+  function scoreByTitle(title = '', company = '') {
+    const t = (title + ' ' + company).toLowerCase();
+    if (/\b(ceo|cto|cfo|coo|cpo|cso|chairman|founder|co-founder|cofounder|owner|president|managing director|md|general partner|gp)\b/.test(t)) return 'High';
+    if (/\b(vp|vice president|director|head of|chief [a-z]|partner)\b/.test(t)) return 'High';
+    if (/\b(manager|lead|senior|principal|team lead|department head|architect)\b/.test(t)) return 'Medium';
+    return 'Low';
   }
 
   // ─── Init ─────────────────────────────────────────────────────────────────────
-  async function init() {
-    if (!isProfilePage()) return;
-    currentProfileUrl = location.href.split('?')[0];
+  async function ensureDockButtons() {
     injectTriggerButton();
-    const own = await isOwnProfile();
-    if (own) {
-      const authed = await checkGoogleAuth();
-      if (authed) injectPostCreatorButton();
+    injectTimeButton();
+    const authed = await checkGoogleAuth();
+    if (authed) injectPostCreatorButton();
+  }
+
+  async function init() {
+    await ensureDockButtons();
+    if (isProfilePage()) {
+      currentProfileUrl = location.href.split('?')[0];
+    } else if (isSearchResultsPage()) {
+      initSearchResults();
+    } else if (isMessagingPage()) {
+      initMessagingPage();
     }
   }
 
-  // ─── SPA Navigation (singleton — created once, never recreated) ───────────────
-  const getPath = () => location.pathname.replace(/\/$/, '');
+  // ─── SPA Navigation (history API patch — fires once per URL change, not on DOM mutations) ─
+  // LinkedIn's React Router calls pushState/replaceState for every navigation — we intercept
+  // those calls and dispatch a lightweight custom event. Zero MutationObserver, zero polling.
+  (function patchHistory() {
+    if (window.__liaNavPatched) return;
+    window.__liaNavPatched = true;
+    const fire = () => window.dispatchEvent(new Event('lia-nav'));
+    const _push = history.pushState;
+    const _replace = history.replaceState;
+    history.pushState    = function() { _push.apply(this, arguments);    fire(); };
+    history.replaceState = function() { _replace.apply(this, arguments); fire(); };
+    window.addEventListener('popstate', fire);
+  }());
 
-  let _navLastPath = getPath();
-  new MutationObserver(() => {
-    const path = getPath();
+  // Compare path only — LinkedIn frequently calls replaceState/pushState just to update
+  // tracking query params (trk=...), and since our history patch leaks into the page's
+  // main world (shared `history` object), those no-op-for-us calls would otherwise fire
+  // 'lia-nav' and re-run init() (and its chrome.storage calls) on every tracking tick.
+  let _navLastPath = location.pathname;
+
+  window.addEventListener('lia-nav', () => {
+    const path = location.pathname;
     if (path === _navLastPath) return;
     _navLastPath = path;
+    ensureDockButtons();
     if (isProfilePage()) {
       currentProfileUrl = location.href.split('?')[0];
+      removeSearchUI();
+      removeMessagingUI();
       resetUI();
       init();
+    } else if (isSearchResultsPage()) {
+      removeMessagingUI();
+      resetUI();
+      initSearchResults();
+    } else if (isMessagingPage()) {
+      removeSearchUI();
+      resetUI();
+      removeMessagingUI();
+      initMessagingPage();
     } else {
+      removeSearchUI();
       removeAll();
     }
-  }).observe(document.body, { subtree: true, childList: true });
+  });
 
   // ─── Reactive auth state — show/hide Post button on sign-in / sign-out ────────
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !('googleUser' in changes)) return;
     if (!changes.googleUser.newValue) {
       if (postBtn) { postBtn.remove(); postBtn = null; }
-    } else {
-      if (!postBtn && isProfilePage()) {
-        isOwnProfile().then(own => { if (own) injectPostCreatorButton(); });
-      }
+    } else if (!postBtn) {
+      injectPostCreatorButton();
     }
   });
 
@@ -143,6 +196,393 @@
     sidebarDock.id = 'lia-sidebar-dock';
     document.body.appendChild(sidebarDock);
     return sidebarDock;
+  }
+
+  // ─── Search Results Scoring ───────────────────────────────────────────────────
+  function removeSearchUI() {
+    document.getElementById('lia-search-banner')?.remove();
+    document.querySelectorAll('.lia-search-badge').forEach(el => el.remove());
+    document.querySelectorAll('[data-lia-scored]').forEach(el => delete el.dataset.liaScored);
+    if (_searchObserver) { _searchObserver.disconnect(); _searchObserver = null; }
+    _searchScored = false;
+  }
+
+  function initSearchResults() {
+    if (!document.getElementById('lia-search-banner')) injectSearchBanner();
+    if (_searchObserver) _searchObserver.disconnect();
+    _searchObserver = new MutationObserver(() => {
+      if (_searchScored) scoreVisibleCards();
+    });
+    const root = document.querySelector('.search-results-container, main');
+    if (root) _searchObserver.observe(root, { childList: true, subtree: true });
+  }
+
+  function injectSearchBanner() {
+    const banner = document.createElement('div');
+    banner.id = 'lia-search-banner';
+    banner.innerHTML = `
+      <div class="lia-search-banner-inner">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(167,139,250,0.9)" style="flex-shrink:0">
+          <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452z"/>
+        </svg>
+        <span class="lia-search-banner-label">LinkPilot AI — ICP fit by title &amp; seniority</span>
+        <button id="lia-score-btn" class="lia-search-score-btn">Score Results</button>
+      </div>`;
+
+    const insertTarget = document.querySelector('.search-results-container > div:first-child, .reusable-search__result-container');
+    if (insertTarget?.parentElement) {
+      insertTarget.parentElement.insertBefore(banner, insertTarget);
+    } else {
+      const main = document.querySelector('main');
+      if (main) main.insertAdjacentElement('afterbegin', banner);
+    }
+
+    document.getElementById('lia-score-btn')?.addEventListener('click', () => {
+      const btn = document.getElementById('lia-score-btn');
+      if (_searchScored) {
+        document.querySelectorAll('.lia-search-badge').forEach(el => el.remove());
+        document.querySelectorAll('[data-lia-scored]').forEach(el => delete el.dataset.liaScored);
+        if (btn) btn.textContent = 'Score Results';
+        _searchScored = false;
+      } else {
+        scoreVisibleCards();
+        if (btn) btn.textContent = 'Clear Scores';
+        _searchScored = true;
+      }
+    });
+  }
+
+  function scoreVisibleCards() {
+    const SCORE_COLORS = {
+      High:   { fg: '#16a34a', bg: 'rgba(22,163,74,0.10)',   border: 'rgba(22,163,74,0.28)' },
+      Medium: { fg: '#d97706', bg: 'rgba(217,119,6,0.10)',   border: 'rgba(217,119,6,0.28)'  },
+      Low:    { fg: '#94a3b8', bg: 'rgba(148,163,184,0.08)', border: 'rgba(148,163,184,0.2)' },
+    };
+
+    const cards = document.querySelectorAll([
+      '.entity-result',
+      '.search-result',
+      '[data-view-name="search-entity-result-universal-template"]',
+    ].join(', '));
+
+    cards.forEach(card => {
+      if (card.dataset.liaScored) return;
+      card.dataset.liaScored = '1';
+      const profileLink = card.querySelector('a[href*="/in/"]');
+      if (!profileLink) return;
+
+      const titleEl = card.querySelector('.entity-result__primary-subtitle, .artdeco-entity-lockup__subtitle, .t-14.t-black.t-normal');
+      const companyEl = card.querySelector('.entity-result__secondary-subtitle, .t-14.t-black--light');
+      const title = titleEl?.textContent.trim() || '';
+      const company = companyEl?.textContent.trim() || '';
+      const score = scoreByTitle(title, company);
+      const { fg, bg, border } = SCORE_COLORS[score];
+
+      const badge = document.createElement('span');
+      badge.className = 'lia-search-badge';
+      badge.title = title ? `Based on: "${title}"` : 'No title info available';
+      badge.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:700;color:${fg};background:${bg};border:1px solid ${border};margin-left:7px;vertical-align:middle;white-space:nowrap;font-family:-apple-system,BlinkMacSystemFont,sans-serif;line-height:1.7;cursor:default;flex-shrink:0;`;
+      badge.innerHTML = `<span style="width:5px;height:5px;border-radius:50%;background:${fg};flex-shrink:0"></span>${score}`;
+
+      const nameEl = card.querySelector('.entity-result__title-text, .artdeco-entity-lockup__title');
+      if (nameEl) nameEl.appendChild(badge);
+    });
+  }
+
+  // ─── Messaging Follow-up ─────────────────────────────────────────────────────
+
+  function removeMessagingUI() {
+    _msgFollowupBar?.remove();
+    _msgFollowupBar = null;
+    if (_msgObserver) { _msgObserver.disconnect(); _msgObserver = null; }
+  }
+
+  function _resolveSender(rawName, contactName, myName) {
+    if (!rawName) return 'You';
+    const low = rawName.toLowerCase();
+    const contactFirst = (contactName || '').split(' ')[0].toLowerCase();
+    const myFirst = (myName || '').split(' ')[0].toLowerCase();
+    if (contactFirst && low.includes(contactFirst)) return contactName || rawName;
+    if (myFirst && low.includes(myFirst)) return 'You';
+    // If contact name is known, anything not matching the contact is the user
+    if (contactFirst) return 'You';
+    return rawName;
+  }
+
+  function _isReactionOnly(text) {
+    // Filter out LinkedIn emoji reactions (👍❤️👏 etc.) that are not message content
+    return text.length < 5 && /^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+$/u.test(text);
+  }
+
+  // Strips LinkedIn UI chrome that innerText picks up alongside real message text — visually
+  // hidden "View X's profile" accessibility labels, connection-degree badges, group headers,
+  // "(Edited)" tags, reaction summaries — so it never gets fed to the AI as if it were something
+  // the recipient actually said (which is exactly what caused fabricated follow-ups).
+  function _stripUiChrome(text) {
+    return text
+      .split('\n')
+      .filter(line => {
+        const t = line.trim();
+        if (!t) return false;
+        if (/^view .+ profile$/i.test(t)) return false;
+        if (/^\d+(st|nd|rd|th)\s+degree connection$/i.test(t)) return false;
+        if (/^·?\s*(1st|2nd|3rd)\+?$/i.test(t)) return false;
+        if (/sent the following messages? at/i.test(t)) return false;
+        if (/^\(edited\)$/i.test(t)) return false;
+        if (_isReactionOnly(t)) return false;
+        return true;
+      })
+      .join('\n')
+      .trim();
+  }
+
+  function scrapeThreadMessages(contactName, myName) {
+    const contactFirst = (contactName || '').split(' ')[0].toLowerCase();
+    const myFirst = (myName || '').split(' ')[0].toLowerCase();
+    const msgs = [];
+
+    // ── Strategy 1: structured message groups ──────────────────────────────────
+    const groups = document.querySelectorAll('.msg-s-message-group');
+    if (groups.length) {
+      groups.forEach(group => {
+        const isOutbound = group.classList.contains('msg-s-message-group--outbound');
+        // aria-label: "Husnain Ali sent the following messages at …"
+        const ariaLabel = group.getAttribute('aria-label') || '';
+        const ariaMatch = ariaLabel.match(/^(.+?)\s+sent\s+/i);
+        const nameEl = group.querySelector('.msg-s-message-group__name, [class*="message-group__name"]');
+        const rawName = ariaMatch?.[1]?.trim() || nameEl?.textContent.trim() || '';
+        const senderLow = rawName.toLowerCase();
+
+        const isContact = contactFirst && senderLow.includes(contactFirst);
+        const isMe = isOutbound || (myFirst && senderLow.includes(myFirst)) || (!isContact && contactFirst && rawName);
+        const sender = isContact ? (contactName || rawName) : 'You';
+
+        group.querySelectorAll('.msg-s-event-listitem__body, [class*="event-listitem__body"]').forEach(bodyEl => {
+          const text = _stripUiChrome((bodyEl.innerText || bodyEl.textContent || '').trim());
+          if (text && !_isReactionOnly(text)) msgs.push({ sender, text });
+        });
+      });
+      if (msgs.length) return msgs;
+    }
+
+    // ── Strategy 2: flat body elements with parent traversal ───────────────────
+    const bodyEls = document.querySelectorAll(
+      '.msg-s-event-listitem__body, [class*="event-listitem__body"], [class*="message-content__text"]'
+    );
+    if (bodyEls.length) {
+      bodyEls.forEach(bodyEl => {
+        const text = _stripUiChrome((bodyEl.innerText || bodyEl.textContent || '').trim());
+        if (!text || _isReactionOnly(text)) return;
+        // Walk up max 8 levels to find sender name
+        let rawName = '';
+        let node = bodyEl.parentElement;
+        for (let i = 0; i < 8 && node; i++) {
+          // aria-label "X sent the following messages"
+          const label = node.getAttribute('aria-label') || '';
+          const m = label.match(/^(.+?)\s+sent\s+/i);
+          if (m) { rawName = m[1].trim(); break; }
+          // named element
+          const nameEl = node.querySelector('[class*="message-group__name"], [class*="sender-name"]');
+          if (nameEl) { rawName = nameEl.textContent.trim(); break; }
+          // outbound class
+          if (node.classList.contains('msg-s-message-group--outbound')) { rawName = myName || 'Me'; break; }
+          node = node.parentElement;
+        }
+        msgs.push({ sender: _resolveSender(rawName, contactName, myName), text });
+      });
+      if (msgs.length) return msgs;
+    }
+
+    // ── Strategy 3: raw innerText from the conversation pane ──────────────────
+    const paneSelectors = [
+      '.msg-s-message-list',
+      '.scaffold-layout__detail',
+      '[class*="msg-thread"]',
+      'main',
+    ];
+    for (const sel of paneSelectors) {
+      const pane = document.querySelector(sel);
+      if (!pane) continue;
+      const raw = _stripUiChrome((pane.innerText || '')).replace(/\n{3,}/g, '\n\n').trim();
+      if (raw.length > 40) return [{ sender: '__raw__', text: raw.slice(0, 4000) }];
+    }
+
+    return [];
+  }
+
+  function getContactName() {
+    const sels = [
+      '.msg-thread__link-to-profile',
+      '.msg-entity-lockup__entity-title',
+      '.artdeco-entity-lockup__title',
+      '.presence-entity__name',
+      '.msg-conversation-listitem__participant-names',
+    ];
+    for (const s of sels) {
+      const name = document.querySelector(s)?.textContent.trim();
+      if (name) return name;
+    }
+    return '';
+  }
+
+  function insertIntoChat(text) {
+    const input = document.querySelector(
+      '.msg-form__contenteditable[contenteditable="true"], ' +
+      '[data-artdeco-is-focused][contenteditable="true"]'
+    );
+    if (!input) return false;
+    input.focus();
+    const sel = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(input);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.execCommand('insertText', false, text);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  }
+
+  function resetFollowupBtn(btn) {
+    if (!btn) return;
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><polyline points="17 8 21 12 17 16"/><path d="M3 12h18"/></svg> AI Follow-up`;
+  }
+
+  function injectFollowupBar() {
+    if (_msgFollowupBar && document.contains(_msgFollowupBar)) return;
+
+    // Anchor on the compose contenteditable — never the search form
+    const compose = document.querySelector('.msg-form__contenteditable[contenteditable="true"]');
+    if (!compose) return; // No open conversation yet — retry later
+
+    // Walk up to the closest form-like wrapper
+    const formWrapper = compose.closest('.msg-form') ||
+                        compose.closest('[class*="msg-thread__composer"]') ||
+                        compose.closest('[class*="compose"]') ||
+                        compose.parentElement?.parentElement;
+    if (!formWrapper) return;
+
+    const bar = document.createElement('div');
+    bar.id = 'lia-followup-bar';
+    bar.innerHTML = `
+      <div class="lia-followup-bar-inner">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(167,139,250,0.9)" style="flex-shrink:0"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452z"/></svg>
+        <span class="lia-followup-bar-label">LinkPilot AI</span>
+        <span id="lia-followup-status" class="lia-followup-status"></span>
+        <button id="lia-followup-instr-toggle" class="lia-followup-instr-toggle" type="button" title="Add instructions (e.g. be more direct)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        </button>
+        <button id="lia-followup-btn" class="lia-followup-btn">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><polyline points="17 8 21 12 17 16"/><path d="M3 12h18"/></svg>
+          AI Follow-up
+        </button>
+      </div>
+      <div id="lia-followup-instr-row" class="lia-followup-instr-row" style="display:none">
+        <input type="text" id="lia-followup-instr-input" class="lia-followup-instr-input" placeholder="Optional: be more direct, ask for a call this week..." />
+      </div>`;
+
+    formWrapper.insertAdjacentElement('beforebegin', bar);
+    _msgFollowupBar = bar;
+    document.getElementById('lia-followup-btn')?.addEventListener('click', handleFollowupClick);
+    document.getElementById('lia-followup-instr-toggle')?.addEventListener('click', () => {
+      const row = document.getElementById('lia-followup-instr-row');
+      if (!row) return;
+      const opening = row.style.display === 'none';
+      row.style.display = opening ? 'block' : 'none';
+      if (opening) document.getElementById('lia-followup-instr-input')?.focus();
+    });
+  }
+
+  async function handleFollowupClick() {
+    const btn = document.getElementById('lia-followup-btn');
+    const status = document.getElementById('lia-followup-status');
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    btn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;animation:lia-spin 0.9s linear infinite"><circle cx="12" cy="12" r="10" stroke-dasharray="40 20" stroke-linecap="round"/></svg> Generating…`;
+    if (status) { status.textContent = ''; status.className = 'lia-followup-status'; }
+    try {
+      const keyCheck = await new Promise(resolve => {
+        chrome.runtime.sendMessage({ type: 'GET_API_KEY_STATUS' }, r => {
+          if (chrome.runtime.lastError) resolve({ hasKey: false });
+          else resolve(r || { hasKey: false });
+        });
+      });
+      if (!keyCheck.hasKey) {
+        if (status) { status.textContent = 'No API key — open Settings'; status.className = 'lia-followup-status lia-followup-status-err'; }
+        resetFollowupBtn(btn);
+        return;
+      }
+      const contactName = getContactName();
+      const { googleUser, analysisIntent: intent = 'b2b_sales' } = await chrome.storage.local.get(['googleUser', 'analysisIntent']);
+      const myName = googleUser?.name || googleUser?.given_name || '';
+      const msgs = scrapeThreadMessages(contactName, myName);
+      const isRaw = msgs.length === 1 && msgs[0].sender === '__raw__';
+      const conversationText = !msgs.length
+        ? '(no messages found in thread)'
+        : isRaw
+        ? msgs[0].text
+        : msgs.map(m => `${m.sender}: ${m.text}`).join('\n\n');
+      const userInstructions = document.getElementById('lia-followup-instr-input')?.value.trim() || '';
+      const res = await new Promise(resolve => {
+        chrome.runtime.sendMessage({
+          type: 'GENERATE_CHAT_FOLLOWUP',
+          conversationText,
+          isRaw,
+          contactName,
+          senderName: myName,
+          intent,
+          userInstructions,
+        }, r => {
+          if (chrome.runtime.lastError) resolve({ error: chrome.runtime.lastError.message });
+          else resolve(r || { error: 'No response' });
+        });
+      });
+      if (res.error) {
+        const errMap = {
+          NO_API_KEY: 'No API key — open Settings',
+          LIMIT_REACHED: 'Monthly limit reached — upgrade to Pro',
+          RATE_LIMITED: 'Rate limited — try again shortly',
+          INVALID_KEY: 'Invalid API key — check Settings',
+        };
+        if (status) { status.textContent = errMap[res.error] || 'Error — try again'; status.className = 'lia-followup-status lia-followup-status-err'; }
+      } else if (res.text) {
+        const inserted = insertIntoChat(res.text);
+        if (!inserted) {
+          await navigator.clipboard.writeText(res.text).catch(() => {});
+          if (status) { status.textContent = '✓ Copied to clipboard'; status.className = 'lia-followup-status lia-followup-status-ok'; }
+        } else {
+          if (status) { status.textContent = '✓ Inserted into chat'; status.className = 'lia-followup-status lia-followup-status-ok'; }
+          setTimeout(() => { if (status) { status.textContent = ''; status.className = 'lia-followup-status'; } }, 3500);
+        }
+      }
+    } catch (_) {
+      if (status) { status.textContent = 'Error — try again'; status.className = 'lia-followup-status lia-followup-status-err'; }
+    }
+    resetFollowupBtn(btn);
+  }
+
+  function initMessagingPage() {
+    // Retry until the compose box renders (LinkedIn's SPA may not have painted it yet)
+    let attempts = 0;
+    (function tryInject() {
+      injectFollowupBar();
+      if (!_msgFollowupBar && attempts++ < 14) setTimeout(tryInject, 600);
+    }());
+
+    // Switching between conversations inside /messaging/ doesn't reliably fire the lia-nav
+    // history-based listener (LinkedIn swaps the open thread without always changing the URL
+    // path), and LinkedIn's own re-render can detach our injected bar even when it does.
+    // Observe document.body directly rather than guessing a specific LinkedIn container class
+    // (those are unstable and a wrong/unrelated match would silently watch the wrong subtree) —
+    // self-heal by re-injecting whenever the bar goes missing while still on a messaging page.
+    if (!_msgObserver) {
+      _msgObserver = new MutationObserver(() => {
+        if (!isMessagingPage()) return;
+        if (_msgFollowupBar && document.contains(_msgFollowupBar)) return;
+        injectFollowupBar();
+      });
+      _msgObserver.observe(document.body, { childList: true, subtree: true });
+    }
   }
 
   // ─── Trigger Button ───────────────────────────────────────────────────────────
@@ -600,6 +1040,191 @@
     }
   }
 
+  // ─── Time / World Clock ───────────────────────────────────────────────────────
+  const DEFAULT_TIME_ZONES = ['Asia/Karachi', 'America/New_York', 'Europe/London', 'Australia/Sydney'];
+  const ALL_TIME_ZONES = [
+    { id: 'Asia/Karachi', label: 'Pakistan' },
+    { id: 'America/New_York', label: 'US Eastern' },
+    { id: 'America/Chicago', label: 'US Central' },
+    { id: 'America/Denver', label: 'US Mountain' },
+    { id: 'America/Los_Angeles', label: 'US Pacific' },
+    { id: 'Europe/London', label: 'UK' },
+    { id: 'Europe/Berlin', label: 'Europe (CET)' },
+    { id: 'Asia/Dubai', label: 'UAE' },
+    { id: 'Asia/Kolkata', label: 'India' },
+    { id: 'Australia/Sydney', label: 'Australia (Sydney)' },
+    { id: 'Asia/Singapore', label: 'Singapore' },
+    { id: 'Asia/Tokyo', label: 'Japan' },
+  ];
+  // Common colloquial abbreviations/words → IANA zone, for the free-text converter input.
+  const TZ_ABBR = {
+    est: 'America/New_York', edt: 'America/New_York', et: 'America/New_York', eastern: 'America/New_York',
+    cst: 'America/Chicago', cdt: 'America/Chicago', ct: 'America/Chicago', central: 'America/Chicago',
+    mst: 'America/Denver', mdt: 'America/Denver', mt: 'America/Denver', mountain: 'America/Denver',
+    pst: 'America/Los_Angeles', pdt: 'America/Los_Angeles', pt: 'America/Los_Angeles', pacific: 'America/Los_Angeles',
+    gmt: 'Europe/London', bst: 'Europe/London', uk: 'Europe/London',
+    aest: 'Australia/Sydney', aedt: 'Australia/Sydney', au: 'Australia/Sydney', australia: 'Australia/Sydney', sydney: 'Australia/Sydney',
+    pkt: 'Asia/Karachi', pakistan: 'Asia/Karachi', pk: 'Asia/Karachi',
+    ist: 'Asia/Kolkata', india: 'Asia/Kolkata',
+    utc: 'UTC',
+  };
+
+  async function loadTimeZones() {
+    if (timeZones) return timeZones;
+    const { timeZonesConfig } = await chrome.storage.local.get('timeZonesConfig').catch(() => ({}));
+    timeZones = Array.isArray(timeZonesConfig) && timeZonesConfig.length ? timeZonesConfig : [...DEFAULT_TIME_ZONES];
+    return timeZones;
+  }
+
+  function saveTimeZones() {
+    chrome.storage.local.set({ timeZonesConfig: timeZones }).catch(() => {});
+  }
+
+  function zoneLabel(id) {
+    return ALL_TIME_ZONES.find(z => z.id === id)?.label || id.split('/').pop().replace(/_/g, ' ');
+  }
+
+  function getZoneOffsetMinutes(zoneId, date = new Date()) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: zoneId, hourCycle: 'h23',
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+    }).formatToParts(date).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+    const asUTC = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+    return (asUTC - date.getTime()) / 60000;
+  }
+
+  function parseTimeInput(str) {
+    const m = str.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*([a-zA-Z]{2,10})?$/i);
+    if (!m) return null;
+    let hour = parseInt(m[1], 10);
+    const minute = m[2] ? parseInt(m[2], 10) : 0;
+    const meridiem = m[3]?.toLowerCase();
+    const tzWord = (m[4] || '').toLowerCase();
+    if (meridiem === 'pm' && hour < 12) hour += 12;
+    if (meridiem === 'am' && hour === 12) hour = 0;
+    if (!meridiem && hour > 23) return null;
+    if (minute > 59) return null;
+    const zoneId = tzWord ? TZ_ABBR[tzWord] : 'Asia/Karachi';
+    if (!zoneId) return null;
+    return { hour, minute, zoneId, zoneLabel: tzWord ? zoneLabel(zoneId) : 'Pakistan' };
+  }
+
+  function convertTime(hour, minute, sourceZoneId, targetZoneId) {
+    const now = new Date();
+    const offsetMin = getZoneOffsetMinutes(sourceZoneId, now);
+    const naiveUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour, minute);
+    const instant = new Date(naiveUTC - offsetMin * 60000);
+    return new Intl.DateTimeFormat('en-US', { timeZone: targetZoneId, hour: 'numeric', minute: '2-digit', hour12: true }).format(instant);
+  }
+
+  function renderClocks() {
+    const list = document.getElementById('lia-time-clocks');
+    if (!list || !timeZones) return;
+    list.innerHTML = timeZones.map(id => {
+      const time = new Intl.DateTimeFormat('en-US', { timeZone: id, hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }).format(new Date());
+      const date = new Intl.DateTimeFormat('en-US', { timeZone: id, weekday: 'short', month: 'short', day: 'numeric' }).format(new Date());
+      return `
+        <div class="lia-time-row">
+          <div class="lia-time-row-label">${zoneLabel(id)}<span class="lia-time-row-date">${date}</span></div>
+          <div class="lia-time-row-clock">${time}</div>
+        </div>`;
+    }).join('');
+  }
+
+  function renderZonePicker() {
+    const list = document.getElementById('lia-time-zone-picker');
+    if (!list) return;
+    list.innerHTML = ALL_TIME_ZONES.map(z => `
+      <label class="lia-time-zone-opt">
+        <input type="checkbox" value="${z.id}" ${timeZones.includes(z.id) ? 'checked' : ''} />
+        ${z.label}
+      </label>`).join('');
+    list.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const checked = [...list.querySelectorAll('input:checked')].map(c => c.value);
+        timeZones = checked.length ? checked : [...DEFAULT_TIME_ZONES];
+        saveTimeZones();
+        renderClocks();
+      });
+    });
+  }
+
+  async function openTimePanel() {
+    if (timePanel) {
+      const opening = !timePanel.classList.contains('lia-pc-open');
+      timePanel.classList.toggle('lia-pc-open');
+      if (opening) { renderClocks(); if (!_timeInterval) _timeInterval = setInterval(renderClocks, 1000); }
+      else if (_timeInterval) { clearInterval(_timeInterval); _timeInterval = null; }
+      return;
+    }
+    await loadTimeZones();
+    timePanel = document.createElement('div');
+    timePanel.id = 'lia-time-panel';
+    timePanel.innerHTML = `
+      <div class="lia-pc-header">
+        <div class="lia-pc-title">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span>World Clock</span>
+        </div>
+        <button class="lia-pc-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="lia-pc-body">
+        <div id="lia-time-clocks" class="lia-time-clocks"></div>
+        <div class="lia-section">
+          <div class="lia-label">Convert a time to Pakistan time</div>
+          <div class="lia-time-convert-row">
+            <input type="text" id="lia-time-convert-input" class="lia-notes-input" placeholder="e.g. 10am EST, 3:30pm PKT" style="flex:1" />
+            <button class="lia-btn-primary" id="lia-time-convert-btn">Convert</button>
+          </div>
+          <div id="lia-time-convert-result" class="lia-time-convert-result"></div>
+        </div>
+        <div class="lia-section">
+          <button class="lia-time-zones-toggle" id="lia-time-zones-toggle">Edit zones shown ▾</button>
+          <div id="lia-time-zone-picker" class="lia-time-zone-picker" style="display:none"></div>
+        </div>
+      </div>`;
+    document.body.appendChild(timePanel);
+
+    timePanel.querySelector('.lia-pc-close').addEventListener('click', () => openTimePanel());
+    timePanel.querySelector('#lia-time-convert-btn').addEventListener('click', () => {
+      const input = timePanel.querySelector('#lia-time-convert-input');
+      const resultEl = timePanel.querySelector('#lia-time-convert-result');
+      const parsed = parseTimeInput(input?.value || '');
+      if (!parsed) {
+        resultEl.innerHTML = `<span class="lia-time-convert-err">Couldn't parse that — try "10am EST" or "3:30pm PKT"</span>`;
+        return;
+      }
+      const rows = timeZones.map(id => {
+        const converted = convertTime(parsed.hour, parsed.minute, parsed.zoneId, id);
+        return `<div class="lia-time-convert-out-row"><span>${zoneLabel(id)}</span><b>${converted}</b></div>`;
+      }).join('');
+      resultEl.innerHTML = rows;
+    });
+    timePanel.querySelector('#lia-time-convert-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') timePanel.querySelector('#lia-time-convert-btn')?.click();
+    });
+    timePanel.querySelector('#lia-time-zones-toggle').addEventListener('click', () => {
+      const list = timePanel.querySelector('#lia-time-zone-picker');
+      const opening = list.style.display === 'none';
+      list.style.display = opening ? 'block' : 'none';
+      if (opening) renderZonePicker();
+    });
+
+    timePanel.classList.add('lia-pc-open');
+    renderClocks();
+    _timeInterval = setInterval(renderClocks, 1000);
+  }
+
+  function injectTimeButton() {
+    if (timeBtn) return;
+    timeBtn = document.createElement('button');
+    timeBtn.id = 'lia-time-trigger';
+    timeBtn.setAttribute('aria-label', 'World Clock & Time Converter');
+    timeBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span>Time</span>`;
+    timeBtn.addEventListener('click', openTimePanel);
+    ensureDock().appendChild(timeBtn);
+  }
+
   // ─── Main Click Handler ───────────────────────────────────────────────────────
   async function handleTriggerClick() {
     if (panel) {
@@ -608,6 +1233,10 @@
     }
     createPanel();
     togglePanel(true);
+    if (!isProfilePage()) {
+      renderNoProfileGate();
+      return;
+    }
     if (!isNativeLinkedInProfile()) {
       const body = document.getElementById('lia-body');
       if (body) body.innerHTML = `
@@ -830,7 +1459,7 @@
             '.msg-s-event-listitem__body p, ' +
             '.msg-s-event__body p'
           ).forEach(el => {
-            const text = el.textContent.trim();
+            const text = _stripUiChrome(el.textContent.trim());
             if (text) lines.push(name ? `${name}: ${text}` : text);
           });
         });
@@ -845,7 +1474,7 @@
             '.msg-s-event-listitem__body, .msg-s-event-listitem__message-bubble, p'
           );
           if (body) {
-            const text = body.textContent.trim();
+            const text = _stripUiChrome(body.textContent.trim());
             if (text && text.length > 1) lines.push(text);
           }
         });
@@ -895,6 +1524,10 @@
         <textarea class="lia-notes-input" id="lia-followup-convo" rows="6" placeholder="Conversation will appear here — or paste it manually..." style="min-height:110px"></textarea>
       </div>
       <div class="lia-section">
+        <div class="lia-refine-label" style="margin-bottom:6px">Instructions <span class="lia-optional">(optional)</span></div>
+        <textarea class="lia-notes-input" id="lia-followup-instructions" rows="2" placeholder="e.g. Be more direct, focus on AI automation, ask for a call this week..."></textarea>
+      </div>
+      <div class="lia-section">
         <button class="lia-btn-primary" id="lia-followup-gen-btn" style="width:100%">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
             <polyline points="17 1 21 5 17 9"></polyline>
@@ -941,6 +1574,7 @@
       const btn = body.querySelector('#lia-followup-gen-btn');
       const resultDiv = body.querySelector('#lia-followup-result');
       const convoText = body.querySelector('#lia-followup-convo')?.value.trim() || '';
+      const userInstructions = body.querySelector('#lia-followup-instructions')?.value.trim() || '';
 
       btn.disabled = true;
       btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="lia-spin"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> Writing follow-up...`;
@@ -948,7 +1582,7 @@
 
       try {
         const profileData = extractProfile();
-        const result = await sendMessage('GENERATE_FOLLOW_UP', profileData, { intent, conversationText: convoText });
+        const result = await sendMessage('GENERATE_FOLLOW_UP', profileData, { intent, conversationText: convoText, userInstructions });
         if (result.error) throw new Error(result.error);
 
         const text = result.text || '';
@@ -1042,6 +1676,23 @@
       btn.disabled = true;
       await runForPurpose(purpose, notes, true);
     });
+
+    // Restore saved notes, then auto-save on input
+    dbGet(currentProfileUrl).then(stored => {
+      if (!stored?.notes) return;
+      const textarea = body.querySelector('#lia-notes-input');
+      if (textarea) textarea.value = stored.notes;
+    }).catch(() => {});
+
+    let _notesSaveTimer = null;
+    body.querySelector('#lia-notes-input')?.addEventListener('input', () => {
+      clearTimeout(_notesSaveTimer);
+      _notesSaveTimer = setTimeout(async () => {
+        const notes = body.querySelector('#lia-notes-input')?.value || '';
+        const current = await dbGet(currentProfileUrl).catch(() => null) || {};
+        await dbPut(currentProfileUrl, { ...current, url: currentProfileUrl, notes }).catch(() => {});
+      }, 800);
+    });
   }
 
   let _analyzing = false;
@@ -1101,6 +1752,11 @@
               <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
             </svg>
           </button>
+          <button class="lia-save-btn" id="lia-save-btn" aria-label="Save contact" title="Save contact" style="display:none">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+          </button>
           <button class="lia-hs-btn" id="lia-hs-btn" aria-label="Push to HubSpot" title="Push to HubSpot">
             <svg width="15" height="15" viewBox="0 0 512 512" fill="currentColor">
               <path d="M267.4 211.6c-25.1 23.7-40.8 57-40.8 94 0 29.3 9.7 56.3 26 78L203 434c-4.4-1.6-9.1-2.5-14-2.5-22.1 0-40 17.9-40 40s17.9 40 40 40 40-17.9 40-40c0-4-.6-7.9-1.6-11.6l50.1-50.2c21.7 14.2 47.4 22.5 75 22.5 76.2 0 138-61.8 138-138s-61.8-138-138-138c-30.2 0-58.2 9.7-80.8 26.1l.7-.7zM353.4 414c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zM260 75.2l30.6 10.3-2.2-31.9 25.9 19.3 11.2-30.3 15.6 27.7 22.2-23.6-.7 32.1 31.4-7.7-16.2 27.4 30.7 9.9-28.5 14.1 20.9 24.3-31.8-2.7 4.5 31.7-26.4-18.6-10.4 30.5-16.4-27.3-21.5 24.3.1-32.1-31.5 8.2L278 153l-30.9-9.4 28.9-13.6L256 106l32 2.2-4.9-31.7L260 75.2zM119.1 160.7l19 6.4-1.4-19.8 16.1 12 7-18.8 9.7 17.2 13.8-14.7-.4 19.9 19.5-4.8-10.1 17 19.1 6.2-17.7 8.7 13 15.1-19.7-1.7 2.8 19.7-16.4-11.6-6.4 18.9-10.2-16.9-13.3 15.1.1-19.9-19.6 5.1 9.6-16.9-19.2-5.8 17.9-8.5-8.1-15.6 19.9 1.4-3-19.6-5.3 5.3zM27.1 335.2l13.7 4.6-1-14.3L51.4 334l5-13.6 7 12.4 10-10.6-.3 14.4L87.2 333l-7.3 12.3 13.8 4.5-12.8 6.3 9.4 10.9-14.3-1.2 2 14.3L66.1 371l-4.7 13.7-7.3-12.2-9.6 10.9.1-14.4-14.2 3.7 6.9-12.2-13.8-4.2 12.9-6.1L27.1 335.2z"/>
@@ -1133,9 +1789,67 @@
       if (body) body._rendered = null;
       renderPurposePicker();
     });
+    panel.querySelector('#lia-save-btn').addEventListener('click', () => toggleSaveContact());
 
     document.body.appendChild(panel);
     reflectHubSpotState();
+  }
+
+  // ─── Saved Contacts ───────────────────────────────────────────────────────────
+  async function getSavedContacts() {
+    const r = await chrome.storage.local.get('savedContacts').catch(() => ({}));
+    return Array.isArray(r.savedContacts) ? r.savedContacts : [];
+  }
+
+  async function isContactSaved(url) {
+    const contacts = await getSavedContacts();
+    return contacts.some(c => c.url === url);
+  }
+
+  async function toggleSaveContact() {
+    const btn = panel?.querySelector('#lia-save-btn');
+    const body = document.getElementById('lia-body');
+    const rendered = body?._rendered;
+    if (!rendered || !currentProfileUrl) return;
+
+    const saved = await isContactSaved(currentProfileUrl);
+    const contacts = await getSavedContacts();
+
+    if (saved) {
+      const updated = contacts.filter(c => c.url !== currentProfileUrl);
+      await chrome.storage.local.set({ savedContacts: updated });
+      if (btn) { btn.classList.remove('lia-save-btn-active'); btn.title = 'Save contact'; }
+    } else {
+      const { analysis, intent } = rendered;
+      const profileData = extractProfile();
+      const score = intent === 'job_search'
+        ? (analysis.hiringSignal?.score || 'Unlikely')
+        : intent === 'b2c_sales'
+        ? (analysis.clientPotential?.score || 'Low')
+        : (analysis.potentialClient?.score || 'Low');
+      const company = analysis.company?.name || analysis.companyName || '';
+      const entry = {
+        url: currentProfileUrl,
+        name: profileData.name || '',
+        headline: profileData.headline || '',
+        company,
+        score,
+        intent,
+        savedAt: Date.now(),
+      };
+      const updated = [entry, ...contacts.filter(c => c.url !== currentProfileUrl)].slice(0, 200);
+      await chrome.storage.local.set({ savedContacts: updated });
+      if (btn) { btn.classList.add('lia-save-btn-active'); btn.title = 'Unsave contact'; }
+    }
+  }
+
+  async function refreshSaveBtn(analysis, intent) {
+    const btn = panel?.querySelector('#lia-save-btn');
+    if (!btn) return;
+    btn.style.display = '';
+    const saved = await isContactSaved(currentProfileUrl);
+    btn.classList.toggle('lia-save-btn-active', saved);
+    btn.title = saved ? 'Unsave contact' : 'Save contact';
   }
 
   function togglePanel(show) {
@@ -1173,6 +1887,21 @@
         <button class="lia-btn-primary lia-gate-btn" id="${btnId}">${btnLabel}</button>
       </div>
     `;
+  }
+
+  function renderNoProfileGate() {
+    const body = document.getElementById('lia-body');
+    if (!body) return;
+    _renderGate(body, {
+      iconColor: 'rgba(167,139,250,0.9)',
+      iconGlow: 'rgba(124,58,237,0.35)',
+      iconSvg: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+      heading: 'Open a Profile to Analyze',
+      desc: 'Visit someone\'s LinkedIn profile, then click Analyze to score them and generate outreach.',
+      btnId: 'lia-gate-close',
+      btnLabel: 'Got it',
+    });
+    body.querySelector('#lia-gate-close')?.addEventListener('click', () => togglePanel(false));
   }
 
   function renderNoApiKey() {
@@ -1286,6 +2015,7 @@
       badge.textContent = modeMap[intent] || 'B2B Sales';
     }
 
+    refreshSaveBtn(analysis, intent);
     renderTabContent(analysis, connectionRequest, activeTab, intent);
   }
 
@@ -2116,6 +2846,9 @@
     const followerMatch = document.body.innerText.match(/([0-9,]+)\s+followers/i);
     if (followerMatch) profile.followers = followerMatch[1];
 
+    const mutualMatch = document.body.innerText.match(/([0-9,]+)\s+mutual connection/i);
+    if (mutualMatch) profile.mutualConnections = mutualMatch[1];
+
     // Experience section
     profile.experience = extractSection('Experience', node => {
       const roles = [];
@@ -2318,16 +3051,20 @@
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  // Resets page-bound panel state on navigation. Deliberately leaves triggerBtn/postBtn/
+  // timeBtn alone — the dock buttons are meant to persist across SPA navigation (they live
+  // directly on document.body, which LinkedIn's re-renders never touch), only their panels
+  // (tied to whatever profile/context was open) get torn down and rebuilt fresh next click.
   function resetUI() {
     if (panel) { panel.remove(); panel = null; }
-    if (triggerBtn) { triggerBtn.remove(); triggerBtn = null; }
     if (postPanel) { postPanel.remove(); postPanel = null; }
-    if (postBtn) { postBtn.remove(); postBtn = null; }
     activeTab = 'analysis';
     pcTopics = []; pcSelected = null; pcResult = null; pcImageB64 = null; pcMode = 'personal';
   }
 
   function removeAll() {
+    removeSearchUI();
+    removeMessagingUI();
     resetUI();
   }
 

@@ -46,7 +46,7 @@ function showOnboarding(googleUser) {
     chrome.runtime.sendMessage({ type: 'START_CHECKOUT' }, res => {
       if (res?.url) {
         chrome.storage.local.remove('pendingOnboarding');
-        chrome.tabs.create({ url: res.url });
+        chrome.tabs.create({ url: res.url, active: true });
         overlay.style.display = 'none';
       } else {
         btn.disabled = false;

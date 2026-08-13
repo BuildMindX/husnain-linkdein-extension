@@ -10,6 +10,24 @@ async function getApiKey() {
 
 const DEFAULT_EXCLUDES = ['Tech service providers', 'IT outsourcing / staffing', 'Digital / marketing agencies'];
 
+// ─── Shared Authenticity Rules ─────────────────────────────────────────────────
+// Applied to every message-writing prompt so a fix here fixes all of them at once.
+const AUTHENTICITY_RULES = `- No em dashes, zero hyphens used as dashes
+- No emojis
+- Do not start with "Hi [Name]" or "Hey [Name]"
+- Never use generic filler openers: "I hope you're doing well", "I hope this finds you well", "I hope all is well"
+- Never say "I came across your profile", "I noticed from your profile", or "impressive background"
+- Never say "would love to connect"`;
+
+const FOLLOWUP_ANGLE_RULES = `GROUNDING — read this first: only reference things that are literally present in the conversation text below. Never invent, assume, or imply that the recipient said, shared, replied with, or asked something that isn't actually there. If the recipient has not sent any message at all yet, the follow-up must not thank them, react to something they said, or reference any input from them — it is a continuation of the sender's own outreach, not a reply to one. When in doubt, keep it generic rather than fabricating a specific detail.
+
+Determine which follow-up this is by counting how many messages the sender has already sent in this thread, then pick the angle accordingly — never repeat the angle, ask, or phrasing of an earlier message in the thread:
+- 1st follow-up: INSIGHT/CURIOSITY angle — surface a new observation, thought, or question. Do not repeat the opener's ask.
+- 2nd follow-up: RESOURCE/REFERRAL angle — offer something specific and low-friction (a relevant point, a useful angle, an easy specific question).
+- 3rd+ follow-up: DIRECT angle — either a specific, concrete ask, or a low-pressure graceful exit (e.g. acknowledging the timing might be off) — pick whichever fits the conversation's tone.
+Never use dead follow-up phrases: "just following up", "just checking in", "wanted to circle back", "touching base", "bumping this to the top of your inbox".
+End with exactly one CTA, placed as the final sentence.`;
+
 async function getSalesConfig() {
   const r = await chrome.storage.local.get(['targetIndustries', 'excludeIndustries', 'businessProfile', 'messagePresets']);
   return {
@@ -135,6 +153,7 @@ function buildProfileText(p, userNotes) {
   if (p.location) lines.push(`Location: ${p.location}`);
   if (p.connections) lines.push(`Connections: ${p.connections}`);
   if (p.followers) lines.push(`Followers: ${p.followers}`);
+  if (p.mutualConnections) lines.push(`Mutual connections with sender: ${p.mutualConnections} (a real, verifiable shared-network signal — only reference it if it would sound natural, never force it in)`);
   if (p.experience?.length) {
     lines.push('\nExperience:');
     p.experience.forEach((e, i) => {
@@ -427,13 +446,12 @@ PRIORITY RULE: Base the message on their CURRENT role if possible. Only referenc
 
 Rules:
 - Hard limit: 200 characters total (count carefully)
-- Zero em dashes, zero hyphens used as dashes
+- Name one specific, real reason for reaching out, drawn from their actual profile — never generic flattery
 - No corporate speak, no buzzwords
 - Show genuine interest in their company or work — not desperation
 - No mention of "looking for opportunities" or "open to work"
 - Sound like a curious professional, not an applicant
-- Do not start with "Hi [Name]" or "Hey [Name]"
-- No emojis
+${AUTHENTICITY_RULES}
 
 Return ONLY the connection request text. Nothing else. No quotes around it.`;
     const jobCtx = buildJobContext(jobProfile);
@@ -446,12 +464,10 @@ PRIORITY RULE: Base the message on their CURRENT role, company, or recent activi
 
 Rules:
 - Hard limit: 200 characters total (count carefully)
-- Zero em dashes, zero hyphens used as dashes
+- Name one specific, real reason for reaching out, drawn from their actual work, company, or background — never generic flattery
 - No selling, no pitching, no mention of services or offers
 - Sound like one professional reaching out to another — collegial, not promotional
-- Reference something specific about their work, company, or background if possible
-- Do not start with "Hi [Name]" or "Hey [Name]"
-- No emojis
+${AUTHENTICITY_RULES}
 - Never mention "freelance", "hire me", or any engagement offer
 
 Return ONLY the connection request text. Nothing else. No quotes around it.`;
@@ -466,12 +482,11 @@ PRIORITY RULE: Base the message on their CURRENT role if possible. Only referenc
 
 Rules:
 - Hard limit: 200 characters total (count carefully)
-- Zero em dashes, zero hyphens used as dashes
+- Name one specific, real reason for reaching out, drawn from their actual profile — never generic flattery
 - No corporate speak, no buzzwords
 - No selling, no pitching, no mention of your own work
 - Sound like a genuine human reaching out
-- Do not start with "Hi [Name]" or "Hey [Name]"
-- No emojis
+${AUTHENTICITY_RULES}
 
 Return ONLY the connection request text. Nothing else. No quotes around it.`;
     if (cfg) systemPrompt += `\n\n--- MESSAGE STYLE & SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
@@ -499,13 +514,11 @@ PRIORITY RULE: Base the message on their CURRENT role if possible. Only referenc
 
 Rules:
 - Max 300 characters total (count carefully)
-- Zero em dashes, zero hyphens used as dashes
 - No corporate speak, no buzzwords
 - Do NOT say you are looking for a job, open to work, or mention opportunities
 - Ask a simple, natural question that invites a reply — can be about their current role or transition
 - Sound curious and human, not templated
-- Do not start with "Hi [Name]" or "Hey [Name]"
-- No emojis
+${AUTHENTICITY_RULES}
 
 Return ONLY the message text. Nothing else. No quotes around it.`;
     const jobCtx = buildJobContext(jobProfile);
@@ -518,13 +531,11 @@ PRIORITY RULE: Base the message on their CURRENT role, challenges, or recent pos
 
 Rules:
 - Max 300 characters total (count carefully)
-- Zero em dashes, zero hyphens used as dashes
 - No buzzwords, no SDR templates, no hard pitch
 - Acknowledge something specific about their situation — a challenge, a recent post, a company initiative
-- End with a single soft, conversational question that invites a reply (not a meeting request)
+- End with a single soft, conversational question that invites a reply (not a meeting request), placed as the final sentence
 - Sound like a trusted peer, not a vendor
-- Do not start with "Hi [Name]" or "Hey [Name]"
-- No emojis
+${AUTHENTICITY_RULES}
 - Never say "freelance", "hire me", "my services", "I can help you with", or anything transactional
 
 Return ONLY the message text. Nothing else. No quotes around it.`;
@@ -539,13 +550,11 @@ PRIORITY RULE: Base the message on their CURRENT role if possible. Only referenc
 
 Rules:
 - Max 300 characters total (count carefully)
-- Zero em dashes, zero hyphens used as dashes
 - No corporate speak, no buzzwords, no pitching
 - The goal is to start a genuine conversation, not sell anything
-- One clear, natural question that invites a reply — can be as simple as asking about their current work
+- One clear, natural question that invites a reply, placed as the final sentence — can be as simple as asking about their current work
 - Sound like a real person, not an SDR template
-- Do not start with "Hi [Name]" or "Hey [Name]"
-- No emojis
+${AUTHENTICITY_RULES}
 
 Return ONLY the message text. Nothing else. No quotes around it.`;
     if (cfg) systemPrompt += `\n\n--- MESSAGE STYLE & SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
@@ -610,10 +619,8 @@ CORE STRATEGY:
 
 HARD RULES:
 - Max 300 characters total
-- No em dashes, no hyphens as dashes
-- No emojis
-- Do not start with "Hi [Name]" or "Hey [Name]"
-- Do NOT say "I came across your profile", "I hope this finds you well", "would love to connect"
+${AUTHENTICITY_RULES}
+- Do NOT mention pricing, calls, demos, or meetings in message 1 — the only ask is a single easy-to-answer question, placed as the final sentence
 - Never reference the analysis itself — weave the insights in naturally
 - Return ONLY the message. No quotes, no explanation.`;
     const jobCtx = buildJobContext(jobProfile);
@@ -641,11 +648,8 @@ CORE STRATEGY (this is non-negotiable):
 
 HARD RULES:
 - Max 350 characters total
-- No em dashes, no hyphens as dashes
-- No emojis
-- Do not start with "Hi [Name]" or "Hey [Name]"
-- Never say "I noticed from your profile", "I came across your profile"
-- Do NOT offer services, mention pricing, or ask for a call in the first message
+${AUTHENTICITY_RULES}
+- Do NOT offer services, mention pricing, or ask for a call in the first message — the only ask is one focused question, placed as the final sentence
 - Return ONLY the message. No quotes, no explanation.`;
     if (b2cProfile && Object.keys(b2cProfile).length) {
       systemPrompt += `\n\n--- SENDER PROFILE ---\n${buildB2cContext(b2cProfile)}`;
@@ -688,11 +692,8 @@ FIRST-MESSAGE PHILOSOPHY:
 
 HARD RULES:
 - Max 350 characters total
-- No em dashes, no hyphens as dashes
-- No emojis
-- Do not start with "Hi [Name]" or "Hey [Name]"
-- Never say "I came across your profile", "I hope this finds you well", "I'd love to connect", "impressive background"
-- Do NOT mention pricing, calls, demos, or meetings in message 1
+${AUTHENTICITY_RULES}
+- Do NOT mention pricing, calls, demos, or meetings in message 1 — the only ask is one focused question, placed as the final sentence
 - Return ONLY the message. No quotes, no explanation.`;
     if (cfg) systemPrompt += `\n\n--- SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
   }
@@ -708,7 +709,7 @@ HARD RULES:
 
 // ─── Follow-Up ────────────────────────────────────────────────────────────────
 
-export async function handleGenerateFollowUp(profileData, conversationText, intent) {
+export async function handleGenerateFollowUp(profileData, conversationText, intent, userInstructions) {
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
@@ -722,13 +723,13 @@ export async function handleGenerateFollowUp(profileData, conversationText, inte
 
 Rules:
 - Max 300 characters total
-- Zero em dashes, zero hyphens as dashes
 - No corporate speak, no buzzwords
 - Pick up naturally from where the conversation left off
 - Sound human and genuinely interested — not pushy or needy
-- Do not start with "Hi [Name]" or "Hey [Name]"
-- No emojis
+${AUTHENTICITY_RULES}
 - Never mention "I'm looking for a job" or "open to work"
+
+${FOLLOWUP_ANGLE_RULES}
 
 Return ONLY the follow-up message text. No quotes.`;
     const jobCtx = buildJobContext(jobProfile);
@@ -739,13 +740,12 @@ Return ONLY the follow-up message text. No quotes.`;
 
 Rules:
 - Max 350 characters total
-- Zero em dashes, zero hyphens as dashes
 - No pitching, no "I can help you", no service offers
 - Reference what was already discussed — show you were listening
-- Move the conversation forward with a soft question or relevant observation
 - Sound like a trusted peer, not a sales rep following up
-- Do not start with "Hi [Name]" or "Hey [Name]"
-- No emojis
+${AUTHENTICITY_RULES}
+
+${FOLLOWUP_ANGLE_RULES}
 
 Return ONLY the follow-up message text. No quotes.`;
     if (b2cProfile && Object.keys(b2cProfile).length) {
@@ -757,18 +757,21 @@ Return ONLY the follow-up message text. No quotes.`;
 
 Rules:
 - Max 350 characters total
-- Zero em dashes, zero hyphens as dashes
 - Reference what was already discussed — never repeat an opening
-- Move the conversation forward: a relevant question, a useful observation, or a gentle next-step suggestion
 - Sound like a real person, not a sales follow-up template
-- Do not start with "Hi [Name]" or "Hey [Name]"
-- No emojis
+${AUTHENTICITY_RULES}
+
+${FOLLOWUP_ANGLE_RULES}
 
 Return ONLY the follow-up message text. No quotes.`;
     if (cfg) systemPrompt += `\n\n--- SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
   }
 
-  const userPrompt = `RECIPIENT PROFILE:\n${buildProfileText(profileData)}\n\nEXISTING CONVERSATION:\n${conversationText || '(no conversation provided)'}`;
+  if (userInstructions?.trim()) {
+    systemPrompt += `\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly, even if it overrides the angle guidance above):\n${userInstructions.trim()}`;
+  }
+
+  const userPrompt = `RECIPIENT PROFILE:\n${buildProfileText(profileData)}\n\nEXISTING CONVERSATION ("You" = messages sent by the person you are writing for; all other names = the recipient's messages. Write the follow-up continuing FROM "You", NOT as the recipient):\n${conversationText || '(no conversation provided)'}`;
   return { text: await callAI(systemPrompt, userPrompt) };
 }
 
@@ -794,9 +797,7 @@ Rules:
 - Apply the tone throughout — it should feel consistent, not patchy
 - Follow the user's instructions exactly
 - Max 350 characters unless the instructions explicitly request more
-- Zero em dashes, zero hyphens as dashes
-- No emojis
-- Do not start with "Hi [Name]" or "Hey [Name]"
+${AUTHENTICITY_RULES}
 - Return ONLY the refined message text. No quotes, no explanation.`;
 
   const userPrompt = `ORIGINAL MESSAGE:
@@ -880,9 +881,14 @@ Requirements:
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
     body: JSON.stringify({ model: OPENAI_MODEL, temperature: 0.88, messages: [{ role: 'user', content: userPrompt }] }),
   });
+  if (!res.ok) {
+    if (res.status === 401) throw new Error('INVALID_KEY');
+    if (res.status === 429) throw new Error('RATE_LIMITED');
+    if (res.status === 503) throw new Error('API_DOWN');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `OpenAI error ${res.status}`);
+  }
   const data = await res.json();
-  if (!res.ok) throw new Error(data?.error?.message || `OpenAI error ${res.status}`);
-
   const raw = (data.choices[0]?.message?.content || '').trim();
   try { return JSON.parse(raw); } catch {
     const m = raw.match(/\{[\s\S]*\}/);
@@ -964,14 +970,66 @@ Hashtag rules: 5-7 tags. ${hashtagContext}`;
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
     body: JSON.stringify({ model: OPENAI_MODEL, temperature: 0.78, messages: [{ role: 'user', content: userPrompt }] }),
   });
+  if (!res.ok) {
+    if (res.status === 401) throw new Error('INVALID_KEY');
+    if (res.status === 429) throw new Error('RATE_LIMITED');
+    if (res.status === 503) throw new Error('API_DOWN');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `OpenAI error ${res.status}`);
+  }
   const data = await res.json();
-  if (!res.ok) throw new Error(data?.error?.message || `OpenAI error ${res.status}`);
-
   const raw = (data.choices[0]?.message?.content || '').trim();
   try { return JSON.parse(raw); } catch {
     const m = raw.match(/\{[\s\S]*\}/);
     return m ? JSON.parse(m[0]) : { post: raw, hashtags: [], imagePrompt: '' };
   }
+}
+
+// ─── Chat Follow-up (messaging page) ─────────────────────────────────────────
+// Dedicated handler — avoids the profile-as-writer confusion of handleGenerateFollowUp
+
+export async function handleGenerateChatFollowup({ conversationText, isRaw, contactName, senderName, intent, userInstructions }) {
+  const isJobSearch = intent === 'job_search';
+  const isB2c = intent === 'b2c_sales';
+  const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
+  const b2cProfile = isB2c ? await getB2cProfile() : null;
+  const jobProfile = isJobSearch ? await getJobProfile() : null;
+
+  let senderCtx = '';
+  if (isJobSearch && jobProfile && Object.keys(jobProfile).length) senderCtx = buildJobContext(jobProfile);
+  else if (isB2c && b2cProfile && Object.keys(b2cProfile).length) senderCtx = buildB2cContext(b2cProfile);
+  else if (cfg) senderCtx = buildMessageStyle(cfg);
+
+  const writer = senderName || 'the user';
+  const recipient = contactName || 'the contact';
+
+  const conversationFormat = isRaw
+    ? `The conversation below is raw text copied from LinkedIn messaging. It includes timestamps and sender names. Identify who said what based on the names: "${writer}" = the person you are writing for, "${recipient}" = the other person.`
+    : `In the conversation below: messages labeled "You" were sent by ${writer}. Messages labeled "${recipient}" were sent by the contact.`;
+
+  const systemPrompt = `You are a LinkedIn messaging assistant writing the next message for ${writer} to send to ${recipient}.
+
+CRITICAL — never write as ${recipient}. You are writing FOR ${writer}.
+
+${conversationFormat}
+
+${senderCtx ? `CONTEXT ABOUT ${writer.toUpperCase()}:\n${senderCtx}\n\n` : ''}Rules:
+- Max 300 characters
+- Sound like a real person, not a template
+- Read the full conversation to understand context and tone
+- If ${recipient} has not replied yet: write a natural follow-up to ${writer}'s last message (never copy-paste the previous message)
+- If ${recipient} has replied: acknowledge what they said and keep the conversation moving naturally
+${AUTHENTICITY_RULES}
+
+${FOLLOWUP_ANGLE_RULES}
+
+Return ONLY the message text. No quotes, no labels, no explanation.`;
+
+  const finalPrompt = userInstructions?.trim()
+    ? `${systemPrompt}\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly, even if it overrides the angle guidance above):\n${userInstructions.trim()}`
+    : systemPrompt;
+
+  return { text: await callAI(finalPrompt, `CONVERSATION:\n${conversationText || '(no messages found)'}`) };
 }
 
 export async function handleGeneratePostImage(prompt) {

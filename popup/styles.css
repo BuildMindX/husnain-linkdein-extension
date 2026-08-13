@@ -560,3 +560,96 @@ body {
 }
 .puc-btn:hover { box-shadow: 0 4px 16px rgba(124,58,237,0.55); transform: translateY(-1px); }
 .puc-btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+
+/* ── Usage Warning Banner ────────────────────────────────────────────────── */
+.usage-warning {
+  display: none;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 2px 14px 6px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.usage-warn-caution {
+  background: rgba(245,158,11,0.12);
+  border: 1px solid rgba(245,158,11,0.3);
+  color: #fcd34d;
+}
+.usage-warn-critical {
+  background: rgba(239,68,68,0.12);
+  border: 1px solid rgba(239,68,68,0.3);
+  color: #fca5a5;
+}
+.usage-warn-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-family: inherit;
+}
+
+/* ── Saved Contacts ──────────────────────────────────────────────────────── */
+.saved-contact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.saved-contact-row:last-child { border-bottom: none; }
+.saved-contact-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.saved-contact-name { font-size: 12px; font-weight: 600; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.saved-contact-detail { font-size: 10.5px; color: rgba(148,163,184,0.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.saved-contact-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.saved-score-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.saved-open-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(203,213,225,0.55);
+  text-decoration: none;
+  transition: all 0.15s;
+}
+.saved-open-link:hover { background: rgba(124,58,237,0.2); border-color: rgba(124,58,237,0.4); color: #c4b5fd; }
+
+/* ── Export CSV Button ───────────────────────────────────────────────────── */
+.btn-export-csv {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(196,181,253,0.7);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-left: auto;
+  font-family: inherit;
+}
+.btn-export-csv:hover { background: rgba(124,58,237,0.2); border-color: rgba(124,58,237,0.4); color: #c4b5fd; }
+

@@ -1,3 +1,11 @@
+function normalizeLinkedInUrl(url) {
+  if (!url) return url;
+  try {
+    const u = new URL(url);
+    return `${u.origin}${u.pathname.replace(/\/$/, '')}`.toLowerCase();
+  } catch { return url; }
+}
+
 async function getHubSpotKey() {
   const result = await chrome.storage.local.get('hubspotApiKey');
   if (!result.hubspotApiKey) throw new Error('NO_HUBSPOT_KEY');
@@ -47,14 +55,16 @@ async function findOrCreateContact(name, linkedinUrl) {
   const firstName = nameParts[0] || 'LinkedIn';
   const lastName = nameParts.slice(1).join(' ') || 'Lead';
 
+  const normalizedUrl = normalizeLinkedInUrl(linkedinUrl);
+
   // Search by LinkedIn URL first (most precise)
-  if (linkedinUrl) {
+  if (normalizedUrl) {
     try {
       const searchRes = await hubspotFetch('/crm/v3/objects/contacts/search', {
         method: 'POST',
         body: JSON.stringify({
           filterGroups: [{
-            filters: [{ propertyName: 'hs_linkedinid', operator: 'EQ', value: linkedinUrl }],
+            filters: [{ propertyName: 'hs_linkedinid', operator: 'EQ', value: normalizedUrl }],
           }],
           properties: ['hs_object_id'],
           limit: 1,
@@ -71,7 +81,7 @@ async function findOrCreateContact(name, linkedinUrl) {
       properties: {
         firstname: firstName,
         lastname: lastName,
-        hs_linkedinid: linkedinUrl || '',
+        hs_linkedinid: normalizedUrl || '',
       },
     }),
   });
