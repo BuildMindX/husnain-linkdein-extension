@@ -103,6 +103,7 @@ const SYNC_KEYS = [
   'targetIndustries', 'excludeIndustries', 'businessProfile',
   'messagePresets', 'b2cProfile', 'jobProfile',
   'creatorProfile', 'companyProfile',
+  'openaiApiKey', 'hubspotApiKey',
 ];
 
 let _syncDebounceTimer = null;

@@ -5,6 +5,7 @@ const SETTINGS_KEYS = [
   'targetIndustries', 'excludeIndustries', 'businessProfile',
   'messagePresets', 'b2cProfile', 'jobProfile',
   'creatorProfile', 'companyProfile',
+  'openaiApiKey', 'hubspotApiKey',
 ];
 
 export async function handleGoogleSignIn() {
