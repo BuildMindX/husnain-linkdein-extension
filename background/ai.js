@@ -19,14 +19,38 @@ const AUTHENTICITY_RULES = `- No em dashes, zero hyphens used as dashes
 - Never say "I came across your profile", "I noticed from your profile", or "impressive background"
 - Never say "would love to connect"`;
 
-const FOLLOWUP_ANGLE_RULES = `GROUNDING — read this first: only reference things that are literally present in the conversation text below. Never invent, assume, or imply that the recipient said, shared, replied with, or asked something that isn't actually there. If the recipient has not sent any message at all yet, the follow-up must not thank them, react to something they said, or reference any input from them — it is a continuation of the sender's own outreach, not a reply to one. When in doubt, keep it generic rather than fabricating a specific detail.
+// Stage values come from content/index.js's saved-contact pipeline tracking (STAGE_ORDER).
+// When a tracked stage is available it gives the model ground truth instead of asking it to
+// count messages in scraped conversation text — a heuristic that's proven noisy in practice.
+const STAGE_TO_ANGLE = {
+  messaged:      { n: '1st', angle: 'INSIGHT/CURIOSITY angle — surface a new observation, thought, or question. Do not repeat the opener\'s ask.' },
+  followup_1:    { n: '2nd', angle: 'RESOURCE/REFERRAL angle — offer something specific and low-friction (a relevant point, a useful angle, an easy specific question).' },
+  followup_2:    { n: '3rd+', angle: 'DIRECT angle — either a specific, concrete ask, or a low-pressure graceful exit (e.g. acknowledging the timing might be off) — pick whichever fits the conversation\'s tone.' },
+  followup_3plus:{ n: '3rd+', angle: 'DIRECT angle — either a specific, concrete ask, or a low-pressure graceful exit (e.g. acknowledging the timing might be off) — pick whichever fits the conversation\'s tone.' },
+};
+
+function buildFollowupAngleRules(stage) {
+  const grounding = `GROUNDING — read this first: only reference things that are literally present in the conversation text below. Never invent, assume, or imply that the recipient said, shared, replied with, or asked something that isn't actually there. If the recipient has not sent any message at all yet, the follow-up must not thank them, react to something they said, or reference any input from them — it is a continuation of the sender's own outreach, not a reply to one. When in doubt, keep it generic rather than fabricating a specific detail.`;
+  const closing = `Never use dead follow-up phrases: "just following up", "just checking in", "wanted to circle back", "touching base", "bumping this to the top of your inbox".
+End with exactly one CTA, placed as the final sentence.`;
+
+  const known = STAGE_TO_ANGLE[stage];
+  if (known) {
+    return `${grounding}
+
+This is the ${known.n} follow-up in this outreach (tracked from the sender's saved pipeline stage, not guessed) — use the ${known.angle}
+Never repeat the angle, ask, or phrasing of an earlier message in the thread.
+${closing}`;
+  }
+
+  return `${grounding}
 
 Determine which follow-up this is by counting how many messages the sender has already sent in this thread, then pick the angle accordingly — never repeat the angle, ask, or phrasing of an earlier message in the thread:
 - 1st follow-up: INSIGHT/CURIOSITY angle — surface a new observation, thought, or question. Do not repeat the opener's ask.
 - 2nd follow-up: RESOURCE/REFERRAL angle — offer something specific and low-friction (a relevant point, a useful angle, an easy specific question).
 - 3rd+ follow-up: DIRECT angle — either a specific, concrete ask, or a low-pressure graceful exit (e.g. acknowledging the timing might be off) — pick whichever fits the conversation's tone.
-Never use dead follow-up phrases: "just following up", "just checking in", "wanted to circle back", "touching base", "bumping this to the top of your inbox".
-End with exactly one CTA, placed as the final sentence.`;
+${closing}`;
+}
 
 async function getSalesConfig() {
   const r = await chrome.storage.local.get(['targetIndustries', 'excludeIndustries', 'businessProfile', 'messagePresets']);
@@ -709,7 +733,8 @@ ${AUTHENTICITY_RULES}
 
 // ─── Follow-Up ────────────────────────────────────────────────────────────────
 
-export async function handleGenerateFollowUp(profileData, conversationText, intent, userInstructions) {
+export async function handleGenerateFollowUp(profileData, conversationText, intent, userInstructions, stage) {
+  const followupAngleRules = buildFollowupAngleRules(stage);
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
@@ -729,7 +754,7 @@ Rules:
 ${AUTHENTICITY_RULES}
 - Never mention "I'm looking for a job" or "open to work"
 
-${FOLLOWUP_ANGLE_RULES}
+${followupAngleRules}
 
 Return ONLY the follow-up message text. No quotes.`;
     const jobCtx = buildJobContext(jobProfile);
@@ -745,7 +770,7 @@ Rules:
 - Sound like a trusted peer, not a sales rep following up
 ${AUTHENTICITY_RULES}
 
-${FOLLOWUP_ANGLE_RULES}
+${followupAngleRules}
 
 Return ONLY the follow-up message text. No quotes.`;
     if (b2cProfile && Object.keys(b2cProfile).length) {
@@ -761,7 +786,7 @@ Rules:
 - Sound like a real person, not a sales follow-up template
 ${AUTHENTICITY_RULES}
 
-${FOLLOWUP_ANGLE_RULES}
+${followupAngleRules}
 
 Return ONLY the follow-up message text. No quotes.`;
     if (cfg) systemPrompt += `\n\n--- SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
@@ -1021,7 +1046,7 @@ ${senderCtx ? `CONTEXT ABOUT ${writer.toUpperCase()}:\n${senderCtx}\n\n` : ''}Ru
 - If ${recipient} has replied: acknowledge what they said and keep the conversation moving naturally
 ${AUTHENTICITY_RULES}
 
-${FOLLOWUP_ANGLE_RULES}
+${buildFollowupAngleRules(null)}
 
 Return ONLY the message text. No quotes, no labels, no explanation.`;
 

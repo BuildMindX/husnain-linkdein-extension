@@ -212,6 +212,29 @@ function renderUsageStats(plan, usageStats) {
   section.style.display = '';
 }
 
+// Outreach pipeline stages. Duplicated in content/index.js's STAGE_ORDER (no shared-module
+// bundler here — same pattern already used for SETTINGS_KEYS/SYNC_KEYS between auth.js and
+// options/index.js). Order matters: it drives the <select> option order below.
+const STAGE_META = {
+  new:             { label: 'New',            color: '#94a3b8' },
+  connection_sent: { label: 'Connection Sent', color: '#38bdf8' },
+  messaged:        { label: 'Messaged',        color: '#38bdf8' },
+  followup_1:      { label: 'Follow-up 1',     color: '#d97706' },
+  followup_2:      { label: 'Follow-up 2',     color: '#d97706' },
+  followup_3plus:  { label: 'Follow-up 3+',    color: '#d97706' },
+  replied:         { label: 'Replied',         color: '#16a34a' },
+  booked:          { label: 'Booked',          color: '#16a34a' },
+  closed:          { label: 'Closed',          color: '#6b7280' },
+};
+const STAGE_ORDER = Object.keys(STAGE_META);
+
+function daysInStage(ts) {
+  if (!ts) return '';
+  const d = Math.floor((Date.now() - ts) / 86400000);
+  if (d <= 0) return 'today';
+  return d === 1 ? '1d in stage' : `${d}d in stage`;
+}
+
 function renderSavedContacts(contacts) {
   const section = document.getElementById('saved-section');
   const list = document.getElementById('saved-list');
@@ -227,20 +250,46 @@ function renderSavedContacts(contacts) {
     const color = SCORE_COLOR[c.score] || '#6b7280';
     const name = c.name ? c.name.split(' ').slice(0, 2).join(' ') : 'Unknown';
     const detail = c.company || c.headline || '';
+    const stage = STAGE_META[c.stage] ? c.stage : 'new';
+    const stageColor = STAGE_META[stage].color;
+    const days = daysInStage(c.stageUpdatedAt || c.savedAt);
     return `
       <div class="saved-contact-row">
-        <div class="saved-contact-info">
-          <span class="saved-contact-name">${escHtmlPopup(name)}</span>
-          ${detail ? `<span class="saved-contact-detail">${escHtmlPopup(detail.slice(0, 38))}</span>` : ''}
+        <div class="saved-contact-top">
+          <div class="saved-contact-info">
+            <span class="saved-contact-name">${escHtmlPopup(name)}</span>
+            ${detail ? `<span class="saved-contact-detail">${escHtmlPopup(detail.slice(0, 38))}</span>` : ''}
+          </div>
+          <div class="saved-contact-right">
+            <span class="saved-score-badge" style="color:${color};border-color:${color}40;background:${color}12">${escHtmlPopup(c.score || '–')}</span>
+            <a href="${escHtmlPopup(c.url)}" target="_blank" class="saved-open-link" title="Open on LinkedIn">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </a>
+          </div>
         </div>
-        <div class="saved-contact-right">
-          <span class="saved-score-badge" style="color:${color};border-color:${color}40;background:${color}12">${escHtmlPopup(c.score || '–')}</span>
-          <a href="${escHtmlPopup(c.url)}" target="_blank" class="saved-open-link" title="Open on LinkedIn">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-          </a>
+        <div class="saved-contact-bottom">
+          <select class="saved-stage-select" data-url="${escHtmlPopup(c.url)}" style="color:${stageColor};border-color:${stageColor}55">
+            ${STAGE_ORDER.map(s => `<option value="${s}" ${s === stage ? 'selected' : ''}>${STAGE_META[s].label}</option>`).join('')}
+          </select>
+          ${days ? `<span class="saved-stage-days">${days}</span>` : ''}
         </div>
       </div>`;
   }).join('');
+
+  list.querySelectorAll('.saved-stage-select').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const url = sel.dataset.url;
+      chrome.storage.local.get('savedContacts', r => {
+        const updated = Array.isArray(r.savedContacts) ? r.savedContacts : [];
+        const entry = updated.find(c => c.url === url);
+        if (!entry) return;
+        entry.stage = sel.value;
+        entry.stageUpdatedAt = Date.now();
+        chrome.storage.local.set({ savedContacts: updated }, () => renderSavedContacts(updated));
+      });
+    });
+  });
+
   section.style.display = '';
 }
 
@@ -250,12 +299,13 @@ function escHtmlPopup(str) {
 }
 
 function exportContactsCSV(contacts) {
-  const rows = [['Name', 'URL', 'Score', 'Intent', 'Headline', 'Company', 'Saved Date']];
+  const rows = [['Name', 'URL', 'Score', 'Stage', 'Intent', 'Headline', 'Company', 'Saved Date']];
   contacts.forEach(c => {
     rows.push([
       c.name || '',
       c.url || '',
       c.score || '',
+      STAGE_META[c.stage]?.label || 'New',
       c.intent || '',
       c.headline || '',
       c.company || '',

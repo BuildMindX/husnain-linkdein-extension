@@ -16,8 +16,15 @@ import {
 import { fetchHubSpotPipelines, fetchHubSpotOwners, pushHubSpotDeal } from './hubspot.js';
 
 async function withUsageGate(eventType, fn) {
-  const { openaiApiKey } = await chrome.storage.local.get('openaiApiKey');
+  const { openaiApiKey, userPlan } = await chrome.storage.local.get(['openaiApiKey', 'userPlan']);
   if (!openaiApiKey) return { error: 'NO_API_KEY' };
+  if (userPlan === 'pro') {
+    // Pro users are never gated on the server round-trip — chrome.identity.getAuthToken can
+    // resolve a stale/different cached Google identity than the one on file as Pro, which would
+    // otherwise incorrectly deny a paying user. Still record the event for analytics, non-blocking.
+    checkAndTrackUsage(eventType).catch(() => {});
+    return fn();
+  }
   const usage = await checkAndTrackUsage(eventType);
   if (!usage.allowed) return { error: 'LIMIT_REACHED', limit: usage.limit, used: usage.used };
   return fn();
@@ -47,7 +54,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === 'GENERATE_FOLLOW_UP') {
-    withUsageGate('message', () => handleGenerateFollowUp(msg.profileData, msg.conversationText, msg.intent, msg.userInstructions)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withUsageGate('message', () => handleGenerateFollowUp(msg.profileData, msg.conversationText, msg.intent, msg.userInstructions, msg.stage)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'GENERATE_CHAT_FOLLOWUP') {

@@ -1582,7 +1582,8 @@
 
       try {
         const profileData = extractProfile();
-        const result = await sendMessage('GENERATE_FOLLOW_UP', profileData, { intent, conversationText: convoText, userInstructions });
+        const stage = await getContactStage(currentProfileUrl);
+        const result = await sendMessage('GENERATE_FOLLOW_UP', profileData, { intent, conversationText: convoText, userInstructions, stage });
         if (result.error) throw new Error(result.error);
 
         const text = result.text || '';
@@ -1601,6 +1602,7 @@
           copyBtn.textContent = 'Copied!';
           copyBtn.classList.add('copied');
           setTimeout(() => { copyBtn.textContent = 'Copy to Clipboard'; copyBtn.classList.remove('copied'); }, 2000);
+          advanceStageBySteps(currentProfileUrl, 1);
         });
 
         btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg> Regenerate`;
@@ -1667,6 +1669,7 @@
       btn.textContent = 'Copied!';
       btn.classList.add('copied');
       setTimeout(() => { btn.textContent = 'Copy to Clipboard'; btn.classList.remove('copied'); }, 2000);
+      advanceStage(currentProfileUrl, 'connection_sent');
     });
 
     body.querySelector('#lia-single-regen').addEventListener('click', async () => {
@@ -1795,7 +1798,11 @@
     reflectHubSpotState();
   }
 
-  // ─── Saved Contacts ───────────────────────────────────────────────────────────
+  // ─── Saved Contacts / Pipeline Stage ───────────────────────────────────────────
+  // Ordered outreach pipeline. Duplicated in popup/index.js (no shared-module bundler here,
+  // same pattern already used for SETTINGS_KEYS/SYNC_KEYS between auth.js and options/index.js).
+  const STAGE_ORDER = ['new', 'connection_sent', 'messaged', 'followup_1', 'followup_2', 'followup_3plus', 'replied', 'booked', 'closed'];
+
   async function getSavedContacts() {
     const r = await chrome.storage.local.get('savedContacts').catch(() => ({}));
     return Array.isArray(r.savedContacts) ? r.savedContacts : [];
@@ -1804,6 +1811,43 @@
   async function isContactSaved(url) {
     const contacts = await getSavedContacts();
     return contacts.some(c => c.url === url);
+  }
+
+  async function getContactStage(url) {
+    const contacts = await getSavedContacts();
+    return contacts.find(c => c.url === url)?.stage || null;
+  }
+
+  // Bumps a saved contact's stage forward — never moves it backward, and is a no-op if the
+  // contact isn't saved (nothing to track). Called from the "Copy to Clipboard" handlers, which
+  // is the closest reliable signal we have to "the user actually sent this" without a LinkedIn API.
+  async function advanceStage(url, targetStage) {
+    if (!url) return;
+    const targetIdx = STAGE_ORDER.indexOf(targetStage);
+    if (targetIdx === -1) return;
+    const contacts = await getSavedContacts();
+    const entry = contacts.find(c => c.url === url);
+    if (!entry) return;
+    const currentIdx = STAGE_ORDER.indexOf(entry.stage || 'new');
+    if (currentIdx >= targetIdx) return;
+    entry.stage = targetStage;
+    entry.stageUpdatedAt = Date.now();
+    await chrome.storage.local.set({ savedContacts: contacts });
+  }
+
+  // Moves a saved contact one step forward from wherever it currently sits — used for follow-ups,
+  // where "the next stage" depends on the current one rather than a fixed target.
+  async function advanceStageBySteps(url, steps = 1) {
+    if (!url) return;
+    const contacts = await getSavedContacts();
+    const entry = contacts.find(c => c.url === url);
+    if (!entry) return;
+    const currentIdx = STAGE_ORDER.indexOf(entry.stage || 'new');
+    const nextIdx = Math.min(currentIdx + steps, STAGE_ORDER.indexOf('followup_3plus'));
+    if (nextIdx <= currentIdx) return;
+    entry.stage = STAGE_ORDER[nextIdx];
+    entry.stageUpdatedAt = Date.now();
+    await chrome.storage.local.set({ savedContacts: contacts });
   }
 
   async function toggleSaveContact() {
@@ -1836,6 +1880,8 @@
         score,
         intent,
         savedAt: Date.now(),
+        stage: 'new',
+        stageUpdatedAt: Date.now(),
       };
       const updated = [entry, ...contacts.filter(c => c.url !== currentProfileUrl)].slice(0, 200);
       await chrome.storage.local.set({ savedContacts: updated });
@@ -2455,6 +2501,7 @@
           await navigator.clipboard.writeText(msgCurrentText);
           btn.textContent = 'Copied!'; btn.classList.add('copied');
           setTimeout(() => { btn.textContent = 'Copy to Clipboard'; btn.classList.remove('copied'); }, 2000);
+          advanceStage(currentProfileUrl, 'messaged');
         });
 
         const refToggle = resultDiv.querySelector('#lia-msgtab-refine-toggle');
