@@ -95,6 +95,12 @@
           </svg>
           Outreach
         </button>
+        <button class="snav-item" data-tab="pipeline">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="6" height="18" rx="1"/><rect x="10" y="3" width="6" height="11" rx="1"/><rect x="17" y="3" width="4" height="7" rx="1"/>
+          </svg>
+          Pipeline
+        </button>
         <button class="snav-item" data-tab="postcreator">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
@@ -378,6 +384,20 @@
 
         </div><!-- end step2-block -->
       </div><!-- end panel-outreach -->
+
+      <!-- ── Tab: Pipeline ──────────────────────────────────────────────────── -->
+      <div class="stab-panel hidden" id="panel-pipeline">
+        <div class="panel-header">
+          <h1>Pipeline</h1>
+          <p class="panel-sub">Every saved contact, grouped by outreach stage. Change stage inline, filter, or export.</p>
+        </div>
+        <div class="pipeline-toolbar">
+          <input type="text" id="pipeline-search" class="pipeline-search" placeholder="Filter by name or company..." />
+          <button type="button" id="pipeline-export-btn" class="btn-secondary">Export CSV</button>
+        </div>
+        <div id="pipeline-board" class="pipeline-board"></div>
+        <div id="pipeline-empty" class="pipeline-empty hidden">No saved contacts yet — save a profile from LinkedIn to start tracking your pipeline.</div>
+      </div><!-- end panel-pipeline -->
 
       <!-- ── Tab: Post Creator ──────────────────────────────────────────────── -->
       <div class="stab-panel hidden" id="panel-postcreator">

@@ -88,7 +88,33 @@ async function findOrCreateContact(name, linkedinUrl) {
   return contact.id;
 }
 
-export async function pushHubSpotDeal({ name, linkedinUrl, contactText, remarks, pipelineId, stageId, ownerId }) {
+// Mirrors the same fields/branches background/ai.js's buildAnalysisContext() reads (kept as a
+// separate small formatter rather than importing that one directly, since its wording is written
+// for an AI prompt — "use these insights to craft a message" — not a CRM note a human will read).
+function formatAnalysisForNote(analysis, intent) {
+  if (!analysis) return '';
+  const lines = [];
+  if (intent === 'b2b_sales') {
+    if (analysis.potentialClient?.score) lines.push(`Prospect Score: ${analysis.potentialClient.score}${analysis.potentialClient.reasoning ? ` — ${analysis.potentialClient.reasoning}` : ''}`);
+    if (analysis.decisionMaker) lines.push(`Decision Maker: ${analysis.decisionMaker}`);
+    if (analysis.industryFit?.level) lines.push(`Industry Fit: ${analysis.industryFit.level}${analysis.industryFit.reasoning ? ` — ${analysis.industryFit.reasoning}` : ''}`);
+    if (analysis.companySize) lines.push(`Company Size: ${analysis.companySize}`);
+  } else if (intent === 'b2c_sales') {
+    if (analysis.clientPotential?.score) lines.push(`Client Potential: ${analysis.clientPotential.score}${analysis.clientPotential.reasoning ? ` — ${analysis.clientPotential.reasoning}` : ''}`);
+    if (analysis.decisionMaker) lines.push(`Decision Maker: ${analysis.decisionMaker}`);
+    if ((analysis.painPoints || []).length) lines.push(`Pain Points: ${analysis.painPoints.join('; ')}`);
+    if (analysis.approachAngle) lines.push(`Recommended Approach: ${analysis.approachAngle}`);
+  } else if (intent === 'job_search') {
+    if (analysis.hiringSignal?.score) lines.push(`Hiring Signal: ${analysis.hiringSignal.score}${analysis.hiringSignal.reasoning ? ` — ${analysis.hiringSignal.reasoning}` : ''}`);
+    if (analysis.isRecruiter) lines.push(`Is Recruiter: ${analysis.isRecruiter}`);
+  }
+  if (analysis.industry) lines.push(`Industry: ${analysis.industry}`);
+  if ((analysis.keyInsights || []).length) lines.push(`Key Insights: ${analysis.keyInsights.join('; ')}`);
+  if (!lines.length) return '';
+  return `AI Analysis Summary:\n${lines.map(l => `- ${l}`).join('\n')}`;
+}
+
+export async function pushHubSpotDeal({ name, linkedinUrl, contactText, remarks, pipelineId, stageId, ownerId, analysis, intent }) {
   const dealName = name || 'LinkedIn Lead';
 
   // Step 1: Find or create contact
@@ -127,6 +153,8 @@ export async function pushHubSpotDeal({ name, linkedinUrl, contactText, remarks,
   const noteParts = [];
   if (remarks && remarks.trim()) noteParts.push(remarks.trim());
   noteParts.push(`LinkedIn: ${linkedinUrl}`);
+  const analysisNote = formatAnalysisForNote(analysis, intent);
+  if (analysisNote) noteParts.push(analysisNote);
   if (contactText) noteParts.push(`Connection Request:\n${contactText}`);
 
   let note;

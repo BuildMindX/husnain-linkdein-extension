@@ -29,27 +29,30 @@ const STAGE_TO_ANGLE = {
   followup_3plus:{ n: '3rd+', angle: 'DIRECT angle — either a specific, concrete ask, or a low-pressure graceful exit (e.g. acknowledging the timing might be off) — pick whichever fits the conversation\'s tone.' },
 };
 
-function buildFollowupAngleRules(stage) {
+function buildFollowupAngleRules(stage, daysSinceLastTouch) {
   const grounding = `GROUNDING — read this first: only reference things that are literally present in the conversation text below. Never invent, assume, or imply that the recipient said, shared, replied with, or asked something that isn't actually there. If the recipient has not sent any message at all yet, the follow-up must not thank them, react to something they said, or reference any input from them — it is a continuation of the sender's own outreach, not a reply to one. When in doubt, keep it generic rather than fabricating a specific detail.`;
+
+  const known = STAGE_TO_ANGLE[stage];
+  const angleSection = known
+    ? `This is the ${known.n} follow-up in this outreach (tracked from the sender's saved pipeline stage, not guessed) — use the ${known.angle}\nNever repeat the angle, ask, or phrasing of an earlier message in the thread.`
+    : `Determine which follow-up this is by counting how many messages the sender has already sent in this thread, then pick the angle accordingly — never repeat the angle, ask, or phrasing of an earlier message in the thread:
+- 1st follow-up: INSIGHT/CURIOSITY angle — surface a new observation, thought, or question. Do not repeat the opener's ask.
+- 2nd follow-up: RESOURCE/REFERRAL angle — offer something specific and low-friction (a relevant point, a useful angle, an easy specific question).
+- 3rd+ follow-up: DIRECT angle — either a specific, concrete ask, or a low-pressure graceful exit (e.g. acknowledging the timing might be off) — pick whichever fits the conversation's tone.`;
+
+  const goalFraming = `The goal of this outreach sequence is to earn a real next step (a reply, a call, a closed opportunity) — every follow-up should feel like a deliberate step toward that, not a random check-in.`;
+  const formatting = `Write the message as two short paragraphs separated by a blank line — never one dense block. Each paragraph carries one idea.`;
   const closing = `Never use dead follow-up phrases: "just following up", "just checking in", "wanted to circle back", "touching base", "bumping this to the top of your inbox".
 End with exactly one CTA, placed as the final sentence.`;
 
-  const known = STAGE_TO_ANGLE[stage];
-  if (known) {
-    return `${grounding}
+  const sections = [grounding, angleSection, goalFraming, formatting, closing];
 
-This is the ${known.n} follow-up in this outreach (tracked from the sender's saved pipeline stage, not guessed) — use the ${known.angle}
-Never repeat the angle, ask, or phrasing of an earlier message in the thread.
-${closing}`;
+  if (Number.isFinite(daysSinceLastTouch)) {
+    sections.push(`It has been ${daysSinceLastTouch} day${daysSinceLastTouch === 1 ? '' : 's'} since the last message was sent to this person — this is real tracked elapsed time, not a guess. Use it to judge tone (a follow-up after 2 days reads differently than one after 6 weeks).`);
+    sections.push(`TIMING CHECK: if it has been fewer than 2 days since the last message with no reply, still write the follow-up exactly as instructed above, then add one final line starting with exactly "TIMING_NOTE: " briefly explaining why the user may want to hold off a few more days before sending — this note is for the user only, never part of the message itself. If the elapsed time is reasonable, do not include a TIMING_NOTE line at all; most of the time there should be no note.`);
   }
 
-  return `${grounding}
-
-Determine which follow-up this is by counting how many messages the sender has already sent in this thread, then pick the angle accordingly — never repeat the angle, ask, or phrasing of an earlier message in the thread:
-- 1st follow-up: INSIGHT/CURIOSITY angle — surface a new observation, thought, or question. Do not repeat the opener's ask.
-- 2nd follow-up: RESOURCE/REFERRAL angle — offer something specific and low-friction (a relevant point, a useful angle, an easy specific question).
-- 3rd+ follow-up: DIRECT angle — either a specific, concrete ask, or a low-pressure graceful exit (e.g. acknowledging the timing might be off) — pick whichever fits the conversation's tone.
-${closing}`;
+  return sections.join('\n\n');
 }
 
 async function getSalesConfig() {
@@ -452,6 +455,54 @@ ${buildIcpContext(cfg)}`;
   }
 }
 
+// ─── Bulk Search-Results Scoring ───────────────────────────────────────────────
+// Lighter-weight sibling of handleAnalyzeProfile — search result cards only expose
+// name/title/company (no experience, education, posts), so this trades analysis depth
+// for being able to score a whole page of results in one ICP-aware batched call instead
+// of the blind title-keyword heuristic it replaces.
+export async function handleBulkScoreProfiles(profiles, intent) {
+  const isJobSearch = intent === 'job_search';
+  const isB2c = intent === 'b2c_sales';
+  const cfg = (!isJobSearch) ? await getSalesConfig() : null;
+  const b2cProfile = isB2c ? await getB2cProfile() : null;
+
+  const scoreLabels = isJobSearch ? 'Strong | Possible | Unlikely' : 'High | Medium | Low';
+  const perspective = isJobSearch
+    ? 'a job seeker judging how useful each contact could be as a hiring signal or relevant network connection'
+    : isB2c
+    ? 'an individual freelancer or consultant judging each contact\'s potential as a client'
+    : 'a B2B sales rep judging each contact\'s fit as a sales prospect';
+
+  const context = isJobSearch
+    ? ''
+    : isB2c
+    ? buildIcpContext(cfg, 'b2c') + (b2cProfile && Object.keys(b2cProfile).length ? '\n\n' + buildB2cContext(b2cProfile) : '')
+    : buildIcpContext(cfg);
+
+  const systemPrompt = `You are scoring a batch of LinkedIn search results from the perspective of ${perspective}. You only have each person's name, title, and company — no full profile, no experience history, no posts. Judge primarily on seniority/title, and on fit against the context below when relevant.
+
+${context}
+
+Respond ONLY with valid JSON, no markdown, no explanation:
+{"scores": [{"id": "<the id given for this person>", "score": "${scoreLabels}", "reasoning": "max 8 words"}]}
+
+One entry per input person, in the same order, using the exact same "id" value given for each — never invent or alter an id.`;
+
+  const userPrompt = profiles
+    .map((p, i) => `${i + 1}. id: ${p.id} | Name: ${p.name || 'Unknown'} | Title: ${p.title || 'Unknown'} | Company: ${p.company || 'Unknown'}`)
+    .join('\n');
+
+  const raw = await callAI(systemPrompt, userPrompt);
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('TRUNCATED_RESPONSE');
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+    return { scores: Array.isArray(parsed.scores) ? parsed.scores : [] };
+  } catch {
+    throw new Error('TRUNCATED_RESPONSE');
+  }
+}
+
 // ─── Connection Request ───────────────────────────────────────────────────────
 
 export async function handleGenerateConnectionRequest(profileData, intent, userNotes) {
@@ -733,8 +784,8 @@ ${AUTHENTICITY_RULES}
 
 // ─── Follow-Up ────────────────────────────────────────────────────────────────
 
-export async function handleGenerateFollowUp(profileData, conversationText, intent, userInstructions, stage) {
-  const followupAngleRules = buildFollowupAngleRules(stage);
+export async function handleGenerateFollowUp(profileData, conversationText, intent, userInstructions, stage, daysSinceLastTouch, analysis) {
+  const followupAngleRules = buildFollowupAngleRules(stage, daysSinceLastTouch);
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
@@ -792,6 +843,9 @@ Return ONLY the follow-up message text. No quotes.`;
     if (cfg) systemPrompt += `\n\n--- SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
   }
 
+  if (analysis) {
+    systemPrompt += `\n\n${buildAnalysisContext(analysis, intent)}`;
+  }
   if (userInstructions?.trim()) {
     systemPrompt += `\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly, even if it overrides the angle guidance above):\n${userInstructions.trim()}`;
   }
@@ -1013,7 +1067,7 @@ Hashtag rules: 5-7 tags. ${hashtagContext}`;
 // ─── Chat Follow-up (messaging page) ─────────────────────────────────────────
 // Dedicated handler — avoids the profile-as-writer confusion of handleGenerateFollowUp
 
-export async function handleGenerateChatFollowup({ conversationText, isRaw, contactName, senderName, intent, userInstructions }) {
+export async function handleGenerateChatFollowup({ conversationText, isRaw, contactName, senderName, intent, userInstructions, stage, daysSinceLastTouch, analysis }) {
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
@@ -1046,13 +1100,15 @@ ${senderCtx ? `CONTEXT ABOUT ${writer.toUpperCase()}:\n${senderCtx}\n\n` : ''}Ru
 - If ${recipient} has replied: acknowledge what they said and keep the conversation moving naturally
 ${AUTHENTICITY_RULES}
 
-${buildFollowupAngleRules(null)}
+${buildFollowupAngleRules(stage, daysSinceLastTouch)}
 
 Return ONLY the message text. No quotes, no labels, no explanation.`;
 
+  const withAnalysis = analysis ? `${systemPrompt}\n\n${buildAnalysisContext(analysis, intent)}` : systemPrompt;
+
   const finalPrompt = userInstructions?.trim()
-    ? `${systemPrompt}\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly, even if it overrides the angle guidance above):\n${userInstructions.trim()}`
-    : systemPrompt;
+    ? `${withAnalysis}\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly, even if it overrides the angle guidance above):\n${userInstructions.trim()}`
+    : withAnalysis;
 
   return { text: await callAI(finalPrompt, `CONVERSATION:\n${conversationText || '(no messages found)'}`) };
 }

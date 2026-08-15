@@ -66,6 +66,13 @@ chrome.storage.local.get(['pendingOnboarding', 'googleUser'], r => {
 // ── Auth State ────────────────────────────────────────────────────────────────
 let _signedIn = false;
 
+let _pipelineHashHandled = false;
+function maybeOpenPipelineFromHash() {
+  if (_pipelineHashHandled || !_signedIn || location.hash !== '#pipeline') return;
+  _pipelineHashHandled = true;
+  switchTab('pipeline');
+}
+
 function setAuthState(signedIn) {
   _signedIn = signedIn;
   // Lock/unlock nav items
@@ -74,6 +81,7 @@ function setAuthState(signedIn) {
     btn.classList.toggle('nav-locked', !signedIn && !isAccount);
   });
   if (!signedIn) switchTab('account');
+  else maybeOpenPipelineFromHash();
 }
 
 // ── Tab Navigation ────────────────────────────────────────────────────────────
@@ -747,6 +755,151 @@ function showStatus(el, message, type) {
   el.className = `status-msg status-${type}`;
   if (type === 'success') setTimeout(() => { if (el.textContent === message) el.textContent = ''; }, 4000);
 }
+
+// ── Pipeline Dashboard ─────────────────────────────────────────────────────────
+// Stage constants duplicated from popup/index.js (same values as content/index.js's
+// STAGE_ORDER) — no shared-module bundler here, same pattern already used for
+// SETTINGS_KEYS/SYNC_KEYS between auth.js and options/index.js.
+const STAGE_META = {
+  new:             { label: 'New',            color: '#94a3b8' },
+  connection_sent: { label: 'Connection Sent', color: '#38bdf8' },
+  messaged:        { label: 'Messaged',        color: '#38bdf8' },
+  followup_1:      { label: 'Follow-up 1',     color: '#d97706' },
+  followup_2:      { label: 'Follow-up 2',     color: '#d97706' },
+  followup_3plus:  { label: 'Follow-up 3+',    color: '#d97706' },
+  replied:         { label: 'Replied',         color: '#16a34a' },
+  booked:          { label: 'Booked',          color: '#16a34a' },
+  closed:          { label: 'Closed',          color: '#6b7280' },
+};
+const STAGE_ORDER = Object.keys(STAGE_META);
+
+// Groups the 9 exact stages into 5 scannable board columns, mirroring STAGE_META's
+// existing color families rather than inventing a new taxonomy.
+const PIPELINE_COLUMNS = [
+  { label: 'New',             color: '#94a3b8', stages: ['new'] },
+  { label: 'Reaching Out',    color: '#38bdf8', stages: ['connection_sent', 'messaged'] },
+  { label: 'Following Up',    color: '#d97706', stages: ['followup_1', 'followup_2', 'followup_3plus'] },
+  { label: 'Replied / Booked',color: '#16a34a', stages: ['replied', 'booked'] },
+  { label: 'Closed',          color: '#6b7280', stages: ['closed'] },
+];
+
+const PIPELINE_SCORE_COLOR = {
+  High: '#16a34a', Medium: '#d97706', Low: '#6b7280',
+  Strong: '#16a34a', Possible: '#d97706', Unlikely: '#6b7280',
+};
+
+function daysInStage(ts) {
+  if (!ts) return '';
+  const d = Math.floor((Date.now() - ts) / 86400000);
+  if (d <= 0) return 'today';
+  return d === 1 ? '1d in stage' : `${d}d in stage`;
+}
+
+let _pipelineContacts = [];
+
+function renderPipelineBoard() {
+  const board = document.getElementById('pipeline-board');
+  const empty = document.getElementById('pipeline-empty');
+  if (!board) return;
+
+  if (!_pipelineContacts.length) {
+    board.innerHTML = '';
+    empty?.classList.remove('hidden');
+    return;
+  }
+  empty?.classList.add('hidden');
+
+  const filter = (document.getElementById('pipeline-search')?.value || '').trim().toLowerCase();
+  const filtered = filter
+    ? _pipelineContacts.filter(c =>
+        (c.name || '').toLowerCase().includes(filter) ||
+        (c.company || '').toLowerCase().includes(filter))
+    : _pipelineContacts;
+
+  board.innerHTML = PIPELINE_COLUMNS.map(col => {
+    const items = filtered.filter(c => col.stages.includes(STAGE_META[c.stage] ? c.stage : 'new'));
+    const cards = items.map(c => {
+      const stage = STAGE_META[c.stage] ? c.stage : 'new';
+      const stageColor = STAGE_META[stage].color;
+      const scoreColor = PIPELINE_SCORE_COLOR[c.score] || '#6b7280';
+      const days = daysInStage(c.stageUpdatedAt || c.savedAt);
+      const detail = c.company || c.headline || '';
+      return `
+        <div class="pipeline-card">
+          <div class="pipeline-card-top">
+            <span class="pipeline-card-name">${escapeHtml(c.name || 'Unknown')}</span>
+            <span class="pipeline-card-score" style="color:${scoreColor};border-color:${scoreColor}40;background:${scoreColor}12">${escapeHtml(c.score || '–')}</span>
+          </div>
+          ${detail ? `<div class="pipeline-card-detail">${escapeHtml(detail.slice(0, 60))}</div>` : ''}
+          <div class="pipeline-card-bottom">
+            <select class="pipeline-card-select" data-url="${escapeHtml(c.url)}" style="color:${stageColor};border-color:${stageColor}55">
+              ${STAGE_ORDER.map(s => `<option value="${s}" ${s === stage ? 'selected' : ''}>${STAGE_META[s].label}</option>`).join('')}
+            </select>
+            ${days ? `<span class="pipeline-card-days">${days}</span>` : ''}
+          </div>
+          <a href="${escapeHtml(c.url)}" target="_blank" class="pipeline-card-link">Open on LinkedIn ↗</a>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="pipeline-column">
+        <div class="pipeline-column-header" style="border-color:${col.color}55">
+          <span class="pipeline-column-dot" style="background:${col.color}"></span>
+          <span>${col.label}</span>
+          <span class="pipeline-column-count">${items.length}</span>
+        </div>
+        <div class="pipeline-column-cards">${cards || '<div class="pipeline-column-empty">No contacts</div>'}</div>
+      </div>`;
+  }).join('');
+
+  board.querySelectorAll('.pipeline-card-select').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const url = sel.dataset.url;
+      const entry = _pipelineContacts.find(c => c.url === url);
+      if (!entry) return;
+      entry.stage = sel.value;
+      entry.stageUpdatedAt = Date.now();
+      chrome.storage.local.set({ savedContacts: _pipelineContacts });
+    });
+  });
+}
+
+function exportPipelineCSV() {
+  const rows = [['Name', 'URL', 'Score', 'Stage', 'Intent', 'Headline', 'Company', 'Saved Date']];
+  _pipelineContacts.forEach(c => {
+    rows.push([
+      c.name || '', c.url || '', c.score || '',
+      STAGE_META[c.stage]?.label || 'New',
+      c.intent || '', c.headline || '', c.company || '',
+      c.savedAt ? new Date(c.savedAt).toLocaleDateString() : '',
+    ]);
+  });
+  const csv = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `linkpilot-pipeline-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+chrome.storage.local.get('savedContacts', r => {
+  _pipelineContacts = Array.isArray(r.savedContacts) ? r.savedContacts : [];
+  renderPipelineBoard();
+  maybeOpenPipelineFromHash();
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !('savedContacts' in changes)) return;
+  _pipelineContacts = Array.isArray(changes.savedContacts.newValue) ? changes.savedContacts.newValue : [];
+  renderPipelineBoard();
+});
+
+document.getElementById('pipeline-search')?.addEventListener('input', renderPipelineBoard);
+document.getElementById('pipeline-export-btn')?.addEventListener('click', exportPipelineCSV);
 
 function makeToggle(input, btn, iconId) {
   if (!input) return;

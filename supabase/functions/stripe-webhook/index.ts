@@ -59,24 +59,12 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  if (event.type === 'invoice.payment_failed') {
-    const invoice = event.data.object as Stripe.Invoice
-    const subId = typeof invoice.subscription === 'string'
-      ? invoice.subscription
-      : (invoice.subscription as Stripe.Subscription | null)?.id
-
-    if (subId) {
-      const { data: user } = await supabase
-        .from('users')
-        .select('id')
-        .eq('stripe_subscription_id', subId)
-        .single()
-
-      if (user) {
-        await supabase.from('users').update({ plan: 'free', plan_expires_at: null }).eq('id', user.id)
-      }
-    }
-  }
+  // Deliberately no handling of invoice.payment_failed here: a single failed charge is routine
+  // (card expired, bank hiccup) and Stripe's own retry/dunning schedule handles it. Downgrading
+  // immediately on the first failure punished the user ahead of that schedule. The
+  // customer.subscription.updated handler above already downgrades correctly once Stripe itself
+  // marks the subscription past_due/canceled after retries are exhausted — that's the single
+  // source of truth for plan status, not individual invoice events.
 
   return new Response(JSON.stringify({ received: true }), {
     headers: { 'Content-Type': 'application/json' },

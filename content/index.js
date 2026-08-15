@@ -31,6 +31,10 @@
   let _timeInterval = null;
   let timeZones = null; // array of IANA zone ids, loaded from storage lazily
 
+  // Dock "Save" button state — a second, quicker path to save a contact besides the
+  // bookmark icon inside the analysis panel header (that one requires running Analyze first).
+  let dockSaveBtn = null;
+
   // ─── IndexedDB ────────────────────────────────────────────────────────────────
   const DB_NAME = 'lia-db';
   const DB_VERSION = 1;
@@ -105,26 +109,38 @@
     return /linkedin\.com\/messaging/.test(location.href);
   }
 
-  function scoreByTitle(title = '', company = '') {
-    const t = (title + ' ' + company).toLowerCase();
-    if (/\b(ceo|cto|cfo|coo|cpo|cso|chairman|founder|co-founder|cofounder|owner|president|managing director|md|general partner|gp)\b/.test(t)) return 'High';
-    if (/\b(vp|vice president|director|head of|chief [a-z]|partner)\b/.test(t)) return 'High';
-    if (/\b(manager|lead|senior|principal|team lead|department head|architect)\b/.test(t)) return 'Medium';
-    return 'Low';
-  }
-
   // ─── Init ─────────────────────────────────────────────────────────────────────
   async function ensureDockButtons() {
     injectTriggerButton();
     injectTimeButton();
+    injectSaveButton();
     const authed = await checkGoogleAuth();
     if (authed) injectPostCreatorButton();
+  }
+
+  // Lets a contact be saved straight from the dock, without running a full Analyze first —
+  // useful when you just want to add someone to the pipeline quickly. Guarded to no-op off a
+  // profile page, since currentProfileUrl otherwise keeps pointing at the last profile visited
+  // (it's never cleared on navigation) and would silently save/unsave the wrong person.
+  function injectSaveButton() {
+    if (dockSaveBtn) return;
+    dockSaveBtn = document.createElement('button');
+    dockSaveBtn.id = 'lia-save-trigger';
+    dockSaveBtn.setAttribute('aria-label', 'Save contact');
+    dockSaveBtn.title = 'Save contact';
+    dockSaveBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><span>Save</span>`;
+    dockSaveBtn.addEventListener('click', async () => {
+      if (!isProfilePage()) return;
+      await toggleSaveContact();
+    });
+    ensureDock().appendChild(dockSaveBtn);
   }
 
   async function init() {
     await ensureDockButtons();
     if (isProfilePage()) {
       currentProfileUrl = location.href.split('?')[0];
+      syncSaveButtons();
     } else if (isSearchResultsPage()) {
       initSearchResults();
     } else if (isMessagingPage()) {
@@ -159,6 +175,7 @@
     ensureDockButtons();
     if (isProfilePage()) {
       currentProfileUrl = location.href.split('?')[0];
+      syncSaveButtons();
       removeSearchUI();
       removeMessagingUI();
       resetUI();
@@ -210,11 +227,29 @@
   function initSearchResults() {
     if (!document.getElementById('lia-search-banner')) injectSearchBanner();
     if (_searchObserver) _searchObserver.disconnect();
+    // Scoring now costs a real AI call, so scroll-triggered lazy-load mutations must never
+    // auto-fire it — just surface that new cards showed up and let the user opt back in.
     _searchObserver = new MutationObserver(() => {
-      if (_searchScored) scoreVisibleCards();
+      if (_searchScored) updateScoreButtonForNewCards();
     });
     const root = document.querySelector('.search-results-container, main');
     if (root) _searchObserver.observe(root, { childList: true, subtree: true });
+  }
+
+  function getSearchCards() {
+    return document.querySelectorAll([
+      '.entity-result',
+      '.search-result',
+      '[data-view-name="search-entity-result-universal-template"]',
+    ].join(', '));
+  }
+
+  function updateScoreButtonForNewCards() {
+    const btn = document.getElementById('lia-score-btn');
+    if (!btn || btn.disabled) return;
+    let unscored = 0;
+    getSearchCards().forEach(card => { if (!card.dataset.liaScored) unscored++; });
+    if (unscored > 0) btn.textContent = `Score ${unscored} New`;
   }
 
   function injectSearchBanner() {
@@ -225,9 +260,24 @@
         <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(167,139,250,0.9)" style="flex-shrink:0">
           <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452z"/>
         </svg>
-        <span class="lia-search-banner-label">LinkPilot AI — ICP fit by title &amp; seniority</span>
+        <span class="lia-search-banner-label" id="lia-search-banner-label">LinkPilot AI — ICP-aware AI scoring</span>
+        <button id="lia-search-upgrade-btn" class="lia-search-upgrade-btn" style="display:none">Upgrade to Pro</button>
         <button id="lia-score-btn" class="lia-search-score-btn">Score Results</button>
       </div>`;
+
+    banner.querySelector('#lia-search-upgrade-btn')?.addEventListener('click', () => {
+      const upgradeBtn = document.getElementById('lia-search-upgrade-btn');
+      upgradeBtn.disabled = true;
+      upgradeBtn.textContent = 'Opening checkout…';
+      chrome.runtime.sendMessage({ type: 'START_CHECKOUT' }, res => {
+        if (chrome.runtime.lastError || !res?.url) {
+          upgradeBtn.disabled = false;
+          upgradeBtn.textContent = 'Upgrade to Pro';
+          return;
+        }
+        chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: res.url });
+      });
+    });
 
     const insertTarget = document.querySelector('.search-results-container > div:first-child, .reusable-search__result-container');
     if (insertTarget?.parentElement) {
@@ -237,56 +287,104 @@
       if (main) main.insertAdjacentElement('afterbegin', banner);
     }
 
-    document.getElementById('lia-score-btn')?.addEventListener('click', () => {
+    document.getElementById('lia-score-btn')?.addEventListener('click', async () => {
       const btn = document.getElementById('lia-score-btn');
+      if (!btn || btn.disabled) return;
+
       if (_searchScored) {
         document.querySelectorAll('.lia-search-badge').forEach(el => el.remove());
         document.querySelectorAll('[data-lia-scored]').forEach(el => delete el.dataset.liaScored);
-        if (btn) btn.textContent = 'Score Results';
+        btn.textContent = 'Score Results';
         _searchScored = false;
-      } else {
-        scoreVisibleCards();
-        if (btn) btn.textContent = 'Clear Scores';
-        _searchScored = true;
+        return;
       }
+
+      await scoreVisibleCards();
     });
   }
 
-  function scoreVisibleCards() {
-    const SCORE_COLORS = {
-      High:   { fg: '#16a34a', bg: 'rgba(22,163,74,0.10)',   border: 'rgba(22,163,74,0.28)' },
-      Medium: { fg: '#d97706', bg: 'rgba(217,119,6,0.10)',   border: 'rgba(217,119,6,0.28)'  },
-      Low:    { fg: '#94a3b8', bg: 'rgba(148,163,184,0.08)', border: 'rgba(148,163,184,0.2)' },
-    };
+  const SEARCH_SCORE_COLORS = {
+    High:     { fg: '#16a34a', bg: 'rgba(22,163,74,0.10)',   border: 'rgba(22,163,74,0.28)' },
+    Medium:   { fg: '#d97706', bg: 'rgba(217,119,6,0.10)',   border: 'rgba(217,119,6,0.28)'  },
+    Low:      { fg: '#94a3b8', bg: 'rgba(148,163,184,0.08)', border: 'rgba(148,163,184,0.2)' },
+    Strong:   { fg: '#16a34a', bg: 'rgba(22,163,74,0.10)',   border: 'rgba(22,163,74,0.28)' },
+    Possible: { fg: '#d97706', bg: 'rgba(217,119,6,0.10)',   border: 'rgba(217,119,6,0.28)'  },
+    Unlikely: { fg: '#94a3b8', bg: 'rgba(148,163,184,0.08)', border: 'rgba(148,163,184,0.2)' },
+  };
 
-    const cards = document.querySelectorAll([
-      '.entity-result',
-      '.search-result',
-      '[data-view-name="search-entity-result-universal-template"]',
-    ].join(', '));
+  async function scoreVisibleCards() {
+    const btn = document.getElementById('lia-score-btn');
+    const labelEl = document.getElementById('lia-search-banner-label');
+    const defaultLabel = 'LinkPilot AI — ICP-aware AI scoring';
 
-    cards.forEach(card => {
+    const unscoredCards = [];
+    const profiles = [];
+    getSearchCards().forEach(card => {
       if (card.dataset.liaScored) return;
-      card.dataset.liaScored = '1';
       const profileLink = card.querySelector('a[href*="/in/"]');
       if (!profileLink) return;
-
-      const titleEl = card.querySelector('.entity-result__primary-subtitle, .artdeco-entity-lockup__subtitle, .t-14.t-black.t-normal');
-      const companyEl = card.querySelector('.entity-result__secondary-subtitle, .t-14.t-black--light');
-      const title = titleEl?.textContent.trim() || '';
-      const company = companyEl?.textContent.trim() || '';
-      const score = scoreByTitle(title, company);
-      const { fg, bg, border } = SCORE_COLORS[score];
-
-      const badge = document.createElement('span');
-      badge.className = 'lia-search-badge';
-      badge.title = title ? `Based on: "${title}"` : 'No title info available';
-      badge.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:700;color:${fg};background:${bg};border:1px solid ${border};margin-left:7px;vertical-align:middle;white-space:nowrap;font-family:-apple-system,BlinkMacSystemFont,sans-serif;line-height:1.7;cursor:default;flex-shrink:0;`;
-      badge.innerHTML = `<span style="width:5px;height:5px;border-radius:50%;background:${fg};flex-shrink:0"></span>${score}`;
+      const id = profileLink.href.split('?')[0];
 
       const nameEl = card.querySelector('.entity-result__title-text, .artdeco-entity-lockup__title');
-      if (nameEl) nameEl.appendChild(badge);
+      const titleEl = card.querySelector('.entity-result__primary-subtitle, .artdeco-entity-lockup__subtitle, .t-14.t-black.t-normal');
+      const companyEl = card.querySelector('.entity-result__secondary-subtitle, .t-14.t-black--light');
+
+      unscoredCards.push({ card, id, nameEl });
+      profiles.push({
+        id,
+        name: nameEl?.textContent.trim() || '',
+        title: titleEl?.textContent.trim() || '',
+        company: companyEl?.textContent.trim() || '',
+      });
     });
+
+    if (!profiles.length) return;
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" class="lia-spin" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> Scoring...`;
+    }
+    if (labelEl) { labelEl.textContent = defaultLabel; labelEl.classList.remove('lia-search-banner-err'); }
+    const upgradeBtnReset = document.getElementById('lia-search-upgrade-btn');
+    if (upgradeBtnReset) upgradeBtnReset.style.display = 'none';
+
+    try {
+      const { analysisIntent: intent = 'b2b_sales' } = await chrome.storage.local.get('analysisIntent');
+      const result = await sendMessage('BULK_SCORE_PROFILES', null, { profiles, intent });
+      if (result.error) throw new Error(result.error);
+
+      const scoreById = {};
+      (result.scores || []).forEach(s => { if (s?.id) scoreById[s.id] = s; });
+
+      // Cards missing a valid entry are deliberately left unscored (not defaulted to Low) so
+      // the next "Score Again" click retries just them instead of silently mis-scoring.
+      unscoredCards.forEach(({ card, id, nameEl }) => {
+        const entry = scoreById[id];
+        if (!entry || !SEARCH_SCORE_COLORS[entry.score]) return;
+        card.dataset.liaScored = '1';
+        const { fg, bg, border } = SEARCH_SCORE_COLORS[entry.score];
+        const badge = document.createElement('span');
+        badge.className = 'lia-search-badge';
+        badge.title = entry.reasoning || entry.score;
+        badge.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:700;color:${fg};background:${bg};border:1px solid ${border};margin-left:7px;vertical-align:middle;white-space:nowrap;font-family:-apple-system,BlinkMacSystemFont,sans-serif;line-height:1.7;cursor:default;flex-shrink:0;`;
+        badge.innerHTML = `<span style="width:5px;height:5px;border-radius:50%;background:${fg};flex-shrink:0"></span>${entry.score}`;
+        if (nameEl) nameEl.appendChild(badge);
+      });
+
+      if (btn) { btn.disabled = false; btn.textContent = 'Clear Scores'; }
+      _searchScored = true;
+    } catch (err) {
+      const errMap = {
+        NO_API_KEY: 'No API key — open Settings',
+        LIMIT_REACHED: 'Monthly limit reached — upgrade to Pro',
+        RATE_LIMITED: 'Rate limited — try again shortly',
+        INVALID_KEY: 'Invalid API key — check Settings',
+      };
+      if (labelEl) { labelEl.textContent = errMap[err.message] || 'Scoring failed — try again'; labelEl.classList.add('lia-search-banner-err'); }
+      const upgradeBtn = document.getElementById('lia-search-upgrade-btn');
+      if (upgradeBtn) upgradeBtn.style.display = err.message === 'LIMIT_REACHED' ? '' : 'none';
+      if (btn) { btn.disabled = false; btn.textContent = 'Score Results'; }
+    }
   }
 
   // ─── Messaging Follow-up ─────────────────────────────────────────────────────
@@ -334,6 +432,29 @@
       })
       .join('\n')
       .trim();
+  }
+
+  // Splits an optional trailing "TIMING_NOTE: ..." line off a generated follow-up — that line is
+  // coaching for the user (e.g. "you followed up 1 day ago, consider waiting"), never part of the
+  // actual message, so it must never end up in the copyable text or get sent to the recipient.
+  function parseTimingNote(raw) {
+    const m = (raw || '').match(/\n?TIMING_NOTE:\s*(.+)\s*$/i);
+    if (!m) return { text: (raw || '').trim(), note: null };
+    return { text: raw.slice(0, m.index).trim(), note: m[1].trim() };
+  }
+
+  // Guesses a starting pipeline stage for a contact who has a real conversation already but was
+  // never explicitly saved — e.g. outreach that started before this feature existed, or a thread
+  // the user never got around to tracking. Better than dropping them in at "New" (which would
+  // make the very next follow-up read as a cold opener when it's actually a 2nd or 3rd touch).
+  function inferStageFromConversation(msgs, isRaw) {
+    if (isRaw || !msgs.length) return 'messaged'; // can't reliably attribute raw text by sender
+    if (msgs.some(m => m.sender && m.sender !== 'You')) return 'replied';
+    const sentByMe = msgs.filter(m => m.sender === 'You').length;
+    if (sentByMe <= 1) return 'messaged';
+    if (sentByMe === 2) return 'followup_1';
+    if (sentByMe === 3) return 'followup_2';
+    return 'followup_3plus';
   }
 
   function scrapeThreadMessages(contactName, myName) {
@@ -425,6 +546,42 @@
     return '';
   }
 
+  // Resolves the open conversation's contact back to a profile URL, so the messaging-page
+  // follow-up bar can look up the same tracked pipeline stage / elapsed time / cached analysis
+  // the profile-panel Follow-up tool already uses — instead of always falling back to the
+  // message-counting heuristic. Reuses the exact same elements getContactName() already relies
+  // on (proven to reliably identify the conversation participant), just also checking whether
+  // that element is or is inside an <a> pointing at their profile. Returns '' if none resolve —
+  // callers must treat that as "no tracked data available," not an error.
+  function getContactProfileUrl() {
+    const sels = [
+      '.msg-thread__link-to-profile',
+      '.msg-entity-lockup__entity-title',
+      '.artdeco-entity-lockup__title',
+      '.presence-entity__name',
+    ];
+    for (const s of sels) {
+      const el = document.querySelector(s);
+      if (!el) continue;
+      const link = el.matches('a') ? el : (el.closest('a') || el.querySelector('a'));
+      if (link?.href && /linkedin\.com\/in\//.test(link.href)) {
+        return link.href.split('?')[0];
+      }
+    }
+
+    // Lower-confidence fallback: the first "/in/" link inside the conversation thread container
+    // (same '.msg-thread' selector extractLinkedInConversation() already relies on elsewhere in
+    // this file). LinkedIn renders the conversation header — with the contact's own profile link
+    // — before the message list in DOM order, so document order means the first match is very
+    // likely the header's link rather than one from inside a message. Not guaranteed, but a
+    // reasonable second attempt before giving up.
+    const threadRoot = document.querySelector('.msg-thread, [class*="messaging-thread"]');
+    const firstLink = threadRoot?.querySelector('a[href*="/in/"]');
+    if (firstLink?.href) return firstLink.href.split('?')[0];
+
+    return '';
+  }
+
   function insertIntoChat(text) {
     const input = document.querySelector(
       '.msg-form__contenteditable[contenteditable="true"], ' +
@@ -468,6 +625,7 @@
       <div class="lia-followup-bar-inner">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(167,139,250,0.9)" style="flex-shrink:0"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452z"/></svg>
         <span class="lia-followup-bar-label">LinkPilot AI</span>
+        <span id="lia-followup-tag" class="lia-followup-tag"></span>
         <span id="lia-followup-status" class="lia-followup-status"></span>
         <button id="lia-followup-instr-toggle" class="lia-followup-instr-toggle" type="button" title="Add instructions (e.g. be more direct)">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -491,6 +649,26 @@
       row.style.display = opening ? 'block' : 'none';
       if (opening) document.getElementById('lia-followup-instr-input')?.focus();
     });
+    updateFollowupTag();
+  }
+
+  // Shows the detected pipeline stage as a visible chip in the bar itself (not just a hover
+  // tooltip, which is too easy to miss) — read-only, never creates a pipeline entry on its own.
+  // Re-run after every generation too, since that can create/advance the entry.
+  async function updateFollowupTag() {
+    const tagEl = document.getElementById('lia-followup-tag');
+    if (!tagEl) return;
+    const contactProfileUrl = getContactProfileUrl();
+    if (!contactProfileUrl) { tagEl.textContent = ''; tagEl.className = 'lia-followup-tag'; return; }
+    const contacts = await getSavedContacts();
+    const entry = contacts.find(c => c.url === contactProfileUrl);
+    if (!entry) {
+      tagEl.textContent = 'Not tracked';
+      tagEl.className = 'lia-followup-tag lia-followup-tag-untracked';
+      return;
+    }
+    tagEl.textContent = STAGE_META[entry.stage]?.label || 'New';
+    tagEl.className = 'lia-followup-tag';
   }
 
   async function handleFollowupClick() {
@@ -523,6 +701,48 @@
         ? msgs[0].text
         : msgs.map(m => `${m.sender}: ${m.text}`).join('\n\n');
       const userInstructions = document.getElementById('lia-followup-instr-input')?.value.trim() || '';
+
+      // Resolve the conversation back to a profile URL so this gets the same tracked stage /
+      // elapsed time / cached analysis the profile-panel Follow-up tool already uses, instead of
+      // always falling back to the message-counting heuristic. Gracefully degrades to that
+      // heuristic (stage/daysSinceLastTouch/analysis all left undefined) if resolution fails or
+      // the contact was never saved — same behavior as before for those cases.
+      const contactProfileUrl = getContactProfileUrl();
+      let stage, daysSinceLastTouch, analysis;
+      if (contactProfileUrl) {
+        const contacts = await getSavedContacts();
+        let entry = contacts.find(c => c.url === contactProfileUrl);
+
+        if (!entry) {
+          // Not tracked yet, but a real conversation already exists — auto-add them to the
+          // pipeline instead of silently leaving them untracked, guessing a starting stage from
+          // the actual thread rather than defaulting to "New" (which would be wrong if there's
+          // already been back-and-forth, e.g. outreach that started before this was built).
+          entry = {
+            url: contactProfileUrl,
+            name: contactName || '',
+            headline: '',
+            company: '',
+            score: null,
+            intent,
+            savedAt: Date.now(),
+            stage: inferStageFromConversation(msgs, isRaw),
+            stageUpdatedAt: Date.now(),
+          };
+          await chrome.storage.local.set({ savedContacts: [entry, ...contacts] });
+        }
+
+        if (entry.stage && entry.stage !== 'new') {
+          stage = entry.stage;
+          daysSinceLastTouch = Math.floor((Date.now() - (entry.stageUpdatedAt || entry.savedAt || Date.now())) / 86400000);
+        }
+        const storedRecord = await dbGet(contactProfileUrl).catch(() => null);
+        analysis = storedRecord?.analysis || undefined;
+        if (stage) {
+          btn.title = `Detected: ${STAGE_META[stage]?.label || stage} · last touch ${daysSinceLastTouch === 0 ? 'today' : `${daysSinceLastTouch}d ago`}`;
+        }
+      }
+
       const res = await new Promise(resolve => {
         chrome.runtime.sendMessage({
           type: 'GENERATE_CHAT_FOLLOWUP',
@@ -532,6 +752,7 @@
           senderName: myName,
           intent,
           userInstructions,
+          stage, daysSinceLastTouch, analysis,
         }, r => {
           if (chrome.runtime.lastError) resolve({ error: chrome.runtime.lastError.message });
           else resolve(r || { error: 'No response' });
@@ -546,13 +767,19 @@
         };
         if (status) { status.textContent = errMap[res.error] || 'Error — try again'; status.className = 'lia-followup-status lia-followup-status-err'; }
       } else if (res.text) {
-        const inserted = insertIntoChat(res.text);
+        const { text: messageText, note } = parseTimingNote(res.text);
+        if (note && status) { status.textContent = `⚠ ${note}`; status.title = note; status.className = 'lia-followup-status lia-followup-status-err'; }
+        const inserted = insertIntoChat(messageText);
         if (!inserted) {
-          await navigator.clipboard.writeText(res.text).catch(() => {});
-          if (status) { status.textContent = '✓ Copied to clipboard'; status.className = 'lia-followup-status lia-followup-status-ok'; }
+          await navigator.clipboard.writeText(messageText).catch(() => {});
+          if (status && !note) { status.textContent = '✓ Copied to clipboard'; status.className = 'lia-followup-status lia-followup-status-ok'; }
         } else {
-          if (status) { status.textContent = '✓ Inserted into chat'; status.className = 'lia-followup-status lia-followup-status-ok'; }
-          setTimeout(() => { if (status) { status.textContent = ''; status.className = 'lia-followup-status'; } }, 3500);
+          if (status && !note) { status.textContent = '✓ Inserted into chat'; status.className = 'lia-followup-status lia-followup-status-ok'; }
+          if (!note) setTimeout(() => { if (status) { status.textContent = ''; status.className = 'lia-followup-status'; } }, 3500);
+        }
+        if (contactProfileUrl) {
+          await advanceStageBySteps(contactProfileUrl, 1);
+          await updateFollowupTag();
         }
       }
     } catch (_) {
@@ -1487,7 +1714,7 @@
     return deduped.length ? deduped.slice(-30).join('\n\n') : null;
   }
 
-  function renderFollowupForm(intent) {
+  async function renderFollowupForm(intent) {
     const body = document.getElementById('lia-body');
     if (!body) return;
     const tabs = panel.querySelector('.lia-tabs');
@@ -1507,6 +1734,19 @@
            <button class="lia-convo-refresh" id="lia-convo-refresh">↺ Refresh</button>
          </div>`;
 
+    // Pipeline stage + elapsed time (ground truth from tracked stageUpdatedAt, not scraped
+    // text) + any cached full-profile analysis, so generation is grounded in real context.
+    const contacts = await getSavedContacts();
+    const entry = contacts.find(c => c.url === currentProfileUrl);
+    // Not tracked yet, but a conversation was actually found — default to "Messaged" rather than
+    // "New" so the dropdown doesn't misrepresent an already-started conversation as a cold one.
+    const trackedStage = STAGE_META[entry?.stage] ? entry.stage : (extracted ? 'messaged' : 'new');
+    const daysSinceLastTouch = (entry && entry.stage && entry.stage !== 'new')
+      ? Math.floor((Date.now() - (entry.stageUpdatedAt || entry.savedAt || Date.now())) / 86400000)
+      : null;
+    const storedRecord = await dbGet(currentProfileUrl).catch(() => null);
+    const cachedAnalysis = storedRecord?.analysis || null;
+
     body.innerHTML = `
       <div class="lia-back-row">
         <button class="lia-back-btn" id="lia-back-btn">
@@ -1515,6 +1755,13 @@
           </svg>
           Back
         </button>
+      </div>
+      <div class="lia-section">
+        <div class="lia-label">Outreach Stage <span class="lia-optional">(auto-detected — correct if needed)</span></div>
+        <select class="lia-notes-input" id="lia-followup-stage-select" style="margin-bottom:4px">
+          ${STAGE_ORDER.map(s => `<option value="${s}" ${s === trackedStage ? 'selected' : ''}>${STAGE_META[s].label}</option>`).join('')}
+        </select>
+        ${daysSinceLastTouch !== null ? `<div class="lia-followup-elapsed">Last touch: ${daysSinceLastTouch === 0 ? 'today' : `${daysSinceLastTouch} day${daysSinceLastTouch === 1 ? '' : 's'} ago`}</div>` : ''}
       </div>
       <div class="lia-section">
         <div class="lia-label">Conversation
@@ -1575,6 +1822,7 @@
       const resultDiv = body.querySelector('#lia-followup-result');
       const convoText = body.querySelector('#lia-followup-convo')?.value.trim() || '';
       const userInstructions = body.querySelector('#lia-followup-instructions')?.value.trim() || '';
+      const selectedStage = body.querySelector('#lia-followup-stage-select')?.value || trackedStage;
 
       btn.disabled = true;
       btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="lia-spin"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> Writing follow-up...`;
@@ -1582,12 +1830,40 @@
 
       try {
         const profileData = extractProfile();
-        const stage = await getContactStage(currentProfileUrl);
-        const result = await sendMessage('GENERATE_FOLLOW_UP', profileData, { intent, conversationText: convoText, userInstructions, stage });
+        if (!entry) {
+          // Auto-track this contact — generating a follow-up means we're actively following up
+          // with them, so the pipeline should reflect that instead of only tracking contacts the
+          // user remembered to explicitly Save first.
+          const freshContacts = await getSavedContacts();
+          const score = cachedAnalysis
+            ? (intent === 'job_search' ? (cachedAnalysis.hiringSignal?.score || 'Unlikely')
+              : intent === 'b2c_sales' ? (cachedAnalysis.clientPotential?.score || 'Low')
+              : (cachedAnalysis.potentialClient?.score || 'Low'))
+            : null;
+          const newEntry = {
+            url: currentProfileUrl,
+            name: profileData.name || '',
+            headline: profileData.headline || '',
+            company: cachedAnalysis?.company?.name || cachedAnalysis?.companyName || '',
+            score,
+            intent,
+            savedAt: Date.now(),
+            stage: selectedStage,
+            stageUpdatedAt: Date.now(),
+          };
+          await chrome.storage.local.set({ savedContacts: [newEntry, ...freshContacts.filter(c => c.url !== currentProfileUrl)] });
+        } else if (selectedStage !== entry.stage) {
+          await setContactStage(currentProfileUrl, selectedStage);
+        }
+        const result = await sendMessage('GENERATE_FOLLOW_UP', profileData, {
+          intent, conversationText: convoText, userInstructions,
+          stage: selectedStage, daysSinceLastTouch, analysis: cachedAnalysis,
+        });
         if (result.error) throw new Error(result.error);
 
-        const text = result.text || '';
+        const { text, note } = parseTimingNote(result.text || '');
         resultDiv.innerHTML = `
+          ${note ? `<div class="lia-timing-note">⚠️ ${escHtml(note)}</div>` : ''}
           <div class="lia-label">Follow-up Message</div>
           <div class="lia-connection-box">
             <p id="lia-followup-text">${escHtml(text)}</p>
@@ -1716,16 +1992,26 @@
     const { analysisIntent: intent = 'b2b_sales' } = await chrome.storage.local.get('analysisIntent');
 
     try {
-      const [analysis, connectionResult] = await Promise.all([
+      // Settled (not Promise.all) on purpose: a failed connection-request generation shouldn't
+      // discard a successful analysis — that used to throw away real work and cost a second
+      // usage credit on "Try Again" for something that had already succeeded once. Only a failed
+      // *analysis* is fatal here; a failed connection request just renders empty, and the
+      // Connection tab offers its own retry for that piece alone.
+      const [analysisSettled, connectionSettled] = await Promise.allSettled([
         sendMessage('ANALYZE_PROFILE', profileData, { intent }),
         sendMessage('GENERATE_CONNECTION_REQUEST', profileData, { intent }),
       ]);
 
-      if (analysis.error) throw new Error(analysis.error);
-      if (connectionResult.error) throw new Error(connectionResult.error);
+      const analysis = analysisSettled.status === 'fulfilled' ? analysisSettled.value : null;
+      if (!analysis || analysis.error) {
+        throw new Error(analysis?.error || analysisSettled.reason?.message || 'Analysis failed');
+      }
+
+      const connectionValue = connectionSettled.status === 'fulfilled' ? connectionSettled.value : null;
+      const connectionText = (connectionValue && !connectionValue.error) ? (connectionValue.text || '') : '';
 
       const prevRec = await dbGet(currentProfileUrl).catch(() => null);
-      const record = { ...(prevRec || {}), analysis, connectionRequest: connectionResult.text, intent };
+      const record = { ...(prevRec || {}), analysis, connectionRequest: connectionText, intent };
       await dbPut(currentProfileUrl, record).catch(() => {});
       renderResults(record.analysis, record.connectionRequest, Date.now(), intent);
     } catch (err) {
@@ -1802,6 +2088,17 @@
   // Ordered outreach pipeline. Duplicated in popup/index.js (no shared-module bundler here,
   // same pattern already used for SETTINGS_KEYS/SYNC_KEYS between auth.js and options/index.js).
   const STAGE_ORDER = ['new', 'connection_sent', 'messaged', 'followup_1', 'followup_2', 'followup_3plus', 'replied', 'booked', 'closed'];
+  const STAGE_META = {
+    new:             { label: 'New' },
+    connection_sent: { label: 'Connection Sent' },
+    messaged:        { label: 'Messaged' },
+    followup_1:      { label: 'Follow-up 1' },
+    followup_2:      { label: 'Follow-up 2' },
+    followup_3plus:  { label: 'Follow-up 3+' },
+    replied:         { label: 'Replied' },
+    booked:          { label: 'Booked' },
+    closed:          { label: 'Closed' },
+  };
 
   async function getSavedContacts() {
     const r = await chrome.storage.local.get('savedContacts').catch(() => ({}));
@@ -1850,52 +2147,94 @@
     await chrome.storage.local.set({ savedContacts: contacts });
   }
 
-  async function toggleSaveContact() {
-    const btn = panel?.querySelector('#lia-save-btn');
-    const body = document.getElementById('lia-body');
-    const rendered = body?._rendered;
-    if (!rendered || !currentProfileUrl) return;
-
-    const saved = await isContactSaved(currentProfileUrl);
+  // Unconditional stage set — used when the user manually corrects the stage tag in the
+  // Follow-up tool (unlike advanceStage/advanceStageBySteps, this can move it either direction).
+  async function setContactStage(url, stage) {
+    if (!url || !STAGE_META[stage]) return;
     const contacts = await getSavedContacts();
+    const entry = contacts.find(c => c.url === url);
+    if (!entry) return;
+    entry.stage = stage;
+    entry.stageUpdatedAt = Date.now();
+    await chrome.storage.local.set({ savedContacts: contacts });
+  }
 
-    if (saved) {
-      const updated = contacts.filter(c => c.url !== currentProfileUrl);
-      await chrome.storage.local.set({ savedContacts: updated });
-      if (btn) { btn.classList.remove('lia-save-btn-active'); btn.title = 'Save contact'; }
-    } else {
-      const { analysis, intent } = rendered;
-      const profileData = extractProfile();
-      const score = intent === 'job_search'
-        ? (analysis.hiringSignal?.score || 'Unlikely')
-        : intent === 'b2c_sales'
-        ? (analysis.clientPotential?.score || 'Low')
-        : (analysis.potentialClient?.score || 'Low');
-      const company = analysis.company?.name || analysis.companyName || '';
-      const entry = {
-        url: currentProfileUrl,
-        name: profileData.name || '',
-        headline: profileData.headline || '',
-        company,
-        score,
-        intent,
-        savedAt: Date.now(),
-        stage: 'new',
-        stageUpdatedAt: Date.now(),
-      };
-      const updated = [entry, ...contacts.filter(c => c.url !== currentProfileUrl)].slice(0, 200);
-      await chrome.storage.local.set({ savedContacts: updated });
-      if (btn) { btn.classList.add('lia-save-btn-active'); btn.title = 'Unsave contact'; }
+  // Saves (or refreshes) the current profile. Uses the freshly-rendered analysis when one is
+  // available (document.getElementById('lia-body')._rendered, populated after Analyze completes)
+  // for a real score/company; otherwise falls back to whatever extractProfile() can read off the
+  // page directly, with score left null — the "quick save from the dock, no Analyze required"
+  // path. Existing stage/savedAt/score are preserved on re-save unless fresher data overrides them,
+  // so this also doubles as an "upgrade" when Analyze completes on an already quick-saved contact.
+  async function saveCurrentContact() {
+    if (!currentProfileUrl) return;
+    const rendered = document.getElementById('lia-body')?._rendered;
+    const analysis = rendered?.analysis;
+    const intent = rendered?.intent
+      || (await chrome.storage.local.get('analysisIntent')).analysisIntent
+      || 'b2b_sales';
+    const profileData = extractProfile();
+    const contacts = await getSavedContacts();
+    const existing = contacts.find(c => c.url === currentProfileUrl);
+
+    const score = analysis
+      ? (intent === 'job_search' ? (analysis.hiringSignal?.score || 'Unlikely')
+        : intent === 'b2c_sales' ? (analysis.clientPotential?.score || 'Low')
+        : (analysis.potentialClient?.score || 'Low'))
+      : (existing?.score ?? null);
+    const company = analysis?.company?.name || analysis?.companyName
+      || profileData.experience?.[0]?.company || existing?.company || '';
+
+    const entry = {
+      url: currentProfileUrl,
+      name: profileData.name || existing?.name || '',
+      headline: profileData.headline || existing?.headline || '',
+      company,
+      score,
+      intent,
+      savedAt: existing?.savedAt || Date.now(),
+      stage: existing?.stage || 'new',
+      stageUpdatedAt: existing?.stageUpdatedAt || Date.now(),
+    };
+    const updated = [entry, ...contacts.filter(c => c.url !== currentProfileUrl)].slice(0, 200);
+    await chrome.storage.local.set({ savedContacts: updated });
+  }
+
+  async function unsaveCurrentContact() {
+    if (!currentProfileUrl) return;
+    const contacts = await getSavedContacts();
+    const updated = contacts.filter(c => c.url !== currentProfileUrl);
+    await chrome.storage.local.set({ savedContacts: updated });
+  }
+
+  async function toggleSaveContact() {
+    if (!currentProfileUrl) return;
+    const saved = await isContactSaved(currentProfileUrl);
+    if (saved) await unsaveCurrentContact();
+    else await saveCurrentContact();
+    await syncSaveButtons();
+  }
+
+  // Keeps the panel's save icon and the dock's Save button showing the same state — either one
+  // can be used to save/unsave, so both need to reflect whichever was used last.
+  async function syncSaveButtons() {
+    const saved = currentProfileUrl ? await isContactSaved(currentProfileUrl) : false;
+    const panelBtn = panel?.querySelector('#lia-save-btn');
+    if (panelBtn) {
+      panelBtn.style.display = '';
+      panelBtn.classList.toggle('lia-save-btn-active', saved);
+      panelBtn.title = saved ? 'Unsave contact' : 'Save contact';
+    }
+    if (dockSaveBtn) {
+      dockSaveBtn.classList.toggle('lia-save-trigger-active', saved);
+      dockSaveBtn.title = saved ? 'Unsave contact' : 'Save contact';
     }
   }
 
-  async function refreshSaveBtn(analysis, intent) {
-    const btn = panel?.querySelector('#lia-save-btn');
-    if (!btn) return;
-    btn.style.display = '';
-    const saved = await isContactSaved(currentProfileUrl);
-    btn.classList.toggle('lia-save-btn-active', saved);
-    btn.title = saved ? 'Unsave contact' : 'Save contact';
+  async function refreshSaveBtn() {
+    // If Analyze just completed on a contact that was already quick-saved from the dock (no
+    // score yet), upgrade the saved entry with the real score now that one exists.
+    if (currentProfileUrl && await isContactSaved(currentProfileUrl)) await saveCurrentContact();
+    await syncSaveButtons();
   }
 
   function togglePanel(show) {
@@ -2061,7 +2400,7 @@
       badge.textContent = modeMap[intent] || 'B2B Sales';
     }
 
-    refreshSaveBtn(analysis, intent);
+    refreshSaveBtn();
     renderTabContent(analysis, connectionRequest, activeTab, intent);
   }
 
@@ -2554,6 +2893,32 @@
       });
 
     } else if (tab === 'connection') {
+      if (!connectionRequest) {
+        body.innerHTML = `
+          <div class="lia-section">
+            <p class="lia-error-msg">Couldn't generate a connection request for this profile — the analysis above is still good, this piece alone failed.</p>
+            <button class="lia-btn-primary" id="lia-conn-retry-btn">Retry</button>
+          </div>
+        `;
+        body.querySelector('#lia-conn-retry-btn').addEventListener('click', async () => {
+          const btn = body.querySelector('#lia-conn-retry-btn');
+          btn.textContent = 'Retrying...';
+          btn.disabled = true;
+          try {
+            const profileData = extractProfile();
+            const result = await sendMessage('GENERATE_CONNECTION_REQUEST', profileData, { intent });
+            if (result.error) throw new Error(result.error);
+            body._rendered.connectionRequest = result.text;
+            const stored = await dbGet(currentProfileUrl).catch(() => null);
+            if (stored) await dbPut(currentProfileUrl, { ...stored, connectionRequest: result.text }).catch(() => {});
+            renderTabContent(analysis, result.text, 'connection', intent);
+          } catch (e) {
+            btn.textContent = e.message || 'Error — try again';
+            btn.disabled = false;
+          }
+        });
+        return;
+      }
       const charCount = (connectionRequest || '').length;
       const charClass = charCount > 200 ? 'char-over' : charCount > 160 ? 'char-warn' : 'char-ok';
 
@@ -2794,6 +3159,8 @@
         pipelineId: pipelineEl.value,
         stageId: stageEl.value,
         ownerId: ownerEl?.value || '',
+        analysis: rendered?.analysis,
+        intent: rendered?.intent,
       });
 
       if (pushResult.error) {

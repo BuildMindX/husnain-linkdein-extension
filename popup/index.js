@@ -342,6 +342,10 @@ chrome.storage.local.get(
         exportContactsCSV(r.savedContacts || []);
       });
     });
+
+    document.getElementById('view-pipeline-btn')?.addEventListener('click', () => {
+      chrome.tabs.create({ url: chrome.runtime.getURL('options/index.html#pipeline') });
+    });
   }
 );
 

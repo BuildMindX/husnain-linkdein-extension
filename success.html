@@ -212,6 +212,7 @@
 
   <a href="https://www.linkedin.com" class="btn-primary">Go to LinkedIn →</a>
   <p class="close-hint">You can also close this tab — your plan is saved.</p>
+  <p class="close-hint" id="sync-status" style="margin-top:6px">Syncing your Pro access with the extension…</p>
 
   <div class="wordmark">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.5">
@@ -223,9 +224,36 @@
 
 </div>
 <script>
-  if (typeof chrome !== 'undefined' && chrome.runtime) {
-    chrome.runtime.sendMessage({ type: 'SYNC_PLAN' });
-  }
+  // The Stripe webhook that actually flips this account to Pro on our end is delivered
+  // asynchronously — it's routine for it to still be in flight when this success page loads
+  // (the checkout redirect fires the instant payment succeeds, not after the webhook lands).
+  // A single SYNC_PLAN call can easily read back stale "free" if it races the webhook, so poll
+  // for a few seconds instead of trusting one shot. The daily background sync is still a
+  // backstop if every attempt here comes up short.
+  (function syncProStatus() {
+    const statusEl = document.getElementById('sync-status');
+    if (typeof chrome === 'undefined' || !chrome.runtime) return;
+
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    function attempt() {
+      attempts++;
+      chrome.runtime.sendMessage({ type: 'SYNC_PLAN' }, res => {
+        if (chrome.runtime.lastError) return; // extension context gone — nothing more to do here
+        if (res?.plan === 'pro') {
+          if (statusEl) statusEl.textContent = '✓ Synced with the extension';
+          return;
+        }
+        if (attempts < maxAttempts) {
+          setTimeout(attempt, 2000);
+        } else if (statusEl) {
+          statusEl.textContent = "Still syncing — this'll finish within a few minutes, no action needed.";
+        }
+      });
+    }
+    attempt();
+  }());
 </script>
 </body>
 </html>
