@@ -55,6 +55,20 @@ End with exactly one CTA, placed as the final sentence.`;
   return sections.join('\n\n');
 }
 
+// B2C gets its own target/exclude industries (b2cTargetIndustries/b2cExcludeIndustries), not
+// B2B's — previously B2C scoring silently reused whatever was configured for B2B mode with no
+// way to see or change it from the B2C settings. No B2B-style default exclude list here either:
+// those defaults ("Tech service providers", "IT outsourcing", etc.) are a B2B assumption that
+// doesn't obviously carry over to a freelancer's own client-fit judgment.
+async function getB2cIcpConfig() {
+  const r = await chrome.storage.local.get(['b2cTargetIndustries', 'b2cExcludeIndustries']);
+  return {
+    targets: Array.isArray(r.b2cTargetIndustries) ? r.b2cTargetIndustries : [],
+    excludes: Array.isArray(r.b2cExcludeIndustries) ? r.b2cExcludeIndustries : [],
+    business: {},
+  };
+}
+
 async function getSalesConfig() {
   const r = await chrome.storage.local.get(['targetIndustries', 'excludeIndustries', 'businessProfile', 'messagePresets']);
   return {
@@ -73,6 +87,19 @@ async function getB2cProfile() {
 async function getJobProfile() {
   const r = await chrome.storage.local.get('jobProfile');
   return r.jobProfile || {};
+}
+
+// B2C and Job Search each get their own tone/length/CTA presets — deliberately separate storage
+// keys from B2B's messagePresets, not a shared one, so switching modes doesn't silently carry
+// one mode's style preference into another the way ICP targeting used to.
+async function getB2cMessagePresets() {
+  const r = await chrome.storage.local.get('b2cMessagePresets');
+  return r.b2cMessagePresets || {};
+}
+
+async function getJobMessagePresets() {
+  const r = await chrome.storage.local.get('jobMessagePresets');
+  return r.jobMessagePresets || {};
 }
 
 // ─── Context Builders ─────────────────────────────────────────────────────────
@@ -119,6 +146,23 @@ function buildMessageStyle(cfg) {
   if (who.length) {
     lines.push('\nABOUT THE SENDER (weave in subtly ONLY if it strengthens the message — never pitch hard, never list features):');
     lines.push(who.join('\n'));
+  }
+  return lines.join('\n');
+}
+
+// Just the tone/length/CTA portion of buildMessageStyle, shared by B2C and Job Search — they
+// already get their own sender-bio context from buildB2cContext/buildJobContext, so they don't
+// need buildMessageStyle's "ABOUT THE SENDER" section (that's B2B-specific field names anyway).
+function buildStylePresetRules(presets) {
+  const p = presets || {};
+  const tone = p.tone || 'warm';
+  const length = p.length || 'standard';
+  const lines = [`Tone: ${tone}.`];
+  lines.push(`Length: ${length === 'short' ? 'very short — one or two lines.' : 'concise but complete.'}`);
+  if (p.includeCta && (p.ctaText || '').trim()) {
+    lines.push(`End with a soft, natural call-to-action along the lines of: "${p.ctaText.trim()}". Keep it casual, never salesy.`);
+  } else {
+    lines.push('Do not include a hard call-to-action.');
   }
   return lines.join('\n');
 }
@@ -252,7 +296,8 @@ async function callAI(systemPrompt, userPrompt) {
 export async function handleAnalyzeProfile(profileData, intent) {
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
-  const cfg = (!isJobSearch) ? await getSalesConfig() : null;
+  const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
+  const b2cIcpCfg = isB2c ? await getB2cIcpConfig() : null;
   const b2cProfile = isB2c ? await getB2cProfile() : null;
 
   let systemPrompt;
@@ -373,7 +418,7 @@ companySize guide:
 
 engagementRate: infer from follower count, post frequency, and activity signals
 
-${buildIcpContext(cfg, 'b2c')}
+${buildIcpContext(b2cIcpCfg, 'b2c')}
 ${b2cProfile && Object.keys(b2cProfile).length ? '\n' + buildB2cContext(b2cProfile) : ''}`;
 
   } else {
@@ -463,7 +508,8 @@ ${buildIcpContext(cfg)}`;
 export async function handleBulkScoreProfiles(profiles, intent) {
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
-  const cfg = (!isJobSearch) ? await getSalesConfig() : null;
+  const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
+  const b2cIcpCfg = isB2c ? await getB2cIcpConfig() : null;
   const b2cProfile = isB2c ? await getB2cProfile() : null;
 
   const scoreLabels = isJobSearch ? 'Strong | Possible | Unlikely' : 'High | Medium | Low';
@@ -476,7 +522,7 @@ export async function handleBulkScoreProfiles(profiles, intent) {
   const context = isJobSearch
     ? ''
     : isB2c
-    ? buildIcpContext(cfg, 'b2c') + (b2cProfile && Object.keys(b2cProfile).length ? '\n\n' + buildB2cContext(b2cProfile) : '')
+    ? buildIcpContext(b2cIcpCfg, 'b2c') + (b2cProfile && Object.keys(b2cProfile).length ? '\n\n' + buildB2cContext(b2cProfile) : '')
     : buildIcpContext(cfg);
 
   const systemPrompt = `You are scoring a batch of LinkedIn search results from the perspective of ${perspective}. You only have each person's name, title, and company — no full profile, no experience history, no posts. Judge primarily on seniority/title, and on fit against the context below when relevant.
@@ -511,6 +557,8 @@ export async function handleGenerateConnectionRequest(profileData, intent, userN
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
   const b2cProfile = isB2c ? await getB2cProfile() : null;
   const jobProfile = isJobSearch ? await getJobProfile() : null;
+  const b2cPresets = isB2c ? await getB2cMessagePresets() : null;
+  const jobPresets = isJobSearch ? await getJobMessagePresets() : null;
 
   let systemPrompt;
 
@@ -531,6 +579,7 @@ ${AUTHENTICITY_RULES}
 Return ONLY the connection request text. Nothing else. No quotes around it.`;
     const jobCtx = buildJobContext(jobProfile);
     if (jobCtx) systemPrompt += `\n\n${jobCtx}`;
+    systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStylePresetRules(jobPresets)}`;
 
   } else if (isB2c) {
     systemPrompt = `You write LinkedIn connection requests for an individual freelancer or consultant reaching out to a potential client. You are positioning the sender as a peer and fellow professional, not as a vendor.
@@ -549,6 +598,7 @@ Return ONLY the connection request text. Nothing else. No quotes around it.`;
     if (b2cProfile && Object.keys(b2cProfile).length) {
       systemPrompt += `\n\n--- YOUR PROFILE (sender context, for tone calibration only) ---\n${buildB2cContext(b2cProfile)}`;
     }
+    systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStylePresetRules(b2cPresets)}`;
 
   } else {
     systemPrompt = `You write LinkedIn connection requests. Write like a real person, not a marketer.
@@ -571,74 +621,6 @@ Return ONLY the connection request text. Nothing else. No quotes around it.`;
   return { text: await callAI(systemPrompt, userPrompt) };
 }
 
-// ─── Cold Message ─────────────────────────────────────────────────────────────
-
-export async function handleGenerateColdMessage(profileData, intent, userNotes) {
-  const isJobSearch = intent === 'job_search';
-  const isB2c = intent === 'b2c_sales';
-  const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
-  const b2cProfile = isB2c ? await getB2cProfile() : null;
-  const jobProfile = isJobSearch ? await getJobProfile() : null;
-
-  let systemPrompt;
-
-  if (isJobSearch) {
-    systemPrompt = `You write first LinkedIn direct messages for a job seeker reaching out to someone they are already connected with.
-
-PRIORITY RULE: Base the message on their CURRENT role if possible. Only reference posts if they clearly relate to their current job — never reference posts from a previous employer. If there is nothing specific to reference, write a warm natural opener using their current title and company. Always produce a message — never refuse or ask for clarification.
-
-Rules:
-- Max 300 characters total (count carefully)
-- No corporate speak, no buzzwords
-- Do NOT say you are looking for a job, open to work, or mention opportunities
-- Ask a simple, natural question that invites a reply — can be about their current role or transition
-- Sound curious and human, not templated
-${AUTHENTICITY_RULES}
-
-Return ONLY the message text. Nothing else. No quotes around it.`;
-    const jobCtx = buildJobContext(jobProfile);
-    if (jobCtx) systemPrompt += `\n\n${jobCtx}`;
-
-  } else if (isB2c) {
-    systemPrompt = `You write first LinkedIn direct messages for a freelancer or independent consultant reaching out to a potential client they are already connected with.
-
-PRIORITY RULE: Base the message on their CURRENT role, challenges, or recent posts. Only reference posts clearly tied to their current job. If nothing specific is available, write a warm opener using their current title and company. Always produce a message — never refuse.
-
-Rules:
-- Max 300 characters total (count carefully)
-- No buzzwords, no SDR templates, no hard pitch
-- Acknowledge something specific about their situation — a challenge, a recent post, a company initiative
-- End with a single soft, conversational question that invites a reply (not a meeting request), placed as the final sentence
-- Sound like a trusted peer, not a vendor
-${AUTHENTICITY_RULES}
-- Never say "freelance", "hire me", "my services", "I can help you with", or anything transactional
-
-Return ONLY the message text. Nothing else. No quotes around it.`;
-    if (b2cProfile && Object.keys(b2cProfile).length) {
-      systemPrompt += `\n\n--- YOUR PROFILE (for context and tone calibration) ---\n${buildB2cContext(b2cProfile)}`;
-    }
-
-  } else {
-    systemPrompt = `You write first LinkedIn direct messages for a B2B sales professional reaching out to a connection.
-
-PRIORITY RULE: Base the message on their CURRENT role if possible. Only reference posts if they clearly relate to their current job — never reference posts from a previous employer. If there is nothing specific to reference, write a warm natural opener using their current title and company. Always produce a message — never refuse or ask for clarification.
-
-Rules:
-- Max 300 characters total (count carefully)
-- No corporate speak, no buzzwords, no pitching
-- The goal is to start a genuine conversation, not sell anything
-- One clear, natural question that invites a reply, placed as the final sentence — can be as simple as asking about their current work
-- Sound like a real person, not an SDR template
-${AUTHENTICITY_RULES}
-
-Return ONLY the message text. Nothing else. No quotes around it.`;
-    if (cfg) systemPrompt += `\n\n--- MESSAGE STYLE & SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
-  }
-
-  const userPrompt = buildProfileText(profileData, userNotes);
-  return { text: await callAI(systemPrompt, userPrompt) };
-}
-
 // ─── First Message ────────────────────────────────────────────────────────────
 
 export async function handleGenerateFirstMessage(profileData, analysis, intent, tone, userInstructions) {
@@ -647,6 +629,8 @@ export async function handleGenerateFirstMessage(profileData, analysis, intent, 
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
   const b2cProfile = isB2c ? await getB2cProfile() : null;
   const jobProfile = isJobSearch ? await getJobProfile() : null;
+  const b2cPresets = isB2c ? await getB2cMessagePresets() : null;
+  const jobPresets = isJobSearch ? await getJobMessagePresets() : null;
   const a = analysis || {};
 
   const dm = a.decisionMakerLevel || a.decisionMaker || '';
@@ -682,7 +666,7 @@ export async function handleGenerateFirstMessage(profileData, analysis, intent, 
     systemPrompt = `You are a senior career coach who has helped hundreds of executives land roles through LinkedIn. You write first messages that get replies because they feel researched, specific, and non-desperate.
 
 TONE: ${toneGuide}
-APPROACH FOR THIS PROSPECT: ${approachGuide}
+APPROACH FOR THIS CONTACT: ${approachGuide}
 
 CORE STRATEGY:
 - Open with THEIR world, not yours — their company, role, content, or industry situation
@@ -700,6 +684,7 @@ ${AUTHENTICITY_RULES}
 - Return ONLY the message. No quotes, no explanation.`;
     const jobCtx = buildJobContext(jobProfile);
     if (jobCtx) systemPrompt += `\n\n${jobCtx}`;
+    systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStylePresetRules(jobPresets)}`;
 
   } else if (isB2c) {
     const approachGuide = isHighValue
@@ -729,6 +714,7 @@ ${AUTHENTICITY_RULES}
     if (b2cProfile && Object.keys(b2cProfile).length) {
       systemPrompt += `\n\n--- SENDER PROFILE ---\n${buildB2cContext(b2cProfile)}`;
     }
+    systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStylePresetRules(b2cPresets)}`;
 
   } else {
     const dmGuide = isDecisionMaker
@@ -791,6 +777,8 @@ export async function handleGenerateFollowUp(profileData, conversationText, inte
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
   const b2cProfile = isB2c ? await getB2cProfile() : null;
   const jobProfile = isJobSearch ? await getJobProfile() : null;
+  const b2cPresets = isB2c ? await getB2cMessagePresets() : null;
+  const jobPresets = isJobSearch ? await getJobMessagePresets() : null;
 
   let systemPrompt;
 
@@ -810,6 +798,7 @@ ${followupAngleRules}
 Return ONLY the follow-up message text. No quotes.`;
     const jobCtx = buildJobContext(jobProfile);
     if (jobCtx) systemPrompt += `\n\n${jobCtx}`;
+    systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStylePresetRules(jobPresets)}`;
 
   } else if (isB2c) {
     systemPrompt = `You write follow-up LinkedIn messages for a freelancer or consultant who has an ongoing conversation with a potential client. Read the existing conversation and write a contextual follow-up that feels natural and moves things forward.
@@ -827,6 +816,7 @@ Return ONLY the follow-up message text. No quotes.`;
     if (b2cProfile && Object.keys(b2cProfile).length) {
       systemPrompt += `\n\n--- SENDER PROFILE ---\n${buildB2cContext(b2cProfile)}`;
     }
+    systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStylePresetRules(b2cPresets)}`;
 
   } else {
     systemPrompt = `You write follow-up LinkedIn messages for a B2B sales professional in an active conversation with a prospect. Read the conversation carefully and write a follow-up that feels natural, contextual, and moves things forward without being pushy.
@@ -1073,11 +1063,19 @@ export async function handleGenerateChatFollowup({ conversationText, isRaw, cont
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
   const b2cProfile = isB2c ? await getB2cProfile() : null;
   const jobProfile = isJobSearch ? await getJobProfile() : null;
+  const b2cPresets = isB2c ? await getB2cMessagePresets() : null;
+  const jobPresets = isJobSearch ? await getJobMessagePresets() : null;
 
   let senderCtx = '';
-  if (isJobSearch && jobProfile && Object.keys(jobProfile).length) senderCtx = buildJobContext(jobProfile);
-  else if (isB2c && b2cProfile && Object.keys(b2cProfile).length) senderCtx = buildB2cContext(b2cProfile);
-  else if (cfg) senderCtx = buildMessageStyle(cfg);
+  if (isJobSearch) {
+    if (jobProfile && Object.keys(jobProfile).length) senderCtx = buildJobContext(jobProfile);
+    senderCtx += `${senderCtx ? '\n\n' : ''}${buildStylePresetRules(jobPresets)}`;
+  } else if (isB2c) {
+    if (b2cProfile && Object.keys(b2cProfile).length) senderCtx = buildB2cContext(b2cProfile);
+    senderCtx += `${senderCtx ? '\n\n' : ''}${buildStylePresetRules(b2cPresets)}`;
+  } else if (cfg) {
+    senderCtx = buildMessageStyle(cfg);
+  }
 
   const writer = senderName || 'the user';
   const recipient = contactName || 'the contact';

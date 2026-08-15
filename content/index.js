@@ -105,6 +105,10 @@
     return /linkedin\.com\/search\/results\/people/.test(location.href);
   }
 
+  function isSalesNavSearchPage() {
+    return /linkedin\.com\/sales\/search\//.test(location.href);
+  }
+
   function isMessagingPage() {
     return /linkedin\.com\/messaging/.test(location.href);
   }
@@ -131,7 +135,18 @@
     dockSaveBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><span>Save</span>`;
     dockSaveBtn.addEventListener('click', async () => {
       if (!isProfilePage()) return;
-      await toggleSaveContact();
+      const origTitle = dockSaveBtn.title;
+      try {
+        await toggleSaveContact();
+      } catch (err) {
+        console.error('[LinkPilot AI] Save failed:', err);
+        dockSaveBtn.classList.add('lia-save-trigger-error');
+        dockSaveBtn.title = 'Save failed — try again';
+        setTimeout(() => {
+          dockSaveBtn.classList.remove('lia-save-trigger-error');
+          dockSaveBtn.title = origTitle;
+        }, 2500);
+      }
     });
     ensureDock().appendChild(dockSaveBtn);
   }
@@ -143,6 +158,8 @@
       syncSaveButtons();
     } else if (isSearchResultsPage()) {
       initSearchResults();
+    } else if (isSalesNavSearchPage()) {
+      injectSalesNavSearchGate();
     } else if (isMessagingPage()) {
       initMessagingPage();
     }
@@ -184,6 +201,10 @@
       removeMessagingUI();
       resetUI();
       initSearchResults();
+    } else if (isSalesNavSearchPage()) {
+      removeMessagingUI();
+      resetUI();
+      injectSalesNavSearchGate();
     } else if (isMessagingPage()) {
       removeSearchUI();
       resetUI();
@@ -303,6 +324,23 @@
     });
   }
 
+  // Sales Navigator search results use a different DOM structure than standard LinkedIn search,
+  // so scoring doesn't work there yet — this shows the same "coming soon" message as the
+  // individual SN profile gate (handleTriggerClick) instead of silently doing nothing. Reuses the
+  // #lia-search-banner id so the existing removeSearchUI() cleanup on navigation covers it too.
+  function injectSalesNavSearchGate() {
+    if (document.getElementById('lia-search-banner')) return;
+    const banner = document.createElement('div');
+    banner.id = 'lia-search-banner';
+    banner.innerHTML = `
+      <div class="lia-search-banner-inner">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(167,139,250,0.9)" stroke-width="1.8" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
+        <span class="lia-search-banner-label">LinkPilot AI — Sales Navigator search scoring is coming soon. Use standard LinkedIn search (linkedin.com/search/results/people) for AI scoring today.</span>
+      </div>`;
+    const main = document.querySelector('main');
+    if (main) main.insertAdjacentElement('afterbegin', banner);
+  }
+
   const SEARCH_SCORE_COLORS = {
     High:     { fg: '#16a34a', bg: 'rgba(22,163,74,0.10)',   border: 'rgba(22,163,74,0.28)' },
     Medium:   { fg: '#d97706', bg: 'rgba(217,119,6,0.10)',   border: 'rgba(217,119,6,0.28)'  },
@@ -365,9 +403,17 @@
         const { fg, bg, border } = SEARCH_SCORE_COLORS[entry.score];
         const badge = document.createElement('span');
         badge.className = 'lia-search-badge';
-        badge.title = entry.reasoning || entry.score;
-        badge.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:700;color:${fg};background:${bg};border:1px solid ${border};margin-left:7px;vertical-align:middle;white-space:nowrap;font-family:-apple-system,BlinkMacSystemFont,sans-serif;line-height:1.7;cursor:default;flex-shrink:0;`;
+        badge.title = `${entry.reasoning || entry.score} — click to open profile`;
+        badge.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:700;color:${fg};background:${bg};border:1px solid ${border};margin-left:7px;vertical-align:middle;white-space:nowrap;font-family:-apple-system,BlinkMacSystemFont,sans-serif;line-height:1.7;cursor:pointer;flex-shrink:0;`;
         badge.innerHTML = `<span style="width:5px;height:5px;border-radius:50%;background:${fg};flex-shrink:0"></span>${entry.score}`;
+        // Scored results otherwise dead-end here — the badge is the one thing on a search-results
+        // card that's unambiguously "this extension's," so it doubles as the fast path into the
+        // profile instead of making the user hunt for the (often small/obscured) name link.
+        badge.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          window.open(id, '_blank', 'noopener');
+        });
         if (nameEl) nameEl.appendChild(badge);
       });
 
@@ -599,6 +645,43 @@
     return true;
   }
 
+  // Watches for LinkedIn's own Send button (not our insert) so the pipeline stage only advances
+  // once the message is actually sent — inserting text into the compose box isn't a commitment,
+  // the user can still edit or abandon the draft.
+  function armSendListenerForStageAdvance(url) {
+    const compose = document.querySelector('.msg-form__contenteditable[contenteditable="true"]');
+    const sendBtn = compose?.closest('.msg-form')?.querySelector('.msg-form__send-button, button[type="submit"]');
+    if (!sendBtn) return;
+    const handler = async () => {
+      sendBtn.removeEventListener('click', handler);
+      await advanceStageBySteps(url, 1);
+      await updateFollowupTag();
+    };
+    sendBtn.addEventListener('click', handler, { once: true });
+  }
+
+  // LinkedIn has no public API to publish a post on the user's behalf, so this hands the text off
+  // to LinkedIn's own "Start a post" composer (a Quill editor) instead — same insertText technique
+  // as insertIntoChat above. Only works if the composer modal is already open; the caller falls
+  // back to clipboard + instructions when it isn't found.
+  function insertIntoPostComposer(text) {
+    const editor = document.querySelector(
+      '.share-creation-state .ql-editor[contenteditable="true"], ' +
+      '.share-box_actor .ql-editor[contenteditable="true"], ' +
+      '.ql-editor[contenteditable="true"]'
+    );
+    if (!editor) return false;
+    editor.focus();
+    const sel = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.execCommand('insertText', false, text);
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  }
+
   function resetFollowupBtn(btn) {
     if (!btn) return;
     btn.disabled = false;
@@ -653,22 +736,48 @@
   }
 
   // Shows the detected pipeline stage as a visible chip in the bar itself (not just a hover
-  // tooltip, which is too easy to miss) — read-only, never creates a pipeline entry on its own.
+  // tooltip, which is too easy to miss). Click it to correct the stage in place — useful when
+  // detection guesses wrong or the conversation moved on outside the tracked flow (e.g. a reply
+  // came in and this is really "replied", not whatever stage auto-advance last set).
   // Re-run after every generation too, since that can create/advance the entry.
   async function updateFollowupTag() {
     const tagEl = document.getElementById('lia-followup-tag');
     if (!tagEl) return;
     const contactProfileUrl = getContactProfileUrl();
-    if (!contactProfileUrl) { tagEl.textContent = ''; tagEl.className = 'lia-followup-tag'; return; }
+    if (!contactProfileUrl) { tagEl.textContent = ''; tagEl.className = 'lia-followup-tag'; tagEl.onclick = null; return; }
     const contacts = await getSavedContacts();
     const entry = contacts.find(c => c.url === contactProfileUrl);
     if (!entry) {
       tagEl.textContent = 'Not tracked';
       tagEl.className = 'lia-followup-tag lia-followup-tag-untracked';
+      tagEl.onclick = null;
       return;
     }
-    tagEl.textContent = STAGE_META[entry.stage]?.label || 'New';
-    tagEl.className = 'lia-followup-tag';
+    tagEl.textContent = stageLabel(entry.stage, entry.intent);
+    tagEl.className = 'lia-followup-tag lia-followup-tag-editable';
+    tagEl.title = 'Click to correct the stage';
+    tagEl.onclick = () => openFollowupTagStagePicker(tagEl, contactProfileUrl, entry.stage, entry.intent);
+  }
+
+  function openFollowupTagStagePicker(tagEl, url, currentStage, intent) {
+    if (document.getElementById('lia-followup-tag-select')) return;
+    const select = document.createElement('select');
+    select.id = 'lia-followup-tag-select';
+    select.className = 'lia-followup-tag-select';
+    select.innerHTML = STAGE_ORDER.map(s => `<option value="${s}" ${s === currentStage ? 'selected' : ''}>${stageLabel(s, intent)}</option>`).join('');
+    tagEl.replaceWith(select);
+    select.focus();
+
+    let settled = false;
+    const commit = async () => {
+      if (settled) return;
+      settled = true;
+      if (select.value !== currentStage) await setContactStage(url, select.value);
+      select.replaceWith(tagEl);
+      updateFollowupTag();
+    };
+    select.addEventListener('change', commit);
+    select.addEventListener('blur', commit);
   }
 
   async function handleFollowupClick() {
@@ -739,7 +848,7 @@
         const storedRecord = await dbGet(contactProfileUrl).catch(() => null);
         analysis = storedRecord?.analysis || undefined;
         if (stage) {
-          btn.title = `Detected: ${STAGE_META[stage]?.label || stage} · last touch ${daysSinceLastTouch === 0 ? 'today' : `${daysSinceLastTouch}d ago`}`;
+          btn.title = `Detected: ${stageLabel(stage, intent)} · last touch ${daysSinceLastTouch === 0 ? 'today' : `${daysSinceLastTouch}d ago`}`;
         }
       }
 
@@ -773,13 +882,15 @@
         if (!inserted) {
           await navigator.clipboard.writeText(messageText).catch(() => {});
           if (status && !note) { status.textContent = '✓ Copied to clipboard'; status.className = 'lia-followup-status lia-followup-status-ok'; }
+          // No composer to watch for an actual send — copying is the only signal we get, same as
+          // every other Copy button in this extension advancing the stage on click.
+          if (contactProfileUrl) { await advanceStageBySteps(contactProfileUrl, 1); await updateFollowupTag(); }
         } else {
           if (status && !note) { status.textContent = '✓ Inserted into chat'; status.className = 'lia-followup-status lia-followup-status-ok'; }
           if (!note) setTimeout(() => { if (status) { status.textContent = ''; status.className = 'lia-followup-status'; } }, 3500);
-        }
-        if (contactProfileUrl) {
-          await advanceStageBySteps(contactProfileUrl, 1);
-          await updateFollowupTag();
+          // Inserting text isn't sending it — the user might still edit or abandon the draft — so
+          // wait for LinkedIn's own Send button to actually be clicked before advancing the stage.
+          if (contactProfileUrl) armSendListenerForStageAdvance(contactProfileUrl);
         }
       }
     } catch (_) {
@@ -874,6 +985,7 @@
           <button class="lia-pc-mode-btn active" data-mode="personal" title="Post as yourself">Personal</button>
           <button class="lia-pc-mode-btn" data-mode="company" title="Post for your company">Company</button>
         </div>
+        <button class="lia-pc-history-btn" id="lia-pc-history-btn" title="Post history" aria-label="Post history"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></button>
         <button class="lia-pc-close" aria-label="Close">&times;</button>
       </div>
       <div class="lia-pc-body" id="lia-pc-body"></div>
@@ -881,6 +993,7 @@
     postPanel.querySelector('.lia-pc-close').addEventListener('click', () => {
       postPanel.classList.remove('lia-pc-open');
     });
+    postPanel.querySelector('#lia-pc-history-btn').addEventListener('click', renderPcHistory);
     postPanel.querySelectorAll('.lia-pc-mode-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         if (btn.dataset.mode === pcMode) return;
@@ -1163,15 +1276,96 @@
     }
     pcResult = result;
     pcImageB64 = null;
+    savePostToHistory({
+      post: result.post || '', hashtags: result.hashtags || [],
+      topic: pcSelected?.title || '', style: pcStyle, mode: pcMode,
+    });
     renderPcPost(cp, co);
   }
 
-  function renderPcPost(cp, co) {
+  const POST_HISTORY_LIMIT = 50;
+
+  async function savePostToHistory(entry) {
+    const { postHistory } = await chrome.storage.local.get('postHistory');
+    const list = Array.isArray(postHistory) ? postHistory : [];
+    list.unshift({ ...entry, createdAt: Date.now() });
+    if (list.length > POST_HISTORY_LIMIT) list.length = POST_HISTORY_LIMIT;
+    await chrome.storage.local.set({ postHistory: list });
+  }
+
+  function pcHistoryTimeAgo(ts) {
+    const diff = Date.now() - ts;
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    const d = Math.floor(h / 24);
+    if (d < 30) return `${d}d ago`;
+    return new Date(ts).toLocaleDateString();
+  }
+
+  async function renderPcHistory() {
+    const body = document.getElementById('lia-pc-body');
+    if (!body) return;
+    const { postHistory } = await chrome.storage.local.get('postHistory');
+    const list = Array.isArray(postHistory) ? postHistory : [];
+
+    body.innerHTML = `
+      <div class="lia-pc-back-row">
+        <button class="lia-pc-back-btn" id="lia-pc-history-back">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+          Back
+        </button>
+      </div>
+      <div class="lia-pc-section">
+        <div class="lia-pc-sub-label">Post History</div>
+        ${list.length === 0
+          ? `<p class="lia-pc-notice">No posts generated yet. Your last ${POST_HISTORY_LIMIT} AI-generated posts will show up here.</p>`
+          : `<div class="lia-pc-history-list" id="lia-pc-history-list"></div>`}
+      </div>
+    `;
+    body.querySelector('#lia-pc-history-back').addEventListener('click', () => renderPcLanding());
+
+    const listEl = body.querySelector('#lia-pc-history-list');
+    if (!listEl) return;
+    list.forEach((entry, idx) => {
+      const hashtagStr = (entry.hashtags || []).map(h => `#${h.replace(/^#/, '')}`).join(' ');
+      const item = document.createElement('div');
+      item.className = 'lia-pc-history-item';
+      item.innerHTML = `
+        <div class="lia-pc-history-meta">
+          <span class="lia-pc-history-topic">${escHtml(entry.topic || 'Untitled')}</span>
+          <span class="lia-pc-history-time">${pcHistoryTimeAgo(entry.createdAt)}</span>
+        </div>
+        <div class="lia-pc-history-preview">${escHtml((entry.post || '').slice(0, 160))}${(entry.post || '').length > 160 ? '…' : ''}</div>
+        <div class="lia-pc-history-actions">
+          <button class="lia-btn-secondary lia-pc-history-copy" data-idx="${idx}">Copy</button>
+        </div>
+      `;
+      item.querySelector('.lia-pc-history-copy').addEventListener('click', async btnEvt => {
+        const fullText = entry.post + (hashtagStr ? `\n\n${hashtagStr}` : '');
+        await navigator.clipboard.writeText(fullText).catch(() => {});
+        const btn = btnEvt.currentTarget;
+        const orig = btn.textContent;
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+      });
+      listEl.appendChild(item);
+    });
+  }
+
+  async function renderPcPost(cp, co) {
     const body = document.getElementById('lia-pc-body');
     if (!body) return;
     const { post = '', hashtags = [], imagePrompt = '' } = pcResult || {};
     const hashtagStr = hashtags.map(h => `#${h.replace(/^#/, '')}`).join(' ');
     const fullText = post + (hashtagStr ? `\n\n${hashtagStr}` : '');
+
+    // Image generation is Pro-only — check plan status now instead of letting a free user click
+    // Generate and only find out from a PRO_REQUIRED error after the post itself is already done.
+    const { userPlan } = await chrome.storage.local.get('userPlan');
+    const isPro = userPlan === 'pro';
 
     body.innerHTML = `
       <div class="lia-pc-section">
@@ -1182,6 +1376,7 @@
           <button class="lia-btn-primary" id="lia-pc-copy-btn">Copy Post + Hashtags</button>
           <button class="lia-btn-secondary" id="lia-pc-regen-btn">↺ Rewrite</button>
         </div>
+        <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-composer-btn" style="margin-top:7px">📋 Paste into LinkedIn Composer</button>
       </div>
 
       ${imagePrompt ? `
@@ -1189,8 +1384,11 @@
         <div class="lia-pc-sub-label">Image</div>
         <div id="lia-pc-image-area">
           <div class="lia-pc-image-prompt">${escHtml(imagePrompt)}</div>
-          <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-gen-image-btn">🎨 Generate Image (AI)</button>
-          <p class="lia-pc-image-note">Uses your OpenAI key · ~$0.04 per image</p>
+          ${isPro
+            ? `<button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-gen-image-btn">🎨 Generate Image (AI)</button>
+               <p class="lia-pc-image-note">Uses your OpenAI key · ~$0.04 per image</p>`
+            : `<button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-gen-image-btn">🔒 Generate Image — Upgrade to Pro</button>
+               <p class="lia-pc-image-note">Image generation is a Pro feature.</p>`}
         </div>
       </div>` : ''}
 
@@ -1206,12 +1404,38 @@
     });
 
     body.querySelector('#lia-pc-regen-btn').addEventListener('click', () => generatePost(cp, co));
+    body.querySelector('#lia-pc-composer-btn').addEventListener('click', async () => {
+      const btn = body.querySelector('#lia-pc-composer-btn');
+      const orig = btn.textContent;
+      if (insertIntoPostComposer(fullText)) {
+        btn.textContent = '✓ Pasted into composer!';
+      } else {
+        await navigator.clipboard.writeText(fullText).catch(() => {});
+        btn.textContent = 'Copied — open "Start a post" on your feed, then paste';
+      }
+      setTimeout(() => { btn.textContent = orig; }, 3000);
+    });
     body.querySelector('#lia-pc-new-post').addEventListener('click', () => {
       pcSelected = null; pcTopics = []; pcResult = null; pcImageB64 = null;
       renderPcLanding();
     });
 
-    body.querySelector('#lia-pc-gen-image-btn')?.addEventListener('click', () => generateImage(imagePrompt));
+    body.querySelector('#lia-pc-gen-image-btn')?.addEventListener('click', () => {
+      if (isPro) { generateImage(imagePrompt); return; }
+      const btn = body.querySelector('#lia-pc-gen-image-btn');
+      btn.disabled = true;
+      btn.textContent = 'Opening checkout…';
+      chrome.runtime.sendMessage({ type: 'START_CHECKOUT' }, res => {
+        if (chrome.runtime.lastError || !res?.url) {
+          btn.disabled = false;
+          btn.textContent = '🔒 Generate Image — Upgrade to Pro';
+          return;
+        }
+        chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: res.url });
+        btn.disabled = false;
+        btn.textContent = '🔒 Generate Image — Upgrade to Pro';
+      });
+    });
   }
 
   async function generateImage(prompt) {
@@ -1759,7 +1983,7 @@
       <div class="lia-section">
         <div class="lia-label">Outreach Stage <span class="lia-optional">(auto-detected — correct if needed)</span></div>
         <select class="lia-notes-input" id="lia-followup-stage-select" style="margin-bottom:4px">
-          ${STAGE_ORDER.map(s => `<option value="${s}" ${s === trackedStage ? 'selected' : ''}>${STAGE_META[s].label}</option>`).join('')}
+          ${STAGE_ORDER.map(s => `<option value="${s}" ${s === trackedStage ? 'selected' : ''}>${stageLabel(s, intent)}</option>`).join('')}
         </select>
         ${daysSinceLastTouch !== null ? `<div class="lia-followup-elapsed">Last touch: ${daysSinceLastTouch === 0 ? 'today' : `${daysSinceLastTouch} day${daysSinceLastTouch === 1 ? '' : 's'} ago`}</div>` : ''}
       </div>
@@ -1861,25 +2085,37 @@
         });
         if (result.error) throw new Error(result.error);
 
-        const { text, note } = parseTimingNote(result.text || '');
-        resultDiv.innerHTML = `
-          ${note ? `<div class="lia-timing-note">⚠️ ${escHtml(note)}</div>` : ''}
-          <div class="lia-label">Follow-up Message</div>
-          <div class="lia-connection-box">
-            <p id="lia-followup-text">${escHtml(text)}</p>
-          </div>
-          <button class="lia-btn-primary lia-copy-btn" id="lia-followup-copy">Copy to Clipboard</button>
-        `;
-        resultDiv.style.display = '';
+        function renderFollowupResult(msgText, note) {
+          resultDiv.innerHTML = `
+            ${note ? `<div class="lia-timing-note">⚠️ ${escHtml(note)}</div>` : ''}
+            <div class="lia-label">Follow-up Message</div>
+            <div class="lia-connection-box">
+              <p id="lia-followup-text">${escHtml(msgText)}</p>
+            </div>
+            <button class="lia-btn-primary lia-copy-btn" id="lia-followup-copy">Copy to Clipboard</button>
+            ${buildRefineSectionHtml('followup')}
+          `;
+          resultDiv.style.display = '';
 
-        resultDiv.querySelector('#lia-followup-copy')?.addEventListener('click', async () => {
-          const copyBtn = resultDiv.querySelector('#lia-followup-copy');
-          await navigator.clipboard.writeText(text);
-          copyBtn.textContent = 'Copied!';
-          copyBtn.classList.add('copied');
-          setTimeout(() => { copyBtn.textContent = 'Copy to Clipboard'; copyBtn.classList.remove('copied'); }, 2000);
-          advanceStageBySteps(currentProfileUrl, 1);
-        });
+          resultDiv.querySelector('#lia-followup-copy')?.addEventListener('click', async () => {
+            const copyBtn = resultDiv.querySelector('#lia-followup-copy');
+            await navigator.clipboard.writeText(msgText);
+            copyBtn.textContent = 'Copied!';
+            copyBtn.classList.add('copied');
+            setTimeout(() => { copyBtn.textContent = 'Copy to Clipboard'; copyBtn.classList.remove('copied'); }, 2000);
+            advanceStageBySteps(currentProfileUrl, 1);
+          });
+
+          wireRefineSection(resultDiv, 'followup', async (tone, instructions) => {
+            const refined = await sendMessage('REFINE_MESSAGE', extractProfile(), { originalMessage: msgText, analysis: cachedAnalysis, intent, tone, instructions });
+            if (refined.error) throw new Error(refined.error);
+            const parsed = parseTimingNote(refined.text || '');
+            renderFollowupResult(parsed.text, parsed.note);
+          });
+        }
+
+        const { text, note } = parseTimingNote(result.text || '');
+        renderFollowupResult(text, note);
 
         btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg> Regenerate`;
         btn.disabled = false;
@@ -2078,7 +2314,8 @@
       if (body) body._rendered = null;
       renderPurposePicker();
     });
-    panel.querySelector('#lia-save-btn').addEventListener('click', () => toggleSaveContact());
+    panel.querySelector('#lia-save-btn').addEventListener('click', () =>
+      toggleSaveContact().catch(err => console.error('[LinkPilot AI] Save failed:', err)));
 
     document.body.appendChild(panel);
     reflectHubSpotState();
@@ -2099,6 +2336,14 @@
     booked:          { label: 'Booked' },
     closed:          { label: 'Closed' },
   };
+  // "Booked"/"Closed" are sales-deal language that don't map onto a job seeker's mental model —
+  // swap in interview/hired framing for job_search contacts. Same override, duplicated in
+  // popup/index.js and options/index.js alongside their own STAGE_META copies.
+  const JOB_STAGE_LABELS = { booked: 'Interview', closed: 'Hired' };
+  function stageLabel(stage, intent) {
+    if (intent === 'job_search' && JOB_STAGE_LABELS[stage]) return JOB_STAGE_LABELS[stage];
+    return STAGE_META[stage]?.label || 'New';
+  }
 
   async function getSavedContacts() {
     const r = await chrome.storage.local.get('savedContacts').catch(() => ({}));
@@ -2115,21 +2360,29 @@
     return contacts.find(c => c.url === url)?.stage || null;
   }
 
-  // Bumps a saved contact's stage forward — never moves it backward, and is a no-op if the
-  // contact isn't saved (nothing to track). Called from the "Copy to Clipboard" handlers, which
-  // is the closest reliable signal we have to "the user actually sent this" without a LinkedIn API.
+  // Bumps a saved contact's stage forward — never moves it backward. Called from the "Copy to
+  // Clipboard" handlers, which is the closest reliable signal we have to "the user actually sent
+  // this" without a LinkedIn API. Copying a generated message IS an outreach action whether or not
+  // the user separately clicked Save first, so this auto-tracks the contact (same as the AI
+  // Follow-up flow already does) instead of silently discarding the stage update.
   async function advanceStage(url, targetStage) {
     if (!url) return;
     const targetIdx = STAGE_ORDER.indexOf(targetStage);
     if (targetIdx === -1) return;
-    const contacts = await getSavedContacts();
-    const entry = contacts.find(c => c.url === url);
-    if (!entry) return;
+    let contacts = await getSavedContacts();
+    let entry = contacts.find(c => c.url === url);
+    if (!entry) {
+      await saveCurrentContact();
+      contacts = await getSavedContacts();
+      entry = contacts.find(c => c.url === url);
+      if (!entry) return;
+    }
     const currentIdx = STAGE_ORDER.indexOf(entry.stage || 'new');
     if (currentIdx >= targetIdx) return;
     entry.stage = targetStage;
     entry.stageUpdatedAt = Date.now();
     await chrome.storage.local.set({ savedContacts: contacts });
+    syncSaveButtons();
   }
 
   // Moves a saved contact one step forward from wherever it currently sits — used for follow-ups,
@@ -2402,6 +2655,74 @@
 
     refreshSaveBtn();
     renderTabContent(analysis, connectionRequest, activeTab, intent);
+  }
+
+  // Shared "Refine with AI" collapsible — same tone+instructions pattern the Message tab already
+  // has (renderMsgTabResult below), factored out so Connection Request and Follow-up can offer
+  // targeted refinement too instead of only a full regenerate-from-scratch.
+  const REFINE_TONES = [
+    { val: 'warm', label: 'Warm' },
+    { val: 'professional', label: 'Professional' },
+    { val: 'casual', label: 'Casual' },
+    { val: 'direct', label: 'Direct' },
+    { val: 'bold', label: 'Bold' },
+  ];
+
+  function buildRefineSectionHtml(prefix) {
+    return `
+      <div class="lia-refine-section">
+        <button class="lia-refine-toggle" id="lia-${prefix}-refine-toggle">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Refine this message
+          <svg class="lia-refine-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="lia-refine-body" id="lia-${prefix}-refine-body" style="display:none">
+          <div class="lia-refine-group" style="margin-bottom:8px">
+            <div class="lia-refine-label" style="margin-bottom:6px">Tone</div>
+            <select class="lia-notes-input" id="lia-${prefix}-refine-tone">
+              ${REFINE_TONES.map(t => `<option value="${t.val}"${t.val === 'warm' ? ' selected' : ''}>${t.label}</option>`).join('')}
+            </select>
+          </div>
+          <div class="lia-refine-group" style="margin-bottom:8px">
+            <div class="lia-refine-label" style="margin-bottom:6px">Instructions <span class="lia-optional">(optional)</span></div>
+            <textarea class="lia-notes-input" id="lia-${prefix}-refine-instructions" rows="2" placeholder="e.g. Shorter, more direct, mention their recent post..."></textarea>
+          </div>
+          <button class="lia-btn-primary" id="lia-${prefix}-refine-btn" style="width:100%">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Refine with AI
+          </button>
+          <div id="lia-${prefix}-refine-error" class="lia-error-msg" style="display:none;margin-top:6px"></div>
+        </div>
+      </div>`;
+  }
+
+  // onRefine(tone, instructions) does the actual REFINE_MESSAGE call + re-render; this just owns
+  // the toggle/loading/error chrome around it so callers don't repeat that boilerplate.
+  function wireRefineSection(container, prefix, onRefine) {
+    const toggle = container.querySelector(`#lia-${prefix}-refine-toggle`);
+    const refBody = container.querySelector(`#lia-${prefix}-refine-body`);
+    toggle?.addEventListener('click', () => {
+      const open = refBody.style.display !== 'none';
+      refBody.style.display = open ? 'none' : 'block';
+      toggle.querySelector('.lia-refine-arrow').style.transform = open ? '' : 'rotate(180deg)';
+    });
+
+    container.querySelector(`#lia-${prefix}-refine-btn`)?.addEventListener('click', async () => {
+      const btn = container.querySelector(`#lia-${prefix}-refine-btn`);
+      const errEl = container.querySelector(`#lia-${prefix}-refine-error`);
+      const tone = container.querySelector(`#lia-${prefix}-refine-tone`)?.value || 'warm';
+      const instructions = container.querySelector(`#lia-${prefix}-refine-instructions`)?.value.trim() || '';
+      btn.disabled = true;
+      btn.innerHTML = `<svg width="13" height="13" class="lia-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refining...`;
+      if (errEl) errEl.style.display = 'none';
+      try {
+        await onRefine(tone, instructions);
+      } catch (e) {
+        if (errEl) { errEl.textContent = e.message; errEl.style.display = ''; }
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refine with AI`;
+      }
+    });
   }
 
   function renderTabContent(analysis, connectionRequest, tab, intent = 'b2b_sales') {
@@ -2942,6 +3263,7 @@
             Regenerate
           </button>
         </div>
+        ${buildRefineSectionHtml('conn')}
       `;
 
       body.querySelector('#lia-copy-btn').addEventListener('click', async () => {
@@ -2950,6 +3272,7 @@
         btn.textContent = 'Copied!';
         btn.classList.add('copied');
         setTimeout(() => { btn.textContent = 'Copy to Clipboard'; btn.classList.remove('copied'); }, 2000);
+        advanceStage(currentProfileUrl, 'connection_sent');
       });
 
       body.querySelector('#lia-regen-btn').addEventListener('click', async () => {
@@ -2971,6 +3294,15 @@
           btn.textContent = e.message || 'Error — try again';
           btn.disabled = false;
         }
+      });
+
+      wireRefineSection(body, 'conn', async (tone, instructions) => {
+        const result = await sendMessage('REFINE_MESSAGE', extractProfile(), { originalMessage: connectionRequest, analysis, intent, tone, instructions });
+        if (result.error) throw new Error(result.error);
+        body._rendered.connectionRequest = result.text;
+        const stored = await dbGet(currentProfileUrl).catch(() => null);
+        if (stored) await dbPut(currentProfileUrl, { ...stored, connectionRequest: result.text }).catch(() => {});
+        renderTabContent(analysis, result.text, 'connection', intent);
       });
     } else if (tab === 'contact') {
       const contactInfo = extractContactInfo();
@@ -3174,11 +3506,12 @@
 
       document.querySelector('.lia-hs-modal-body').innerHTML = `
         <div class="lia-hs-success">
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="${pushResult.warning ? '#d97706' : '#16a34a'}" stroke-width="2">
             <circle cx="12" cy="12" r="10"></circle>
             <polyline points="9 12 11 14 15 10"></polyline>
           </svg>
           <p>Deal pushed to HubSpot!</p>
+          ${pushResult.warning ? `<p class="lia-hs-warning">⚠ ${escHtml(pushResult.warning)}</p>` : ''}
           <button class="lia-btn-secondary" id="lia-hs-done">Done</button>
         </div>
       `;

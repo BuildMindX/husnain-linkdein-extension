@@ -5,7 +5,6 @@ import {
   handleAnalyzeProfile,
   handleBulkScoreProfiles,
   handleGenerateConnectionRequest,
-  handleGenerateColdMessage,
   handleGenerateFirstMessage,
   handleGenerateFollowUp,
   handleGenerateChatFollowup,
@@ -63,10 +62,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === 'GENERATE_CONNECTION_REQUEST') {
     withUsageGate('message', () => handleGenerateConnectionRequest(msg.profileData, msg.intent, msg.userNotes)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
-    return true;
-  }
-  if (msg.type === 'GENERATE_COLD_MESSAGE') {
-    withUsageGate('message', () => handleGenerateColdMessage(msg.profileData, msg.intent, msg.userNotes)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'GENERATE_FIRST_MESSAGE') {
@@ -206,7 +201,7 @@ chrome.notifications.onClicked.addListener(notifId => {
 // waiting for tomorrow's check.
 updateReminderBadge();
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && 'savedContacts' in changes) updateReminderBadge();
+  if (area === 'local' && ('savedContacts' in changes || 'reminderSettings' in changes)) updateReminderBadge();
 });
 
 // options/index.js already reactively pushes SETTINGS_KEYS to the cloud on change, but that
@@ -225,7 +220,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     // alone, or it would silently wipe out every other setting on the next sign-in elsewhere.
     const { googleUser } = await chrome.storage.local.get('googleUser');
     if (!googleUser) return;
-    const settings = await chrome.storage.local.get([...SETTINGS_KEYS, 'savedContacts']);
+    const settings = await chrome.storage.local.get([...SETTINGS_KEYS, 'savedContacts', 'settingsFieldTimestamps']);
     pushSettingsToCloud(settings);
   }, 1500);
 });

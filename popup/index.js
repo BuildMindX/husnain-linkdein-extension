@@ -227,6 +227,14 @@ const STAGE_META = {
   closed:          { label: 'Closed',          color: '#6b7280' },
 };
 const STAGE_ORDER = Object.keys(STAGE_META);
+// "Booked"/"Closed" are sales-deal language that don't map onto a job seeker's mental model —
+// swap in interview/hired framing for job_search contacts. Same override, duplicated in
+// content/index.js and options/index.js alongside their own STAGE_META copies.
+const JOB_STAGE_LABELS = { booked: 'Interview', closed: 'Hired' };
+function stageLabel(stage, intent) {
+  if (intent === 'job_search' && JOB_STAGE_LABELS[stage]) return JOB_STAGE_LABELS[stage];
+  return STAGE_META[stage]?.label || 'New';
+}
 
 function daysInStage(ts) {
   if (!ts) return '';
@@ -269,7 +277,7 @@ function renderSavedContacts(contacts) {
         </div>
         <div class="saved-contact-bottom">
           <select class="saved-stage-select" data-url="${escHtmlPopup(c.url)}" style="color:${stageColor};border-color:${stageColor}55">
-            ${STAGE_ORDER.map(s => `<option value="${s}" ${s === stage ? 'selected' : ''}>${STAGE_META[s].label}</option>`).join('')}
+            ${STAGE_ORDER.map(s => `<option value="${s}" ${s === stage ? 'selected' : ''}>${stageLabel(s, c.intent)}</option>`).join('')}
           </select>
           ${days ? `<span class="saved-stage-days">${days}</span>` : ''}
         </div>
@@ -305,7 +313,7 @@ function exportContactsCSV(contacts) {
       c.name || '',
       c.url || '',
       c.score || '',
-      STAGE_META[c.stage]?.label || 'New',
+      stageLabel(c.stage, c.intent),
       c.intent || '',
       c.headline || '',
       c.company || '',

@@ -8,9 +8,19 @@ function normalizeLinkedInUrl(url) {
 
 async function getHubSpotKey() {
   const result = await chrome.storage.local.get('hubspotApiKey');
-  if (!result.hubspotApiKey) throw new Error('NO_HUBSPOT_KEY');
+  if (!result.hubspotApiKey) throw new Error('No HubSpot token found — add one in Settings.');
   return result.hubspotApiKey;
 }
+
+// HubSpot's own API error text ("PROPERTY_DOESNT_EXIST", raw validation JSON, etc.) is written for
+// developers, not the person using this extension — map the common cases to something actionable
+// and fall back to a generic message rather than surfacing HubSpot's raw response.
+const HUBSPOT_FRIENDLY_ERRORS = {
+  401: 'Your HubSpot token is invalid or expired — check it in Settings.',
+  403: 'Your HubSpot token doesn\'t have permission for this — check its scopes in HubSpot.',
+  404: 'HubSpot couldn\'t find the pipeline, stage, or record — refresh and try again.',
+  429: 'HubSpot rate limit reached — wait a moment and try again.',
+};
 
 async function hubspotFetch(path, options = {}) {
   const token = await getHubSpotKey();
@@ -22,12 +32,10 @@ async function hubspotFetch(path, options = {}) {
       ...(options.headers || {}),
     },
   });
-  const data = await res.json();
   if (!res.ok) {
-    const msg = data?.message || data?.error || `HubSpot API error ${res.status}`;
-    throw new Error(msg);
+    throw new Error(HUBSPOT_FRIENDLY_ERRORS[res.status] || 'HubSpot couldn\'t complete this request — try again, or check your HubSpot connection in Settings.');
   }
-  return data;
+  return res.json();
 }
 
 export async function fetchHubSpotPipelines() {
@@ -169,15 +177,20 @@ export async function pushHubSpotDeal({ name, linkedinUrl, contactText, remarks,
       }),
     });
   } catch (_) {
-    // Note creation failed — deal + contact association still saved, not fatal
-    return { success: true };
+    // Note creation failed — deal + contact association still saved, not fatal, but the caller
+    // should know rather than being told this went through cleanly when the note never made it.
+    return { success: true, warning: 'Deal created, but the note failed to save — add it manually in HubSpot.' };
   }
 
-  // Step 5: Associate note with deal and contact (best effort)
-  await Promise.allSettled([
+  // Step 5: Associate note with deal and contact (best effort, but not silently — an unlinked
+  // note is easy to lose track of in HubSpot, so a failure here needs to reach the user too).
+  const [dealAssoc, contactAssoc] = await Promise.allSettled([
     hubspotFetch(`/crm/v4/objects/note/${note.id}/associations/default/deal/${deal.id}`, { method: 'PUT' }),
     hubspotFetch(`/crm/v4/objects/note/${note.id}/associations/default/contact/${contactId}`, { method: 'PUT' }),
   ]);
+  if (dealAssoc.status === 'rejected' || contactAssoc.status === 'rejected') {
+    return { success: true, warning: 'Deal and note created, but the note may not show up linked to them in HubSpot — check it manually.' };
+  }
 
   return { success: true };
 }

@@ -22,18 +22,20 @@ function showOnboarding(googleUser) {
     document.getElementById('ob-step-pricing').classList.remove('hidden');
   });
 
-  // Start Free
+  // Start Free — land on the mode picker (Outreach tab) rather than a blank Account
+  // tab, so a new free user is immediately prompted to pick a mode and fill in the
+  // basic config that mode needs, instead of seeing nothing to do.
   document.getElementById('ob-start-free').addEventListener('click', () => {
     chrome.storage.local.remove('pendingOnboarding');
     overlay.style.display = 'none';
-    switchTab('account');
+    switchTab('outreach');
   });
 
-  // Skip
+  // Skip — same landing spot as Start Free, for the same reason.
   document.getElementById('ob-skip').addEventListener('click', () => {
     chrome.storage.local.remove('pendingOnboarding');
     overlay.style.display = 'none';
-    switchTab('account');
+    switchTab('outreach');
   });
 
   // Upgrade to Pro
@@ -100,17 +102,33 @@ document.querySelectorAll('.snav-item').forEach(btn => {
 // ── Auth Gate: check on load and react to sign-in/sign-out in real time ───────
 chrome.storage.local.get('googleUser', r => setAuthState(!!r.googleUser));
 
+// Per-field last-modified timestamps for everything in SYNC_KEYS — pushed to the cloud alongside
+// the settings themselves so a sign-in restore (background/auth.js's handleGoogleSignIn) can merge
+// field-by-field (keep whichever side edited that specific field more recently) instead of the
+// cloud snapshot blindly overwriting every local field, sales-config included, just because one
+// field changed on another device. Same per-field-timestamp philosophy as mergeSavedContacts, just
+// applied to the settings blob instead of the contacts array.
+let _fieldTimestamps = {};
+chrome.storage.local.get('settingsFieldTimestamps', r => { _fieldTimestamps = r.settingsFieldTimestamps || {}; });
+
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if ('googleUser' in changes) setAuthState(!!changes.googleUser.newValue);
-  if (_signedIn && SYNC_KEYS.some(k => k in changes)) syncSettingsToCloud();
+  const changedKeys = SYNC_KEYS.filter(k => k in changes);
+  if (changedKeys.length) {
+    const now = Date.now();
+    changedKeys.forEach(k => { _fieldTimestamps[k] = now; });
+    chrome.storage.local.set({ settingsFieldTimestamps: _fieldTimestamps });
+  }
+  if (_signedIn && changedKeys.length) syncSettingsToCloud();
 });
 
 const SYNC_KEYS = [
   'analysisIntent',
   'targetIndustries', 'excludeIndustries', 'businessProfile',
   'messagePresets', 'b2cProfile', 'jobProfile',
-  'creatorProfile', 'companyProfile',
+  'b2cMessagePresets', 'jobMessagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries',
+  'creatorProfile', 'companyProfile', 'reminderSettings',
   'openaiApiKey', 'hubspotApiKey',
 ];
 
@@ -118,7 +136,7 @@ let _syncDebounceTimer = null;
 function syncSettingsToCloud() {
   clearTimeout(_syncDebounceTimer);
   _syncDebounceTimer = setTimeout(() => {
-    chrome.storage.local.get(SYNC_KEYS, settings => {
+    chrome.storage.local.get([...SYNC_KEYS, 'settingsFieldTimestamps'], settings => {
       chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings });
     });
   }, 1500);
@@ -205,7 +223,10 @@ function applyIntentVisibility(intent) {
   document.getElementById('business-config')?.classList.toggle('hidden', !isSales);
   document.getElementById('message-config')?.classList.toggle('hidden', !isSales);
   document.getElementById('b2c-config')?.classList.toggle('hidden', !isB2c);
+  document.getElementById('b2c-icp-config')?.classList.toggle('hidden', !isB2c);
+  document.getElementById('b2c-message-config')?.classList.toggle('hidden', !isB2c);
   document.getElementById('job-config')?.classList.toggle('hidden', !isJob);
+  document.getElementById('job-message-config')?.classList.toggle('hidden', !isJob);
 
   updateModeInfoBox(intent);
 }
@@ -279,6 +300,66 @@ document.getElementById('icp-reset-btn')?.addEventListener('click', () => {
   showStatus(document.getElementById('icp-status'), 'Excludes reset to default — click Save ICP to keep.', 'info');
 });
 
+// Generic version of the tag-input ICP setup above, reusable for Freelance's own target/exclude
+// industries — kept separate from tagState/renderTags/wireTagInput above (B2B-only, already wired
+// with a default-excludes reset button that doesn't apply to B2C) rather than generalizing working
+// code just to add one more caller.
+function setupTagCard({ targetsId, targetInputId, excludesId, excludeInputId, saveBtnId, statusId, storageKeys }) {
+  const state = { targets: [], excludes: [] };
+  const [targetKey, excludeKey] = storageKeys;
+
+  function render(kind) {
+    const id = kind === 'targets' ? targetsId : excludesId;
+    const cls = kind === 'targets' ? 'tag-target' : 'tag-exclude';
+    const container = document.getElementById(id);
+    if (!container) return;
+    container.innerHTML = state[kind].map((t, i) => `
+      <span class="tag ${cls}">${escapeHtml(t)}
+        <button type="button" class="tag-remove" data-kind="${kind}" data-idx="${i}" aria-label="Remove">&times;</button>
+      </span>`).join('');
+    container.querySelectorAll('.tag-remove').forEach(btn =>
+      btn.addEventListener('click', () => { state[btn.dataset.kind].splice(Number(btn.dataset.idx), 1); render(btn.dataset.kind); }));
+  }
+
+  function wireInput(inputId, kind) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        const val = input.value.trim().replace(/,$/, '');
+        if (val && !state[kind].some(t => t.toLowerCase() === val.toLowerCase())) { state[kind].push(val); render(kind); }
+        input.value = '';
+      } else if (e.key === 'Backspace' && !input.value && state[kind].length) { state[kind].pop(); render(kind); }
+    });
+  }
+
+  function load(targets, excludes) {
+    state.targets = Array.isArray(targets) ? targets : [];
+    state.excludes = Array.isArray(excludes) ? excludes : [];
+    render('targets');
+    render('excludes');
+  }
+
+  wireInput(targetInputId, 'targets');
+  wireInput(excludeInputId, 'excludes');
+  chrome.storage.local.get(storageKeys, r => load(r[targetKey], r[excludeKey]));
+
+  document.getElementById(saveBtnId)?.addEventListener('click', () => {
+    chrome.storage.local.set({ [targetKey]: state.targets, [excludeKey]: state.excludes }, () =>
+      showStatus(document.getElementById(statusId), 'Target industries saved.', 'success'));
+  });
+
+  return { load };
+}
+
+const b2cIcpCard = setupTagCard({
+  targetsId: 'b2c-target-tags', targetInputId: 'b2c-target-input',
+  excludesId: 'b2c-exclude-tags', excludeInputId: 'b2c-exclude-input',
+  saveBtnId: 'b2c-icp-save-btn', statusId: 'b2c-icp-status',
+  storageKeys: ['b2cTargetIndustries', 'b2cExcludeIndustries'],
+});
+
 // ── Business Profile ──────────────────────────────────────────────────────────
 const bizFields = { expertise: 'biz-expertise', offer: 'biz-offer', idealCustomer: 'biz-customer', problem: 'biz-problem', valueProp: 'biz-valueprop', senderName: 'biz-name', companyName: 'biz-company' };
 
@@ -326,6 +407,58 @@ chrome.storage.local.get('messagePresets', r => {
 document.getElementById('msg-save-btn')?.addEventListener('click', () => {
   const messagePresets = { tone: msgState.tone, length: msgState.length, includeCta: ctaToggle?.checked || false, ctaText: ctaTextEl?.value.trim() || '' };
   chrome.storage.local.set({ messagePresets }, () => showStatus(document.getElementById('msg-status'), 'Message style saved.', 'success'));
+});
+
+// Generic version of the tone/length/CTA setup above, reusable for B2C and Job Search's own
+// message-style cards — kept separate from msgState/wireSeg/renderSeg above (those are B2B-only
+// and already wired) rather than generalizing working code just to add two more callers.
+function setupStyleCard({ toneSegId, lengthSegId, ctaToggleId, ctaTextId, saveBtnId, statusId, storageKey }) {
+  const state = { tone: 'warm', length: 'standard', includeCta: false, ctaText: '' };
+  const ctaToggleEl = document.getElementById(ctaToggleId);
+  const ctaTextInput = document.getElementById(ctaTextId);
+
+  function render() {
+    document.querySelectorAll(`#${toneSegId} button`).forEach(b => b.classList.toggle('active', b.dataset.val === state.tone));
+    document.querySelectorAll(`#${lengthSegId} button`).forEach(b => b.classList.toggle('active', b.dataset.val === state.length));
+  }
+
+  function load(presets) {
+    const p = presets || {};
+    state.tone = p.tone || 'warm';
+    state.length = p.length || 'standard';
+    state.includeCta = !!p.includeCta;
+    state.ctaText = p.ctaText || '';
+    render();
+    if (ctaToggleEl) ctaToggleEl.checked = state.includeCta;
+    if (ctaTextInput) ctaTextInput.value = state.ctaText;
+  }
+
+  document.querySelectorAll(`#${toneSegId} button`).forEach(btn =>
+    btn.addEventListener('click', () => { state.tone = btn.dataset.val; render(); }));
+  document.querySelectorAll(`#${lengthSegId} button`).forEach(btn =>
+    btn.addEventListener('click', () => { state.length = btn.dataset.val; render(); }));
+
+  chrome.storage.local.get(storageKey, r => load(r[storageKey]));
+
+  document.getElementById(saveBtnId)?.addEventListener('click', () => {
+    const presets = { tone: state.tone, length: state.length, includeCta: ctaToggleEl?.checked || false, ctaText: ctaTextInput?.value.trim() || '' };
+    chrome.storage.local.set({ [storageKey]: presets }, () => showStatus(document.getElementById(statusId), 'Message style saved.', 'success'));
+  });
+
+  return { load };
+}
+
+const b2cStyleCard = setupStyleCard({
+  toneSegId: 'b2c-tone-seg', lengthSegId: 'b2c-length-seg',
+  ctaToggleId: 'b2c-cta-toggle', ctaTextId: 'b2c-cta-text',
+  saveBtnId: 'b2c-msg-save-btn', statusId: 'b2c-msg-status',
+  storageKey: 'b2cMessagePresets',
+});
+const jobStyleCard = setupStyleCard({
+  toneSegId: 'job-tone-seg', lengthSegId: 'job-length-seg',
+  ctaToggleId: 'job-cta-toggle', ctaTextId: 'job-cta-text',
+  saveBtnId: 'job-msg-save-btn', statusId: 'job-msg-status',
+  storageKey: 'jobMessagePresets',
 });
 
 // ── B2C Profile ───────────────────────────────────────────────────────────────
@@ -522,7 +655,8 @@ function loadAllSettings() {
   chrome.storage.local.get([
     'analysisIntent', 'targetIndustries', 'excludeIndustries',
     'businessProfile', 'messagePresets', 'b2cProfile', 'jobProfile',
-    'openaiApiKey', 'hubspotApiKey', 'creatorProfile', 'companyProfile',
+    'b2cMessagePresets', 'jobMessagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries',
+    'openaiApiKey', 'hubspotApiKey', 'creatorProfile', 'companyProfile', 'reminderSettings',
   ], r => {
     // Mode
     const intent = r.analysisIntent || 'b2b_sales';
@@ -563,6 +697,16 @@ function loadAllSettings() {
     jobTagState.industries = Array.isArray(job.targetIndustries) ? job.targetIndustries : [];
     renderJobTags('roles');
     renderJobTags('industries');
+
+    // B2C / Job Search message style (separate presets from B2B's)
+    b2cStyleCard.load(r.b2cMessagePresets);
+    jobStyleCard.load(r.jobMessagePresets);
+
+    // B2C's own target/exclude industries (separate from B2B's ICP)
+    b2cIcpCard.load(r.b2cTargetIndustries, r.b2cExcludeIndustries);
+
+    // Reminder settings
+    loadReminderSettingsUI(r.reminderSettings);
 
     // API keys
     if (apiKeyInput) {
@@ -667,6 +811,9 @@ function handleGoogleSignIn() {
     renderAccountTab(response.user, response.plan || 'free');
     showStatus(accountStatus, `Signed in as ${response.user.email}`, 'success');
     loadAllSettings();
+    // Signing in straight from the Account tab skips the popup's new-user onboarding path —
+    // surface the same overlay here so a brand-new user still gets it.
+    if (response.isNew) showOnboarding(response.user);
   });
 }
 
@@ -772,6 +919,14 @@ const STAGE_META = {
   closed:          { label: 'Closed',          color: '#6b7280' },
 };
 const STAGE_ORDER = Object.keys(STAGE_META);
+// "Booked"/"Closed" are sales-deal language that don't map onto a job seeker's mental model —
+// swap in interview/hired framing for job_search contacts. Same override, duplicated in
+// content/index.js and popup/index.js alongside their own STAGE_META copies.
+const JOB_STAGE_LABELS = { booked: 'Interview', closed: 'Hired' };
+function stageLabel(stage, intent) {
+  if (intent === 'job_search' && JOB_STAGE_LABELS[stage]) return JOB_STAGE_LABELS[stage];
+  return STAGE_META[stage]?.label || 'New';
+}
 
 // Groups the 9 exact stages into 5 scannable board columns, mirroring STAGE_META's
 // existing color families rather than inventing a new taxonomy.
@@ -779,9 +934,15 @@ const PIPELINE_COLUMNS = [
   { label: 'New',             color: '#94a3b8', stages: ['new'] },
   { label: 'Reaching Out',    color: '#38bdf8', stages: ['connection_sent', 'messaged'] },
   { label: 'Following Up',    color: '#d97706', stages: ['followup_1', 'followup_2', 'followup_3plus'] },
-  { label: 'Replied / Booked',color: '#16a34a', stages: ['replied', 'booked'] },
-  { label: 'Closed',          color: '#6b7280', stages: ['closed'] },
+  { label: 'Replied / Booked',jobLabel: 'Replied / Interview', color: '#16a34a', stages: ['replied', 'booked'] },
+  { label: 'Closed',          jobLabel: 'Hired',                color: '#6b7280', stages: ['closed'] },
 ];
+
+// Only rename a column header when the board is filtered to a single intent — with mixed
+// intents on screen, the sales-flavored default is the least-wrong shared label.
+function columnLabel(col, intentFilter) {
+  return (intentFilter === 'job_search' && col.jobLabel) ? col.jobLabel : col.label;
+}
 
 const PIPELINE_SCORE_COLOR = {
   High: '#16a34a', Medium: '#d97706', Low: '#6b7280',
@@ -797,6 +958,11 @@ function daysInStage(ts) {
 
 let _pipelineContacts = [];
 
+// Kept in sync with background/reminders.js's REMINDER_STAGES — no shared module between
+// background/ and options/, so small constants like this are duplicated per the project's
+// existing pattern rather than introducing a bundler for one array.
+const REMINDER_STAGES = ['connection_sent', 'messaged', 'followup_1', 'followup_2'];
+
 function renderPipelineBoard() {
   const board = document.getElementById('pipeline-board');
   const empty = document.getElementById('pipeline-empty');
@@ -810,11 +976,12 @@ function renderPipelineBoard() {
   empty?.classList.add('hidden');
 
   const filter = (document.getElementById('pipeline-search')?.value || '').trim().toLowerCase();
-  const filtered = filter
-    ? _pipelineContacts.filter(c =>
-        (c.name || '').toLowerCase().includes(filter) ||
-        (c.company || '').toLowerCase().includes(filter))
-    : _pipelineContacts;
+  const intentFilter = document.getElementById('pipeline-intent-filter')?.value || '';
+  const filtered = _pipelineContacts.filter(c => {
+    if (intentFilter && (c.intent || 'b2b_sales') !== intentFilter) return false;
+    if (!filter) return true;
+    return (c.name || '').toLowerCase().includes(filter) || (c.company || '').toLowerCase().includes(filter);
+  });
 
   board.innerHTML = PIPELINE_COLUMNS.map(col => {
     const items = filtered.filter(c => col.stages.includes(STAGE_META[c.stage] ? c.stage : 'new'));
@@ -824,19 +991,25 @@ function renderPipelineBoard() {
       const scoreColor = PIPELINE_SCORE_COLOR[c.score] || '#6b7280';
       const days = daysInStage(c.stageUpdatedAt || c.savedAt);
       const detail = c.company || c.headline || '';
+      const snoozed = c.snoozedUntil && c.snoozedUntil > Date.now();
+      const showSnooze = REMINDER_STAGES.includes(stage);
       return `
         <div class="pipeline-card">
           <div class="pipeline-card-top">
             <span class="pipeline-card-name">${escapeHtml(c.name || 'Unknown')}</span>
-            <span class="pipeline-card-score" style="color:${scoreColor};border-color:${scoreColor}40;background:${scoreColor}12">${escapeHtml(c.score || '–')}</span>
+            <span class="pipeline-card-top-right">
+              <span class="pipeline-card-score" style="color:${scoreColor};border-color:${scoreColor}40;background:${scoreColor}12">${escapeHtml(c.score || '–')}</span>
+              <button type="button" class="pipeline-card-remove" data-url="${escapeHtml(c.url)}" title="Remove from pipeline" aria-label="Remove from pipeline">&times;</button>
+            </span>
           </div>
           ${detail ? `<div class="pipeline-card-detail">${escapeHtml(detail.slice(0, 60))}</div>` : ''}
           <div class="pipeline-card-bottom">
             <select class="pipeline-card-select" data-url="${escapeHtml(c.url)}" style="color:${stageColor};border-color:${stageColor}55">
-              ${STAGE_ORDER.map(s => `<option value="${s}" ${s === stage ? 'selected' : ''}>${STAGE_META[s].label}</option>`).join('')}
+              ${STAGE_ORDER.map(s => `<option value="${s}" ${s === stage ? 'selected' : ''}>${stageLabel(s, c.intent)}</option>`).join('')}
             </select>
             ${days ? `<span class="pipeline-card-days">${days}</span>` : ''}
           </div>
+          ${showSnooze ? `<button type="button" class="pipeline-card-snooze" data-url="${escapeHtml(c.url)}">${snoozed ? '😴 Snoozed' : '😴 Snooze reminder 3d'}</button>` : ''}
           <a href="${escapeHtml(c.url)}" target="_blank" class="pipeline-card-link">Open on LinkedIn ↗</a>
         </div>`;
     }).join('');
@@ -845,7 +1018,7 @@ function renderPipelineBoard() {
       <div class="pipeline-column">
         <div class="pipeline-column-header" style="border-color:${col.color}55">
           <span class="pipeline-column-dot" style="background:${col.color}"></span>
-          <span>${col.label}</span>
+          <span>${columnLabel(col, intentFilter)}</span>
           <span class="pipeline-column-count">${items.length}</span>
         </div>
         <div class="pipeline-column-cards">${cards || '<div class="pipeline-column-empty">No contacts</div>'}</div>
@@ -862,6 +1035,30 @@ function renderPipelineBoard() {
       chrome.storage.local.set({ savedContacts: _pipelineContacts });
     });
   });
+
+  board.querySelectorAll('.pipeline-card-snooze').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const url = btn.dataset.url;
+      const entry = _pipelineContacts.find(c => c.url === url);
+      if (!entry) return;
+      entry.snoozedUntil = Date.now() + 3 * 24 * 60 * 60 * 1000;
+      chrome.storage.local.set({ savedContacts: _pipelineContacts }, () => renderPipelineBoard());
+    });
+  });
+
+  board.querySelectorAll('.pipeline-card-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const url = btn.dataset.url;
+      const entry = _pipelineContacts.find(c => c.url === url);
+      if (!entry) return;
+      if (!confirm(`Remove ${entry.name || 'this contact'} from the pipeline?`)) return;
+      _pipelineContacts = _pipelineContacts.filter(c => c.url !== url);
+      chrome.storage.local.set({ savedContacts: _pipelineContacts }, () => {
+        renderPipelineBoard();
+        renderNotificationsPanel();
+      });
+    });
+  });
 }
 
 function exportPipelineCSV() {
@@ -869,7 +1066,7 @@ function exportPipelineCSV() {
   _pipelineContacts.forEach(c => {
     rows.push([
       c.name || '', c.url || '', c.score || '',
-      STAGE_META[c.stage]?.label || 'New',
+      stageLabel(c.stage, c.intent),
       c.intent || '', c.headline || '', c.company || '',
       c.savedAt ? new Date(c.savedAt).toLocaleDateString() : '',
     ]);
@@ -889,6 +1086,7 @@ function exportPipelineCSV() {
 chrome.storage.local.get('savedContacts', r => {
   _pipelineContacts = Array.isArray(r.savedContacts) ? r.savedContacts : [];
   renderPipelineBoard();
+  renderNotificationsPanel();
   maybeOpenPipelineFromHash();
 });
 
@@ -896,10 +1094,88 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !('savedContacts' in changes)) return;
   _pipelineContacts = Array.isArray(changes.savedContacts.newValue) ? changes.savedContacts.newValue : [];
   renderPipelineBoard();
+  renderNotificationsPanel();
 });
 
 document.getElementById('pipeline-search')?.addEventListener('input', renderPipelineBoard);
+document.getElementById('pipeline-intent-filter')?.addEventListener('change', renderPipelineBoard);
 document.getElementById('pipeline-export-btn')?.addEventListener('click', exportPipelineCSV);
+
+// ── Reminder settings (threshold / enable-disable) ─────────────────────────────
+let _reminderSettings = { enabled: true, thresholdDays: 3 };
+
+function loadReminderSettingsUI(reminderSettings) {
+  const s = { enabled: true, thresholdDays: 3, ...(reminderSettings || {}) };
+  _reminderSettings = s;
+  const enabledEl = document.getElementById('reminder-enabled-toggle');
+  const thresholdEl = document.getElementById('reminder-threshold-input');
+  if (enabledEl) enabledEl.checked = s.enabled;
+  if (thresholdEl) thresholdEl.value = s.thresholdDays;
+  renderNotificationsPanel();
+}
+
+chrome.storage.local.get('reminderSettings', r => loadReminderSettingsUI(r.reminderSettings));
+
+document.getElementById('reminder-settings-save-btn')?.addEventListener('click', () => {
+  const enabled = document.getElementById('reminder-enabled-toggle')?.checked ?? true;
+  const thresholdDays = Math.max(1, Math.min(30, parseInt(document.getElementById('reminder-threshold-input')?.value, 10) || 3));
+  _reminderSettings = { enabled, thresholdDays };
+  chrome.storage.local.set({ reminderSettings: _reminderSettings }, () => {
+    showStatus(document.getElementById('reminder-settings-status'), 'Reminder settings saved.', 'success');
+    renderNotificationsPanel();
+  });
+});
+
+// ── Notifications: "who's due today" on demand, not just the once-daily OS notification ───────
+function getDueContactsLocal(contacts, settings) {
+  const now = Date.now();
+  const dueAfterMs = (settings.thresholdDays || 3) * 24 * 60 * 60 * 1000;
+  return contacts.filter(c => {
+    if (!REMINDER_STAGES.includes(c.stage)) return false;
+    if (c.snoozedUntil && c.snoozedUntil > now) return false;
+    return now - (c.stageUpdatedAt || c.savedAt || now) >= dueAfterMs;
+  });
+}
+
+function renderNotificationsPanel() {
+  const countEl = document.getElementById('notifications-count');
+  const listEl = document.getElementById('notifications-list');
+  if (!countEl || !listEl) return;
+
+  const due = _reminderSettings.enabled ? getDueContactsLocal(_pipelineContacts, _reminderSettings) : [];
+  countEl.textContent = String(due.length);
+  countEl.classList.toggle('hidden', due.length === 0);
+
+  if (!due.length) {
+    listEl.innerHTML = `<div class="notifications-empty">${_reminderSettings.enabled ? "Nothing due today — you're caught up." : 'Reminders are turned off.'}</div>`;
+    return;
+  }
+  listEl.innerHTML = due.map(c => {
+    const days = Math.floor((Date.now() - (c.stageUpdatedAt || c.savedAt || Date.now())) / 86400000);
+    return `
+      <div class="notifications-item">
+        <div class="notifications-item-info">
+          <span class="notifications-item-name">${escapeHtml(c.name || 'Unknown')}</span>
+          <span class="notifications-item-detail">${escapeHtml(c.company || c.headline || '')}</span>
+        </div>
+        <span class="notifications-item-days">${days}d · ${stageLabel(c.stage, c.intent)}</span>
+        <a href="${escapeHtml(c.url)}" target="_blank" class="notifications-item-open">Open ↗</a>
+      </div>`;
+  }).join('');
+}
+
+document.getElementById('notifications-btn')?.addEventListener('click', e => {
+  e.stopPropagation();
+  const panel = document.getElementById('notifications-panel');
+  if (!panel) return;
+  const opening = panel.classList.contains('hidden');
+  panel.classList.toggle('hidden', !opening);
+  if (opening) renderNotificationsPanel();
+});
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('notifications-btn')?.closest('.notifications-wrap');
+  if (wrap && !wrap.contains(e.target)) document.getElementById('notifications-panel')?.classList.add('hidden');
+});
 
 function makeToggle(input, btn, iconId) {
   if (!input) return;

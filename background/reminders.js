@@ -6,24 +6,33 @@
 // 'followup_3plus' (end of the tracked sequence — further auto-nagging isn't useful, the
 // user should decide to close it out), and the terminal states (replied/booked/closed).
 const REMINDER_STAGES = ['connection_sent', 'messaged', 'followup_1', 'followup_2'];
-const DUE_AFTER_MS = 3 * 24 * 60 * 60 * 1000;       // no stage movement in 3+ days = due
 const RENOTIFY_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // don't re-nag about the same contact more than every 3 days
+const DEFAULT_REMINDER_SETTINGS = { enabled: true, thresholdDays: 3 };
 
-// Base "due" set — anyone sitting in an actionable stage with no movement in 3+ days. Shared by
-// the OS notification (which additionally cools down per-contact below) and the toolbar badge
-// (which always reflects the full current count, not just newly-notified contacts), so the two
-// can never disagree about who's due.
-export function getDueContacts(savedContacts, now = Date.now()) {
+async function getReminderSettings() {
+  const { reminderSettings } = await chrome.storage.local.get('reminderSettings');
+  return { ...DEFAULT_REMINDER_SETTINGS, ...(reminderSettings || {}) };
+}
+
+// Base "due" set — anyone sitting in an actionable stage with no movement in thresholdDays+ days,
+// and not currently snoozed. Shared by the OS notification (which additionally cools down
+// per-contact below) and the toolbar badge (which always reflects the full current count, not
+// just newly-notified contacts), so the two can never disagree about who's due.
+export function getDueContacts(savedContacts, now = Date.now(), settings = DEFAULT_REMINDER_SETTINGS) {
   if (!Array.isArray(savedContacts)) return [];
+  const dueAfterMs = (settings.thresholdDays || DEFAULT_REMINDER_SETTINGS.thresholdDays) * 24 * 60 * 60 * 1000;
   return savedContacts.filter(c => {
     if (!REMINDER_STAGES.includes(c.stage)) return false;
-    return now - (c.stageUpdatedAt || c.savedAt || now) >= DUE_AFTER_MS;
+    if (c.snoozedUntil && c.snoozedUntil > now) return false;
+    return now - (c.stageUpdatedAt || c.savedAt || now) >= dueAfterMs;
   });
 }
 
 export async function updateReminderBadge() {
+  const settings = await getReminderSettings();
+  if (!settings.enabled) { chrome.action.setBadgeText({ text: '' }); return; }
   const { savedContacts } = await chrome.storage.local.get('savedContacts');
-  const due = getDueContacts(savedContacts);
+  const due = getDueContacts(savedContacts, Date.now(), settings);
   if (due.length > 0) {
     chrome.action.setBadgeText({ text: String(due.length) });
     chrome.action.setBadgeBackgroundColor({ color: '#dc2626' });
@@ -33,11 +42,13 @@ export async function updateReminderBadge() {
 }
 
 export async function checkFollowUpReminders() {
+  const settings = await getReminderSettings();
+  if (!settings.enabled) return;
   const { savedContacts } = await chrome.storage.local.get('savedContacts');
   if (!Array.isArray(savedContacts) || !savedContacts.length) return;
 
   const now = Date.now();
-  const due = getDueContacts(savedContacts, now).filter(c => now - (c.lastReminderAt || 0) >= RENOTIFY_COOLDOWN_MS);
+  const due = getDueContacts(savedContacts, now, settings).filter(c => now - (c.lastReminderAt || 0) >= RENOTIFY_COOLDOWN_MS);
   if (!due.length) return;
 
   const title = due.length === 1

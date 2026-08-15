@@ -4,7 +4,8 @@ export const SETTINGS_KEYS = [
   'analysisIntent',
   'targetIndustries', 'excludeIndustries', 'businessProfile',
   'messagePresets', 'b2cProfile', 'jobProfile',
-  'creatorProfile', 'companyProfile',
+  'b2cMessagePresets', 'jobMessagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries',
+  'creatorProfile', 'companyProfile', 'reminderSettings',
   'openaiApiKey', 'hubspotApiKey',
 ];
 
@@ -24,6 +25,29 @@ function mergeSavedContacts(local, cloud) {
     if (!existing || tsOf(c) >= tsOf(existing)) byUrl.set(c.url, c);
   }
   return [...byUrl.values()];
+}
+
+// The rest of SETTINGS_KEYS used to restore as one blind overwrite — if any single field had
+// changed on another device, the whole cloud snapshot won, silently discarding local edits made
+// to every OTHER field since the last sync. options/index.js now tracks a per-field
+// settingsFieldTimestamps map (updated on every local change, pushed alongside the settings
+// themselves), so this can merge key-by-key: whichever side touched a given field more recently
+// wins for that field only, same per-field-timestamp approach as mergeSavedContacts above.
+function mergeSettingsByField(localTimestamps, cloudSettings) {
+  const cloudTimestamps = cloudSettings.settingsFieldTimestamps || {};
+  const merged = {};
+  const mergedTimestamps = { ...localTimestamps };
+  for (const key of SETTINGS_KEYS) {
+    if (cloudSettings[key] === undefined) continue;
+    const localTs = localTimestamps[key] || 0;
+    const cloudTs = cloudTimestamps[key] || 0;
+    if (cloudTs >= localTs) {
+      merged[key] = cloudSettings[key];
+      mergedTimestamps[key] = cloudTs;
+    }
+    // else: local edited this field more recently — keep it, don't overwrite from cloud
+  }
+  return { merged, mergedTimestamps };
 }
 
 export async function handleGoogleSignIn() {
@@ -61,10 +85,12 @@ export async function handleGoogleSignIn() {
 
   const storagePayload = { googleUser, userPlan: plan, supabaseUserId };
   if (isNew) storagePayload.pendingOnboarding = true;
-  // Restore all saved settings from cloud onto local storage
-  for (const key of SETTINGS_KEYS) {
-    if (cloudSettings[key] !== undefined) storagePayload[key] = cloudSettings[key];
-  }
+  // Restore settings from cloud onto local storage, merged field-by-field rather than one
+  // wholesale overwrite — see mergeSettingsByField above.
+  const { settingsFieldTimestamps: localTimestamps } = await chrome.storage.local.get('settingsFieldTimestamps');
+  const { merged, mergedTimestamps } = mergeSettingsByField(localTimestamps || {}, cloudSettings);
+  Object.assign(storagePayload, merged);
+  storagePayload.settingsFieldTimestamps = mergedTimestamps;
   if (cloudSettings.savedContacts !== undefined) {
     const { savedContacts: localContacts } = await chrome.storage.local.get('savedContacts');
     storagePayload.savedContacts = mergeSavedContacts(localContacts, cloudSettings.savedContacts);
@@ -79,6 +105,6 @@ export async function handleGoogleSignOut() {
     const tokenResult = typeof authResult === 'string' ? authResult : authResult?.token;
     if (tokenResult) await chrome.identity.removeCachedAuthToken({ token: tokenResult });
   } catch (_) { /* token may already be expired */ }
-  await chrome.storage.local.remove(['googleUser', 'userPlan', 'supabaseUserId', 'savedContacts', ...SETTINGS_KEYS]);
+  await chrome.storage.local.remove(['googleUser', 'userPlan', 'supabaseUserId', 'savedContacts', 'settingsFieldTimestamps', ...SETTINGS_KEYS]);
   return { success: true };
 }

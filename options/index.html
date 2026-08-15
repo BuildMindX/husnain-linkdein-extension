@@ -302,6 +302,27 @@
             </div>
           </div>
 
+          <!-- Freelance: Target Industries -->
+          <div class="card hidden" id="b2c-icp-config">
+            <div class="card-mode-badge badge-b2c">Freelance</div>
+            <h3>Target Client Industries</h3>
+            <p class="card-desc">Optional — your own target/exclude industries, separate from any B2B ICP you've configured. The AI rates each contact's <strong>Client Potential</strong> using these instead.</p>
+            <div class="form-group">
+              <label>Target industries <span class="label-hint">— contacts here score higher</span></label>
+              <div class="tag-input" id="b2c-target-tags"></div>
+              <input type="text" id="b2c-target-input" class="tag-text" placeholder='Type an industry and press Enter — e.g. "Startups", "E-commerce"' autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label>Excluded industries <span class="optional">(optional)</span></label>
+              <div class="tag-input" id="b2c-exclude-tags"></div>
+              <input type="text" id="b2c-exclude-input" class="tag-text" placeholder='Type to exclude and press Enter' autocomplete="off" />
+            </div>
+            <div id="b2c-icp-status" class="status-msg" aria-live="polite"></div>
+            <div class="actions">
+              <button type="button" id="b2c-icp-save-btn" class="btn-primary">Save Target Industries</button>
+            </div>
+          </div>
+
           <!-- Freelance: Personal Profile -->
           <div class="card hidden" id="b2c-config">
             <div class="card-mode-badge badge-b2c">Freelance</div>
@@ -334,6 +355,40 @@
             <div id="b2c-status" class="status-msg" aria-live="polite"></div>
             <div class="actions">
               <button type="button" id="b2c-save-btn" class="btn-primary">Save Personal Profile</button>
+            </div>
+          </div>
+
+          <!-- Freelance: Message Style -->
+          <div class="card hidden" id="b2c-message-config">
+            <div class="card-mode-badge badge-b2c">Freelance</div>
+            <h3>Message Style</h3>
+            <p class="card-desc">Set your default tone and length for AI-generated connection requests and messages. Separate from your B2B style — switching modes never carries one over into the other.</p>
+            <div class="form-group">
+              <label>Tone</label>
+              <div class="seg" id="b2c-tone-seg">
+                <button type="button" data-val="warm">Warm</button>
+                <button type="button" data-val="direct">Direct</button>
+                <button type="button" data-val="casual">Casual</button>
+                <button type="button" data-val="professional">Professional</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Length</label>
+              <div class="seg" id="b2c-length-seg">
+                <button type="button" data-val="short">Short</button>
+                <button type="button" data-val="standard">Standard</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="checkbox-row">
+                <input type="checkbox" id="b2c-cta-toggle" />
+                Include a soft call-to-action at the end
+              </label>
+              <input type="text" id="b2c-cta-text" placeholder='e.g. "Open to a quick chat sometime?"' />
+            </div>
+            <div id="b2c-msg-status" class="status-msg" aria-live="polite"></div>
+            <div class="actions">
+              <button type="button" id="b2c-msg-save-btn" class="btn-primary">Save Message Style</button>
             </div>
           </div>
 
@@ -382,6 +437,40 @@
             </div>
           </div>
 
+          <!-- Job Search: Message Style -->
+          <div class="card hidden" id="job-message-config">
+            <div class="card-mode-badge badge-job">Job Search</div>
+            <h3>Message Style</h3>
+            <p class="card-desc">Set your default tone and length for AI-generated connection requests and messages. Separate from your other modes' style.</p>
+            <div class="form-group">
+              <label>Tone</label>
+              <div class="seg" id="job-tone-seg">
+                <button type="button" data-val="warm">Warm</button>
+                <button type="button" data-val="direct">Direct</button>
+                <button type="button" data-val="casual">Casual</button>
+                <button type="button" data-val="professional">Professional</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Length</label>
+              <div class="seg" id="job-length-seg">
+                <button type="button" data-val="short">Short</button>
+                <button type="button" data-val="standard">Standard</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="checkbox-row">
+                <input type="checkbox" id="job-cta-toggle" />
+                Include a soft call-to-action at the end
+              </label>
+              <input type="text" id="job-cta-text" placeholder='e.g. "Open to hearing more about the role?"' />
+            </div>
+            <div id="job-msg-status" class="status-msg" aria-live="polite"></div>
+            <div class="actions">
+              <button type="button" id="job-msg-save-btn" class="btn-primary">Save Message Style</button>
+            </div>
+          </div>
+
         </div><!-- end step2-block -->
       </div><!-- end panel-outreach -->
 
@@ -391,8 +480,37 @@
           <h1>Pipeline</h1>
           <p class="panel-sub">Every saved contact, grouped by outreach stage. Change stage inline, filter, or export.</p>
         </div>
+        <div class="reminder-settings-bar">
+          <label class="reminder-settings-toggle">
+            <input type="checkbox" id="reminder-enabled-toggle" checked />
+            <span>Follow-up reminders</span>
+          </label>
+          <span class="reminder-settings-sep">·</span>
+          <label class="reminder-settings-threshold">
+            Nudge me after
+            <input type="number" id="reminder-threshold-input" min="1" max="30" value="3" />
+            days of no activity
+          </label>
+          <button type="button" id="reminder-settings-save-btn" class="btn-secondary">Save</button>
+          <span id="reminder-settings-status" class="status-msg" aria-live="polite"></span>
+        </div>
         <div class="pipeline-toolbar">
           <input type="text" id="pipeline-search" class="pipeline-search" placeholder="Filter by name or company..." />
+          <select id="pipeline-intent-filter" class="pipeline-intent-filter">
+            <option value="">All modes</option>
+            <option value="b2b_sales">B2B Sales</option>
+            <option value="b2c_sales">Freelance</option>
+            <option value="job_search">Job Search</option>
+          </select>
+          <div class="notifications-wrap">
+            <button type="button" id="notifications-btn" class="btn-secondary">
+              🔔 Notifications <span id="notifications-count" class="notifications-badge hidden">0</span>
+            </button>
+            <div id="notifications-panel" class="notifications-panel hidden">
+              <div class="notifications-panel-header">Due today</div>
+              <div id="notifications-list" class="notifications-list"></div>
+            </div>
+          </div>
           <button type="button" id="pipeline-export-btn" class="btn-secondary">Export CSV</button>
         </div>
         <div id="pipeline-board" class="pipeline-board"></div>
