@@ -960,6 +960,64 @@ function stageLabel(stage, intent) {
   return STAGE_META[stage]?.label || 'New';
 }
 
+// Transparent, explainable "how warm is this relationship right now" signal — built only from
+// data already tracked (stage, days since last touch, AI fit score). Duplicated in
+// content/index.js, same pattern as STAGE_META/stageLabel above. Deliberately NOT framed as a
+// "% chance to close": there's no historical outcome data to calibrate a real probability from,
+// and a fabricated number would be worse than none — it could mislead a rep into dropping a good
+// lead or chasing a dead one. booked/closed aren't scored — the stage itself already says "done,"
+// a warmth number there would just add noise.
+const STAGE_ENGAGEMENT_BASE = {
+  new: 25, connection_sent: 25,
+  messaged: 45,
+  followup_1: 55,
+  followup_2: 60,
+  followup_3plus: 40,
+  replied: 80,
+};
+const ENGAGEMENT_TIER_COLOR = { Hot: '#ef4444', Warm: '#f59e0b', Cooling: '#38bdf8', Stalled: '#6b7280' };
+
+function computeEngagementScore(contact) {
+  const stage = STAGE_META[contact?.stage] ? contact.stage : 'new';
+  if (stage === 'booked' || stage === 'closed') return null;
+  const base = STAGE_ENGAGEMENT_BASE[stage] ?? 25;
+  const hasReplied = stage === 'replied';
+
+  let recencyPenalty = 0;
+  let recencyDays = null;
+  if (!hasReplied) {
+    const ts = contact?.stageUpdatedAt || contact?.savedAt;
+    if (ts) {
+      recencyDays = Math.floor((Date.now() - ts) / 86400000);
+      // Bases above assume a healthy, on-track touch, so a fresh message never reads as
+      // "cooling" — this penalty is what actually pulls the score down as real silence
+      // accumulates, not the base stage value itself.
+      recencyPenalty = -Math.min(30, Math.max(0, recencyDays - 3) * 2);
+    }
+  }
+
+  const fitLevel = contact?.score;
+  const fitAdjustment = ['High', 'Strong'].includes(fitLevel) ? 8 : ['Low', 'Unlikely'].includes(fitLevel) ? -8 : 0;
+
+  const score = Math.max(0, Math.min(100, Math.round(base + recencyPenalty + fitAdjustment)));
+  const tier = score >= 75 ? 'Hot' : score >= 45 ? 'Warm' : score >= 20 ? 'Cooling' : 'Stalled';
+
+  let reason;
+  if (hasReplied) {
+    reason = 'They’ve replied — the strongest signal there is.';
+  } else if (recencyDays !== null && recencyDays > 10 && (stage === 'followup_2' || stage === 'followup_3plus')) {
+    reason = `${STAGE_META[stage].label} sent, no reply in ${recencyDays} days — likely time for one final high-value message or to move on.`;
+  } else if (stage === 'followup_3plus') {
+    reason = 'Several touches sent with no reply yet.';
+  } else if (stage === 'new' || stage === 'connection_sent') {
+    reason = 'No outreach sent yet.';
+  } else {
+    reason = `${STAGE_META[stage].label} sent, still inside a normal reply window.`;
+  }
+
+  return { score, tier, reason, color: ENGAGEMENT_TIER_COLOR[tier] };
+}
+
 // Groups the 9 exact stages into 5 scannable board columns, mirroring STAGE_META's
 // existing color families rather than inventing a new taxonomy.
 const PIPELINE_COLUMNS = [
@@ -1026,6 +1084,7 @@ function renderPipelineBoard() {
       const snoozed = c.snoozedUntil && c.snoozedUntil > Date.now();
       const snoozeDaysLeft = snoozed ? Math.max(1, Math.ceil((c.snoozedUntil - Date.now()) / 86400000)) : 0;
       const showSnooze = REMINDER_STAGES.includes(stage);
+      const engagement = computeEngagementScore(c);
       return `
         <div class="pipeline-card">
           <div class="pipeline-card-top">
@@ -1036,6 +1095,10 @@ function renderPipelineBoard() {
             </span>
           </div>
           ${detail ? `<div class="pipeline-card-detail">${escapeHtml(detail.slice(0, 60))}</div>` : ''}
+          ${engagement ? `<div class="pipeline-card-engagement" title="${escapeHtml(engagement.reason)} — based on your tracked pipeline stage.">
+            <span class="pipeline-card-engagement-dot" style="background:${engagement.color}"></span>
+            ${engagement.tier} · ${engagement.score}
+          </div>` : ''}
           <div class="pipeline-card-bottom">
             <select class="pipeline-card-select" data-url="${escapeHtml(c.url)}" style="color:${stageColor};border-color:${stageColor}55">
               ${STAGE_ORDER.map(s => `<option value="${s}" ${s === stage ? 'selected' : ''}>${stageLabel(s, c.intent)}</option>`).join('')}

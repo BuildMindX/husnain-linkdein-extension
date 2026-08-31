@@ -521,13 +521,34 @@
       .trim();
   }
 
-  // Splits an optional trailing "TIMING_NOTE: ..." line off a generated follow-up — that line is
-  // coaching for the user (e.g. "you followed up 1 day ago, consider waiting"), never part of the
-  // actual message, so it must never end up in the copyable text or get sent to the recipient.
-  function parseTimingNote(raw) {
-    const m = (raw || '').match(/\n?TIMING_NOTE:\s*(.+)\s*$/i);
-    if (!m) return { text: (raw || '').trim(), note: null };
-    return { text: raw.slice(0, m.index).trim(), note: m[1].trim() };
+  // Splits up to three optional trailing coaching lines off a generated follow-up — NEED_ID (the
+  // prospect need the message was written toward), LEAD_READ (an honest read on how the
+  // relationship is trending), and TIMING_NOTE (e.g. "you followed up 1 day ago, consider
+  // waiting") — none of these are part of the actual message, so none must ever end up in the
+  // copyable text or get sent to the recipient. Strips them from the end in any order/subset,
+  // since the model may omit any one of them (e.g. no LEAD_READ signal yet on a true cold touch).
+  function parseFollowupMeta(raw) {
+    let text = (raw || '').trim();
+    const meta = { needId: null, leadRead: null, timingNote: null };
+    const patterns = [
+      ['timingNote', /\n?TIMING_NOTE:\s*(.+)\s*$/i],
+      ['leadRead', /\n?LEAD_READ:\s*(.+)\s*$/i],
+      ['needId', /\n?NEED_ID:\s*(.+)\s*$/i],
+    ];
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const [key, re] of patterns) {
+        if (meta[key] !== null) continue;
+        const m = text.match(re);
+        if (m) {
+          meta[key] = m[1].trim();
+          text = text.slice(0, m.index).trim();
+          changed = true;
+        }
+      }
+    }
+    return { text, ...meta };
   }
 
   // Guesses a starting pipeline stage for a contact who has a real conversation already but was
@@ -765,6 +786,7 @@
         <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(167,139,250,0.9)" style="flex-shrink:0"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/></svg>
         <span class="lia-followup-bar-label">LinkPilot AI</span>
         <span id="lia-followup-tag" class="lia-followup-tag"></span>
+        <span id="lia-followup-engagement" class="lia-followup-engagement" style="display:none"></span>
         <span id="lia-followup-status" class="lia-followup-status"></span>
         <button id="lia-followup-instr-toggle" class="lia-followup-instr-toggle" type="button" title="Add instructions (e.g. be more direct)">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -798,21 +820,41 @@
   // Re-run after every generation too, since that can create/advance the entry.
   async function updateFollowupTag() {
     const tagEl = document.getElementById('lia-followup-tag');
+    const engEl = document.getElementById('lia-followup-engagement');
     if (!tagEl) return;
     const contactProfileUrl = getContactProfileUrl();
-    if (!contactProfileUrl) { tagEl.textContent = ''; tagEl.className = 'lia-followup-tag'; tagEl.onclick = null; return; }
+    if (!contactProfileUrl) {
+      tagEl.textContent = ''; tagEl.className = 'lia-followup-tag'; tagEl.onclick = null;
+      if (engEl) engEl.style.display = 'none';
+      return;
+    }
     const contacts = await getSavedContacts();
     const entry = contacts.find(c => c.url === contactProfileUrl);
     if (!entry) {
       tagEl.textContent = 'Not tracked';
       tagEl.className = 'lia-followup-tag lia-followup-tag-untracked';
       tagEl.onclick = null;
+      if (engEl) engEl.style.display = 'none';
       return;
     }
     tagEl.textContent = stageLabel(entry.stage, entry.intent);
     tagEl.className = 'lia-followup-tag lia-followup-tag-editable';
     tagEl.title = 'Click to correct the stage';
     tagEl.onclick = () => openFollowupTagStagePicker(tagEl, contactProfileUrl, entry.stage, entry.intent);
+
+    // Passive "how warm is this relationship" dot — always visible for a tracked contact, no
+    // need to generate anything first. Hidden for booked/closed (computeEngagementScore returns
+    // null there — the stage itself already says "done").
+    if (engEl) {
+      const eng = computeEngagementScore(entry);
+      if (eng) {
+        engEl.style.display = '';
+        engEl.style.background = eng.color;
+        engEl.title = `${eng.tier} (${eng.score}/100) — ${eng.reason}`;
+      } else {
+        engEl.style.display = 'none';
+      }
+    }
   }
 
   function openFollowupTagStagePicker(tagEl, url, currentStage, intent) {
@@ -942,18 +984,29 @@
         };
         if (status) { status.textContent = errMap[res.error] || 'Error — try again'; status.className = 'lia-followup-status lia-followup-status-err'; }
       } else if (res.text) {
-        const { text: messageText, note } = parseTimingNote(res.text);
-        if (note && status) { status.textContent = `⚠ ${note}`; status.title = note; status.className = 'lia-followup-status lia-followup-status-err'; }
+        const { text: messageText, leadRead, timingNote } = parseFollowupMeta(res.text);
+        if (timingNote && status) { status.textContent = `⚠ ${timingNote}`; status.title = timingNote; status.className = 'lia-followup-status lia-followup-status-err'; }
+        // No room in this single-line status strip for a full "strategist's take" block (that
+        // lives in the profile-panel tool instead) — fold the AI's honest engagement read into
+        // the same confirmation line, and give it longer to be read than a bare checkmark would.
         const inserted = insertIntoChat(messageText);
         if (!inserted) {
           await navigator.clipboard.writeText(messageText).catch(() => {});
-          if (status && !note) { status.textContent = '✓ Copied to clipboard'; status.className = 'lia-followup-status lia-followup-status-ok'; }
+          if (status && !timingNote) {
+            status.textContent = leadRead ? `✓ Copied · ${leadRead}` : '✓ Copied to clipboard';
+            status.title = leadRead || '';
+            status.className = 'lia-followup-status lia-followup-status-ok';
+          }
           // No composer to watch for an actual send — copying is the only signal we get, same as
           // every other Copy button in this extension advancing the stage on click.
           if (contactProfileUrl) { await advanceStageBySteps(contactProfileUrl, 1); await updateFollowupTag(); }
         } else {
-          if (status && !note) { status.textContent = '✓ Inserted into chat'; status.className = 'lia-followup-status lia-followup-status-ok'; }
-          if (!note) setTimeout(() => { if (status) { status.textContent = ''; status.className = 'lia-followup-status'; } }, 3500);
+          if (status && !timingNote) {
+            status.textContent = leadRead ? `✓ Inserted · ${leadRead}` : '✓ Inserted into chat';
+            status.title = leadRead || '';
+            status.className = 'lia-followup-status lia-followup-status-ok';
+          }
+          if (!timingNote) setTimeout(() => { if (status) { status.textContent = ''; status.className = 'lia-followup-status'; } }, leadRead ? 7000 : 3500);
           // Inserting text isn't sending it — the user might still edit or abandon the draft — so
           // wait for LinkedIn's own Send button to actually be clicked before advancing the stage.
           if (contactProfileUrl) armSendListenerForStageAdvance(contactProfileUrl);
@@ -2147,9 +2200,15 @@
         });
         if (result.error) throw new Error(result.error);
 
-        function renderFollowupResult(msgText, note) {
+        function renderFollowupResult(msgText, timingNote, needId, leadRead) {
+          const hasTake = needId || leadRead;
           resultDiv.innerHTML = `
-            ${note ? `<div class="lia-timing-note">⚠️ ${escHtml(note)}</div>` : ''}
+            ${timingNote ? `<div class="lia-timing-note">⚠️ ${escHtml(timingNote)}</div>` : ''}
+            ${hasTake ? `
+            <div class="lia-strategist-take">
+              ${needId ? `<div class="lia-strategist-row"><span class="lia-strategist-label">Need</span><span class="lia-strategist-text">${escHtml(needId)}</span></div>` : ''}
+              ${leadRead ? `<div class="lia-strategist-row"><span class="lia-strategist-label">Reads as</span><span class="lia-strategist-text">${escHtml(leadRead)}</span></div>` : ''}
+            </div>` : ''}
             <div class="lia-label">Follow-up Message</div>
             <div class="lia-connection-box">
               <p id="lia-followup-text">${escHtml(msgText)}</p>
@@ -2171,13 +2230,13 @@
           wireRefineSection(resultDiv, 'followup', async (tone, instructions) => {
             const refined = await sendMessage('REFINE_MESSAGE', extractProfile(), { originalMessage: msgText, analysis: cachedAnalysis, intent, tone, instructions });
             if (refined.error) throw new Error(refined.error);
-            const parsed = parseTimingNote(refined.text || '');
-            renderFollowupResult(parsed.text, parsed.note);
+            const parsed = parseFollowupMeta(refined.text || '');
+            renderFollowupResult(parsed.text, parsed.timingNote, parsed.needId, parsed.leadRead);
           });
         }
 
-        const { text, note } = parseTimingNote(result.text || '');
-        renderFollowupResult(text, note);
+        const parsedResult = parseFollowupMeta(result.text || '');
+        renderFollowupResult(parsedResult.text, parsedResult.timingNote, parsedResult.needId, parsedResult.leadRead);
 
         btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg> Regenerate`;
         btn.disabled = false;
@@ -2423,6 +2482,64 @@
   function stageLabel(stage, intent) {
     if (intent === 'job_search' && JOB_STAGE_LABELS[stage]) return JOB_STAGE_LABELS[stage];
     return STAGE_META[stage]?.label || 'New';
+  }
+
+  // Transparent, explainable "how warm is this relationship right now" signal — built only from
+  // data already tracked (stage, days since last touch, AI fit score). Duplicated in
+  // options/index.js, same pattern as STAGE_META/stageLabel above. Deliberately NOT framed as a
+  // "% chance to close": there's no historical outcome data to calibrate a real probability from,
+  // and a fabricated number would be worse than none — it could mislead a rep into dropping a
+  // good lead or chasing a dead one. booked/closed aren't scored — the stage itself already says
+  // "done," a warmth number there would just add noise.
+  const STAGE_ENGAGEMENT_BASE = {
+    new: 25, connection_sent: 25,
+    messaged: 45,
+    followup_1: 55,
+    followup_2: 60,
+    followup_3plus: 40,
+    replied: 80,
+  };
+  const ENGAGEMENT_TIER_COLOR = { Hot: '#ef4444', Warm: '#f59e0b', Cooling: '#38bdf8', Stalled: '#64748b' };
+
+  function computeEngagementScore(contact) {
+    const stage = STAGE_META[contact?.stage] ? contact.stage : 'new';
+    if (stage === 'booked' || stage === 'closed') return null;
+    const base = STAGE_ENGAGEMENT_BASE[stage] ?? 25;
+    const hasReplied = stage === 'replied';
+
+    let recencyPenalty = 0;
+    let recencyDays = null;
+    if (!hasReplied) {
+      const ts = contact?.stageUpdatedAt || contact?.savedAt;
+      if (ts) {
+        recencyDays = Math.floor((Date.now() - ts) / 86400000);
+        // Bases above assume a healthy, on-track touch, so a fresh message never reads as
+        // "cooling" — this penalty is what actually pulls the score down as real silence
+        // accumulates, not the base stage value itself.
+        recencyPenalty = -Math.min(30, Math.max(0, recencyDays - 3) * 2);
+      }
+    }
+
+    const fitLevel = contact?.score;
+    const fitAdjustment = ['High', 'Strong'].includes(fitLevel) ? 8 : ['Low', 'Unlikely'].includes(fitLevel) ? -8 : 0;
+
+    const score = Math.max(0, Math.min(100, Math.round(base + recencyPenalty + fitAdjustment)));
+    const tier = score >= 75 ? 'Hot' : score >= 45 ? 'Warm' : score >= 20 ? 'Cooling' : 'Stalled';
+
+    let reason;
+    if (hasReplied) {
+      reason = 'They’ve replied — the strongest signal there is.';
+    } else if (recencyDays !== null && recencyDays > 10 && (stage === 'followup_2' || stage === 'followup_3plus')) {
+      reason = `${STAGE_META[stage].label} sent, no reply in ${recencyDays} days — likely time for one final high-value message or to move on.`;
+    } else if (stage === 'followup_3plus') {
+      reason = 'Several touches sent with no reply yet.';
+    } else if (stage === 'new' || stage === 'connection_sent') {
+      reason = 'No outreach sent yet.';
+    } else {
+      reason = `${STAGE_META[stage].label} sent, still inside a normal reply window.`;
+    }
+
+    return { score, tier, reason, color: ENGAGEMENT_TIER_COLOR[tier] };
   }
 
   async function getSavedContacts() {

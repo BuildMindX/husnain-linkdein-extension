@@ -38,8 +38,14 @@ const STAGE_TO_ANGLE = {
   followup_3plus:{ n: '3rd+', angle: 'DIRECT angle — either a specific, concrete ask, or a low-pressure graceful exit (e.g. acknowledging the timing might be off) — pick whichever fits the conversation\'s tone.' },
 };
 
-function buildFollowupAngleRules(stage, daysSinceLastTouch) {
+function buildFollowupAngleRules(stage, daysSinceLastTouch, recipient) {
+  const who = recipient || 'the recipient';
   const grounding = `GROUNDING — read this first: only reference things that are literally present in the conversation text below. Never invent, assume, or imply that the recipient said, shared, replied with, or asked something that isn't actually there. If the recipient has not sent any message at all yet, the follow-up must not thank them, react to something they said, or reference any input from them — it is a continuation of the sender's own outreach, not a reply to one. When in doubt, keep it generic rather than fabricating a specific detail.`;
+
+  // Real LinkedIn outreach data: the follow-ups that actually get replies are the ones built
+  // around what the prospect specifically needs, not a template nudge that could go to anyone.
+  // This runs BEFORE angle selection — decide what to write toward before deciding how.
+  const needFirst = `BEFORE YOU WRITE — IDENTIFY THE NEED: read the conversation and figure out what ${who} actually needs, wants, or is concerned about right now — their situation, any pain or friction they've named or implied, and what's actually at stake for them if it goes unaddressed. This is about ${who}'s situation, not the sender's pitch. If ${who} has sent a real reply in the thread, ground this in what they specifically said. If there's no reply yet (a cold sequence), ground it in what's reasonably inferable from their role, their company, or the sender's own stated reason for reaching out — never invent a need that isn't supportable from what's actually there. Then write the follow-up so it visibly moves toward that identified need — it should read like the one natural next thing to say to THIS specific person, not a generic nudge.`;
 
   const known = STAGE_TO_ANGLE[stage];
   const angleSection = known
@@ -49,17 +55,23 @@ function buildFollowupAngleRules(stage, daysSinceLastTouch) {
 - 2nd follow-up: RESOURCE/REFERRAL angle — offer something specific and low-friction (a relevant point, a useful angle, an easy specific question).
 - 3rd+ follow-up: DIRECT angle — either a specific, concrete ask, or a low-pressure graceful exit (e.g. acknowledging the timing might be off) — pick whichever fits the conversation's tone.`;
 
-  const goalFraming = `The goal of this outreach sequence is to earn a real next step (a reply, a call, a closed opportunity) — every follow-up should feel like a deliberate step toward that, not a random check-in.`;
+  // Grounded in real outreach data, not just style preference: 55% of replies on LinkedIn come
+  // from follow-ups, not the first message, and reply rates keep climbing through the 2nd-3rd
+  // well-spaced follow-up before falling off — so every touch has to earn its place, not just
+  // exist.
+  const goalFraming = `The goal of this outreach sequence is to earn a real next step (a reply, a call, a closed opportunity) — every follow-up should feel like a deliberate step toward that, not a random check-in. Most replies come from a good 2nd or 3rd follow-up, not the first message — this touch matters as much as the opener did.`;
   const formatting = `Write the message as two short paragraphs separated by a blank line — never one dense block. Each paragraph carries one idea.`;
   const closing = `Never use dead follow-up phrases: "just following up", "just checking in", "wanted to circle back", "touching base", "bumping this to the top of your inbox".
 End with exactly one CTA, placed as the final sentence.`;
 
-  const sections = [grounding, angleSection, goalFraming, formatting, closing];
+  const sections = [grounding, needFirst, angleSection, goalFraming, formatting, closing];
 
   if (Number.isFinite(daysSinceLastTouch)) {
     sections.push(`It has been ${daysSinceLastTouch} day${daysSinceLastTouch === 1 ? '' : 's'} since the last message was sent to this person — this is real tracked elapsed time, not a guess. Use it to judge tone (a follow-up after 2 days reads differently than one after 6 weeks).`);
     sections.push(`TIMING CHECK: if it has been fewer than 2 days since the last message with no reply, still write the follow-up exactly as instructed above, then add one final line starting with exactly "TIMING_NOTE: " briefly explaining why the user may want to hold off a few more days before sending — this note is for the user only, never part of the message itself. If the elapsed time is reasonable, do not include a TIMING_NOTE line at all; most of the time there should be no note.`);
   }
+
+  sections.push(`NEED_ID LINE: after the message, on its own new line, add exactly one line starting with "NEED_ID: " stating in one sentence the specific need you identified and wrote toward. Omit this line entirely only if the thread has zero replies and zero usable signal to infer a need from (a true cold first touch with nothing to go on) — in every other case, include it.`);
 
   return sections.join('\n\n');
 }
@@ -1039,9 +1051,11 @@ ${senderCtx ? `CONTEXT ABOUT ${writer.toUpperCase()}:\n${senderCtx}\n\n` : ''}Ru
 - If ${recipient} has replied: respond to what they specifically said and keep the conversation moving naturally, grounded in the whole thread so far — not just their most recent line
 ${AUTHENTICITY_RULES}
 
-${buildFollowupAngleRules(stage, daysSinceLastTouch)}
+${buildFollowupAngleRules(stage, daysSinceLastTouch, recipient)}
 
-Return ONLY the message text. No quotes, no labels, no explanation.`;
+LEAD_READ LINE: after the message (and after NEED_ID if present), add one more line starting with exactly "LEAD_READ: " giving an honest, one-sentence read on how this relationship is trending — based only on real signals in the thread: whether ${recipient} has replied at all, how they replied (short/dismissive vs. detailed/curious), any questions they asked back, any timeline or urgency they mentioned, and how many unanswered touches have gone out. Do not invent a percentage, a "likelihood to close," or any numeric score — you do not have the data to support one, and a fake number is worse than no number. Say it plainly, e.g. "Warm — they've asked a specific question and haven't gone quiet" or "Cooling — three touches out with no reply, worth one higher-value message or moving on." If ${recipient} hasn't sent anything yet, base the read purely on touch count and elapsed time, and say so plainly.
+
+Return ONLY the message text, followed by the NEED_ID and LEAD_READ lines described above (and TIMING_NOTE if that rule applies). No quotes around the message, no other labels, no explanation.`;
 
   const withAnalysis = analysis ? `${systemPrompt}\n\n${buildAnalysisContext(analysis, intent)}` : systemPrompt;
 
