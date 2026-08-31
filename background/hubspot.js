@@ -57,7 +57,10 @@ export async function fetchHubSpotOwners() {
   }));
 }
 
-// Find an existing contact by LinkedIn URL, falling back to name search.
+// Find an existing contact by LinkedIn URL, falling back to name search. Returns whether the
+// contact was newly created (not just found) so the caller can warn about an orphaned contact if
+// deal creation fails right after — without this, a failed push could leave a bare, unlinked
+// contact behind in the user's HubSpot with no indication anything was created at all.
 async function findOrCreateContact(name, linkedinUrl) {
   const nameParts = (name || '').trim().split(/\s+/);
   const firstName = nameParts[0] || 'LinkedIn';
@@ -78,7 +81,7 @@ async function findOrCreateContact(name, linkedinUrl) {
           limit: 1,
         }),
       });
-      if (searchRes.total > 0) return searchRes.results[0].id;
+      if (searchRes.total > 0) return { id: searchRes.results[0].id, isNew: false };
     } catch (_) { /* fall through to create */ }
   }
 
@@ -93,7 +96,7 @@ async function findOrCreateContact(name, linkedinUrl) {
       },
     }),
   });
-  return contact.id;
+  return { id: contact.id, isNew: true };
 }
 
 // Mirrors the same fields/branches background/ai.js's buildAnalysisContext() reads (kept as a
@@ -126,7 +129,7 @@ export async function pushHubSpotDeal({ name, linkedinUrl, contactText, remarks,
   const dealName = name || 'LinkedIn Lead';
 
   // Step 1: Find or create contact
-  const contactId = await findOrCreateContact(name, linkedinUrl);
+  const { id: contactId, isNew: contactIsNew } = await findOrCreateContact(name, linkedinUrl);
 
   // Step 2: Create deal
   let deal;
@@ -143,6 +146,10 @@ export async function pushHubSpotDeal({ name, linkedinUrl, contactText, remarks,
       }),
     });
   } catch (err) {
+    // A brand-new contact created in step 1 (as opposed to one that already existed) is now
+    // orphaned in HubSpot with no deal or note attached — say so, rather than letting the user
+    // wonder later where a bare, unlinked contact came from.
+    if (contactIsNew) throw new Error(`${err.message} (a new HubSpot contact was created for this lead before the deal failed — you may want to remove it manually).`);
     throw err;
   }
 

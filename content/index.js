@@ -6,6 +6,10 @@
   let panel = null;
   let currentProfileUrl = null;
   let activeTab = 'analysis';
+  // Set true whenever the panel renders a dead-end gate screen (sign-in required, no profile,
+  // no API key) — re-checked the next time the trigger button reopens the panel, so resolving
+  // the blocker externally (signing in, adding a key) doesn't leave a stale gate on screen.
+  let panelNeedsRecheck = false;
 
   // Post creator state
   let postBtn = null;
@@ -279,7 +283,7 @@
     banner.innerHTML = `
       <div class="lia-search-banner-inner">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(167,139,250,0.9)" style="flex-shrink:0">
-          <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452z"/>
+          <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/>
         </svg>
         <span class="lia-search-banner-label" id="lia-search-banner-label">LinkPilot AI — ICP-aware AI scoring</span>
         <button id="lia-search-upgrade-btn" class="lia-search-upgrade-btn" style="display:none">Upgrade to Pro</button>
@@ -378,6 +382,16 @@
 
     if (!profiles.length) return;
 
+    // Unlike the main Analyze flow, search-result scoring never checked sign-in status before —
+    // it relied entirely on the server-side usage check, which used to fail open with no Google
+    // identity to check against, letting scoring run ungated forever for anyone who never signed
+    // in. The server side is now fixed to deny in that case, but checking here too avoids a
+    // wasted round-trip and gives a clearer message.
+    if (!(await checkGoogleAuth())) {
+      if (labelEl) { labelEl.textContent = 'Sign in required — click Analyze on a profile to sign in'; labelEl.classList.add('lia-search-banner-err'); }
+      return;
+    }
+
     if (btn) {
       btn.disabled = true;
       btn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" class="lia-spin" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> Scoring...`;
@@ -425,6 +439,7 @@
         LIMIT_REACHED: 'Monthly limit reached — upgrade to Pro',
         RATE_LIMITED: 'Rate limited — try again shortly',
         INVALID_KEY: 'Invalid API key — check Settings',
+        SIGN_IN_REQUIRED: 'Sign in required — click Analyze on a profile to sign in',
       };
       if (labelEl) { labelEl.textContent = errMap[err.message] || 'Scoring failed — try again'; labelEl.classList.add('lia-search-banner-err'); }
       const upgradeBtn = document.getElementById('lia-search-upgrade-btn');
@@ -441,15 +456,41 @@
     if (_msgObserver) { _msgObserver.disconnect(); _msgObserver = null; }
   }
 
-  function _resolveSender(rawName, contactName, myName) {
-    if (!rawName) return 'You';
+  // Finds the DOM container for whichever LinkedIn conversation is actually open/visible right
+  // now — a floating chat bubble on any page, the full messaging page's open thread, or (last
+  // resort, when neither is present) the whole document. Every conversation-scraping function
+  // below searches within this scoped root instead of the whole page — searching unscoped let a
+  // generic/reused classname (e.g. the conversation list sidebar's row class, present on the
+  // main /messaging/ page alongside the open thread) silently match a *different* conversation
+  // than the one actually open, which cascaded into whole threads getting mislabeled.
+  function findActiveThreadRoot() {
+    const candidates = [
+      '.msg-overlay-conversation-bubble',
+      '.msg-thread',
+      '[class*="messaging-thread"]',
+    ];
+    for (const sel of candidates) {
+      const el = document.querySelector(sel);
+      if (el) return el;
+    }
+    return document;
+  }
+
+  // LinkedIn's own outbound/inbound DOM signal (isOutbound, when known) is deterministic — it
+  // must be trusted ahead of scraped-name matching, which is what let a wrong/empty contactName
+  // silently mislabel an entire thread as 'You', including messages the contact actually sent.
+  function _resolveSender(rawName, contactName, myName, isOutbound) {
+    if (isOutbound === true) return 'You';
+    if (isOutbound === false && contactName) return contactName;
+    if (!rawName) return isOutbound === false ? (contactName || 'Them') : 'You';
     const low = rawName.toLowerCase();
     const contactFirst = (contactName || '').split(' ')[0].toLowerCase();
     const myFirst = (myName || '').split(' ')[0].toLowerCase();
     if (contactFirst && low.includes(contactFirst)) return contactName || rawName;
     if (myFirst && low.includes(myFirst)) return 'You';
-    // If contact name is known, anything not matching the contact is the user
-    if (contactFirst) return 'You';
+    // Neither signal matched — keep the raw scraped name distinguishable rather than silently
+    // collapsing an unidentified sender into 'You', which would misattribute their words to the
+    // account owner.
     return rawName;
   }
 
@@ -504,25 +545,29 @@
   }
 
   function scrapeThreadMessages(contactName, myName) {
-    const contactFirst = (contactName || '').split(' ')[0].toLowerCase();
-    const myFirst = (myName || '').split(' ')[0].toLowerCase();
+    const root = findActiveThreadRoot();
     const msgs = [];
 
     // ── Strategy 1: structured message groups ──────────────────────────────────
-    const groups = document.querySelectorAll('.msg-s-message-group');
+    const groups = root.querySelectorAll('.msg-s-message-group');
     if (groups.length) {
       groups.forEach(group => {
+        // LinkedIn's own outbound class is the reliable signal for this strategy — trust it
+        // outright rather than falling back to scraped-name matching, which is what let a
+        // wrong/empty contactName mislabel the whole thread (including the contact's own
+        // messages) as 'You'.
         const isOutbound = group.classList.contains('msg-s-message-group--outbound');
-        // aria-label: "Husnain Ali sent the following messages at …"
-        const ariaLabel = group.getAttribute('aria-label') || '';
-        const ariaMatch = ariaLabel.match(/^(.+?)\s+sent\s+/i);
-        const nameEl = group.querySelector('.msg-s-message-group__name, [class*="message-group__name"]');
-        const rawName = ariaMatch?.[1]?.trim() || nameEl?.textContent.trim() || '';
-        const senderLow = rawName.toLowerCase();
-
-        const isContact = contactFirst && senderLow.includes(contactFirst);
-        const isMe = isOutbound || (myFirst && senderLow.includes(myFirst)) || (!isContact && contactFirst && rawName);
-        const sender = isContact ? (contactName || rawName) : 'You';
+        let sender;
+        if (isOutbound) {
+          sender = 'You';
+        } else {
+          // aria-label: "Husnain Ali sent the following messages at …"
+          const ariaLabel = group.getAttribute('aria-label') || '';
+          const ariaMatch = ariaLabel.match(/^(.+?)\s+sent\s+/i);
+          const nameEl = group.querySelector('.msg-s-message-group__name, [class*="message-group__name"]');
+          const rawName = ariaMatch?.[1]?.trim() || nameEl?.textContent.trim() || '';
+          sender = contactName || rawName || 'Them';
+        }
 
         group.querySelectorAll('.msg-s-event-listitem__body, [class*="event-listitem__body"]').forEach(bodyEl => {
           const text = _stripUiChrome((bodyEl.innerText || bodyEl.textContent || '').trim());
@@ -533,17 +578,21 @@
     }
 
     // ── Strategy 2: flat body elements with parent traversal ───────────────────
-    const bodyEls = document.querySelectorAll(
+    const bodyEls = root.querySelectorAll(
       '.msg-s-event-listitem__body, [class*="event-listitem__body"], [class*="message-content__text"]'
     );
     if (bodyEls.length) {
       bodyEls.forEach(bodyEl => {
         const text = _stripUiChrome((bodyEl.innerText || bodyEl.textContent || '').trim());
         if (!text || _isReactionOnly(text)) return;
-        // Walk up max 8 levels to find sender name
+        // Walk up max 8 levels looking for the reliable outbound/inbound class first, a sender
+        // name second.
         let rawName = '';
+        let isOutbound;
         let node = bodyEl.parentElement;
         for (let i = 0; i < 8 && node; i++) {
+          if (node.classList.contains('msg-s-message-group--outbound')) { isOutbound = true; break; }
+          if (node.classList.contains('msg-s-message-group--inbound')) { isOutbound = false; break; }
           // aria-label "X sent the following messages"
           const label = node.getAttribute('aria-label') || '';
           const m = label.match(/^(.+?)\s+sent\s+/i);
@@ -551,11 +600,9 @@
           // named element
           const nameEl = node.querySelector('[class*="message-group__name"], [class*="sender-name"]');
           if (nameEl) { rawName = nameEl.textContent.trim(); break; }
-          // outbound class
-          if (node.classList.contains('msg-s-message-group--outbound')) { rawName = myName || 'Me'; break; }
           node = node.parentElement;
         }
-        msgs.push({ sender: _resolveSender(rawName, contactName, myName), text });
+        msgs.push({ sender: _resolveSender(rawName, contactName, myName, isOutbound), text });
       });
       if (msgs.length) return msgs;
     }
@@ -568,7 +615,7 @@
       'main',
     ];
     for (const sel of paneSelectors) {
-      const pane = document.querySelector(sel);
+      const pane = root.querySelector(sel);
       if (!pane) continue;
       const raw = _stripUiChrome((pane.innerText || '')).replace(/\n{3,}/g, '\n\n').trim();
       if (raw.length > 40) return [{ sender: '__raw__', text: raw.slice(0, 4000) }];
@@ -577,16 +624,22 @@
     return [];
   }
 
+  // Scoped to the currently-open conversation (findActiveThreadRoot) rather than the whole
+  // document — searching unscoped previously let '.msg-conversation-listitem__participant-names'
+  // (a class that belongs to *rows in the conversation list sidebar*, not the open thread) match
+  // whichever conversation happened to sit first in DOM order, silently returning the wrong
+  // contact's name whenever the open thread wasn't the top one in the list. Dropped that selector
+  // entirely — it's inherently a list-item class, never a reliable signal for "the open thread."
   function getContactName() {
+    const root = findActiveThreadRoot();
     const sels = [
       '.msg-thread__link-to-profile',
       '.msg-entity-lockup__entity-title',
       '.artdeco-entity-lockup__title',
       '.presence-entity__name',
-      '.msg-conversation-listitem__participant-names',
     ];
     for (const s of sels) {
-      const name = document.querySelector(s)?.textContent.trim();
+      const name = root.querySelector(s)?.textContent.trim();
       if (name) return name;
     }
     return '';
@@ -600,6 +653,7 @@
   // that element is or is inside an <a> pointing at their profile. Returns '' if none resolve —
   // callers must treat that as "no tracked data available," not an error.
   function getContactProfileUrl() {
+    const root = findActiveThreadRoot();
     const sels = [
       '.msg-thread__link-to-profile',
       '.msg-entity-lockup__entity-title',
@@ -607,7 +661,7 @@
       '.presence-entity__name',
     ];
     for (const s of sels) {
-      const el = document.querySelector(s);
+      const el = root.querySelector(s);
       if (!el) continue;
       const link = el.matches('a') ? el : (el.closest('a') || el.querySelector('a'));
       if (link?.href && /linkedin\.com\/in\//.test(link.href)) {
@@ -615,14 +669,12 @@
       }
     }
 
-    // Lower-confidence fallback: the first "/in/" link inside the conversation thread container
-    // (same '.msg-thread' selector extractLinkedInConversation() already relies on elsewhere in
-    // this file). LinkedIn renders the conversation header — with the contact's own profile link
-    // — before the message list in DOM order, so document order means the first match is very
-    // likely the header's link rather than one from inside a message. Not guaranteed, but a
-    // reasonable second attempt before giving up.
-    const threadRoot = document.querySelector('.msg-thread, [class*="messaging-thread"]');
-    const firstLink = threadRoot?.querySelector('a[href*="/in/"]');
+    // Lower-confidence fallback: the first "/in/" link inside the same scoped root. LinkedIn
+    // renders the conversation header — with the contact's own profile link — before the message
+    // list in DOM order, so the first match within the open thread is very likely the header's
+    // link rather than one from inside a message. Not guaranteed, but a reasonable second
+    // attempt before giving up.
+    const firstLink = root.querySelector('a[href*="/in/"]');
     if (firstLink?.href) return firstLink.href.split('?')[0];
 
     return '';
@@ -654,8 +706,12 @@
     if (!sendBtn) return;
     const handler = async () => {
       sendBtn.removeEventListener('click', handler);
-      await advanceStageBySteps(url, 1);
-      await updateFollowupTag();
+      try {
+        await advanceStageBySteps(url, 1);
+        await updateFollowupTag();
+      } catch (err) {
+        console.error('[LinkPilot AI] Stage advance on send failed:', err);
+      }
     };
     sendBtn.addEventListener('click', handler, { once: true });
   }
@@ -706,7 +762,7 @@
     bar.id = 'lia-followup-bar';
     bar.innerHTML = `
       <div class="lia-followup-bar-inner">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(167,139,250,0.9)" style="flex-shrink:0"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452z"/></svg>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(167,139,250,0.9)" style="flex-shrink:0"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/></svg>
         <span class="lia-followup-bar-label">LinkPilot AI</span>
         <span id="lia-followup-tag" class="lia-followup-tag"></span>
         <span id="lia-followup-status" class="lia-followup-status"></span>
@@ -801,6 +857,15 @@
       }
       const contactName = getContactName();
       const { googleUser, analysisIntent: intent = 'b2b_sales' } = await chrome.storage.local.get(['googleUser', 'analysisIntent']);
+      // This quick-action never checked sign-in before — it relied entirely on the server-side
+      // usage check, which used to fail open with no Google identity to check against, letting
+      // it run ungated forever for anyone who never signed in. Checking here too (the server side
+      // is now fixed to deny in that case) avoids a wasted round-trip and gives a clearer message.
+      if (!googleUser) {
+        if (status) { status.textContent = 'Sign in required — open the LinkPilot AI panel on a profile to sign in'; status.className = 'lia-followup-status lia-followup-status-err'; }
+        resetFollowupBtn(btn);
+        return;
+      }
       const myName = googleUser?.name || googleUser?.given_name || '';
       const msgs = scrapeThreadMessages(contactName, myName);
       const isRaw = msgs.length === 1 && msgs[0].sender === '__raw__';
@@ -873,6 +938,7 @@
           LIMIT_REACHED: 'Monthly limit reached — upgrade to Pro',
           RATE_LIMITED: 'Rate limited — try again shortly',
           INVALID_KEY: 'Invalid API key — check Settings',
+          SIGN_IN_REQUIRED: 'Sign in required — open the LinkPilot AI panel on a profile to sign in',
         };
         if (status) { status.textContent = errMap[res.error] || 'Error — try again'; status.className = 'lia-followup-status lia-followup-status-err'; }
       } else if (res.text) {
@@ -931,7 +997,7 @@
     triggerBtn.setAttribute('aria-label', 'Open LinkPilot AI');
     triggerBtn.innerHTML = `
       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+        <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/>
       </svg>
       <span>Analyze</span>
     `;
@@ -970,9 +1036,12 @@
 
   function openPostCreator() {
     if (postPanel) {
+      const opening = !postPanel.classList.contains('lia-pc-open');
+      if (opening) closeOtherFloatingPanels('post');
       postPanel.classList.toggle('lia-pc-open');
       return;
     }
+    closeOtherFloatingPanels('post');
     postPanel = document.createElement('div');
     postPanel.id = 'lia-post-panel';
     postPanel.innerHTML = `
@@ -1025,13 +1094,13 @@
       if (co.name) {
         infoHtml = `<div class="lia-pc-company-badge">🏢 ${escHtml(co.name)}${co.industry ? ` &middot; ${escHtml(co.industry)}` : ''}</div>`;
       } else {
-        infoHtml = `<p class="lia-pc-notice">No company profile found. Go to <strong>Settings → Step 4</strong> and fill in your Company Profile first.</p>`;
+        infoHtml = `<p class="lia-pc-notice">No company profile found. Go to <strong>Settings → Post Creator</strong> and fill in your Company Profile first.</p>`;
       }
     } else {
       const hasDomains = Array.isArray(cp.domains) && cp.domains.length;
       infoHtml = hasDomains
         ? `<div class="lia-pc-domains">${cp.domains.map(d => `<span class="lia-pc-domain-chip">${escHtml(d)}</span>`).join('')}</div>`
-        : `<p class="lia-pc-notice">Tip: add your domains in Settings → Step 4 for more relevant topics.</p>`;
+        : `<p class="lia-pc-notice">Tip: add your domains in Settings → Post Creator for more relevant topics.</p>`;
     }
 
     const recentPosts = extractOwnPosts();
@@ -1149,8 +1218,8 @@
     if (result?.error) {
       if (result.error === 'LIMIT_REACHED') { renderPcLimitReached(); return; }
       const msg = result.error === 'NO_API_KEY'
-        ? 'No API key found. Add your OpenAI key in Settings → Step 3.'
-        : result.error;
+        ? 'No API key found. Add your OpenAI key in Settings → Integrations.'
+        : friendlyAiErrorText(result.error);
       body.innerHTML = `<p class="lia-pc-error">${escHtml(msg)}</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-from-err">← Back</button>`;
       body.querySelector('#lia-pc-back-from-err').addEventListener('click', () => renderPcLanding());
       return;
@@ -1268,8 +1337,8 @@
     if (result?.error) {
       if (result.error === 'LIMIT_REACHED') { renderPcLimitReached(); return; }
       const msg = result.error === 'NO_API_KEY'
-        ? 'No API key found. Add your OpenAI key in Settings → Step 3.'
-        : result.error;
+        ? 'No API key found. Add your OpenAI key in Settings → Integrations.'
+        : friendlyAiErrorText(result.error);
       body.innerHTML = `<p class="lia-pc-error">${escHtml(msg)}</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-we">← Back</button>`;
       body.querySelector('#lia-pc-back-we').addEventListener('click', () => renderPcStylePicker(cp, co));
       return;
@@ -1453,8 +1522,8 @@
     if (result?.error) {
       if (result.error === 'PRO_REQUIRED') { renderPcLimitReached(); return; }
       const msg = result.error === 'NO_API_KEY'
-        ? 'No API key found. Add your OpenAI key in Settings → Step 3.'
-        : result.error;
+        ? 'No API key found. Add your OpenAI key in Settings → Integrations.'
+        : friendlyAiErrorText(result.error);
       area.innerHTML = `<p class="lia-pc-error">${escHtml(msg)}</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-retry-img">↺ Retry</button>`;
       area.querySelector('#lia-pc-retry-img').addEventListener('click', () => generateImage(prompt));
       return;
@@ -1603,11 +1672,13 @@
   async function openTimePanel() {
     if (timePanel) {
       const opening = !timePanel.classList.contains('lia-pc-open');
+      if (opening) closeOtherFloatingPanels('time');
       timePanel.classList.toggle('lia-pc-open');
       if (opening) { renderClocks(); if (!_timeInterval) _timeInterval = setInterval(renderClocks, 1000); }
       else if (_timeInterval) { clearInterval(_timeInterval); _timeInterval = null; }
       return;
     }
+    closeOtherFloatingPanels('time');
     await loadTimeZones();
     timePanel = document.createElement('div');
     timePanel.id = 'lia-time-panel';
@@ -1679,16 +1750,29 @@
   // ─── Main Click Handler ───────────────────────────────────────────────────────
   async function handleTriggerClick() {
     if (panel) {
-      togglePanel(!panel.classList.contains('lia-open'));
+      const opening = !panel.classList.contains('lia-open');
+      if (opening) closeOtherFloatingPanels('panel');
+      togglePanel(opening);
+      // Re-run the gate checks on reopen rather than just showing whatever stale screen was
+      // last rendered — the blocker (signed out, no profile open, no API key) may well have
+      // been resolved elsewhere since the panel was first opened.
+      if (opening && panelNeedsRecheck) await runPanelGateChecks();
       return;
     }
+    closeOtherFloatingPanels('panel');
     createPanel();
     togglePanel(true);
+    await runPanelGateChecks();
+  }
+
+  async function runPanelGateChecks() {
     if (!isProfilePage()) {
+      panelNeedsRecheck = true;
       renderNoProfileGate();
       return;
     }
     if (!isNativeLinkedInProfile()) {
+      panelNeedsRecheck = true;
       const body = document.getElementById('lia-body');
       if (body) body.innerHTML = `
         <div style="padding:28px 20px;text-align:center;">
@@ -1699,7 +1783,8 @@
       return;
     }
     const isAuthed = await checkGoogleAuth();
-    if (!isAuthed) { renderSignInRequired(); return; }
+    if (!isAuthed) { panelNeedsRecheck = true; renderSignInRequired(); return; }
+    panelNeedsRecheck = false;
     renderPurposePicker();
   }
 
@@ -1822,6 +1907,7 @@
   async function runForPurpose(purpose, userNotes = '', forceRefresh = false) {
     const hasKey = await checkApiKey();
     if (!hasKey) { renderNoApiKey(); return; }
+    panelNeedsRecheck = false;
 
     const { analysisIntent: intent = 'b2b_sales' } = await chrome.storage.local.get('analysisIntent');
 
@@ -1883,59 +1969,18 @@
     }
   }
 
-  function extractLinkedInConversation() {
-    const lines = [];
-
-    // Search in any open messaging overlay first, then fallback to full document
-    const searchRoots = [
-      document.querySelector('.msg-overlay-conversation-bubble'),
-      document.querySelector('.msg-thread'),
-      document.querySelector('[class*="messaging-thread"]'),
-      document,
-    ].filter(Boolean);
-
-    for (const root of searchRoots) {
-      // Strategy A: message groups (LinkedIn groups consecutive msgs from same sender)
-      const groups = root.querySelectorAll('.msg-s-message-group');
-      if (groups.length) {
-        groups.forEach(group => {
-          const nameEl = group.querySelector(
-            '.msg-s-message-group__meta .presence-entity__display-name, ' +
-            '.msg-s-message-group__meta strong, ' +
-            '.msg-s-message-group__meta [aria-label]'
-          );
-          const name = nameEl?.textContent.trim() || '';
-          group.querySelectorAll(
-            '.msg-s-event-listitem__message-bubble, ' +
-            '.msg-s-event-listitem__body p, ' +
-            '.msg-s-event__body p'
-          ).forEach(el => {
-            const text = _stripUiChrome(el.textContent.trim());
-            if (text) lines.push(name ? `${name}: ${text}` : text);
-          });
-        });
-        if (lines.length) break;
-      }
-
-      // Strategy B: individual event items without group wrapper
-      const items = root.querySelectorAll('.msg-s-event-listitem, .msg-s-event__content');
-      if (items.length) {
-        items.forEach(item => {
-          const body = item.querySelector(
-            '.msg-s-event-listitem__body, .msg-s-event-listitem__message-bubble, p'
-          );
-          if (body) {
-            const text = _stripUiChrome(body.textContent.trim());
-            if (text && text.length > 1) lines.push(text);
-          }
-        });
-        if (lines.length) break;
-      }
-    }
-
-    // Deduplicate consecutive duplicates (LinkedIn sometimes repeats nodes) and cap at 30
-    const deduped = lines.filter((l, i) => l !== lines[i - 1]);
-    return deduped.length ? deduped.slice(-30).join('\n\n') : null;
+  // Wraps scrapeThreadMessages() — the same reliable, outbound-class-aware scraper the
+  // messaging-bar quick action uses — for the profile-panel Follow-up tool, instead of that
+  // tool's own separate, weaker extraction path (extractLinkedInConversation, removed). That
+  // older path never emitted the literal "You" label the AI prompt relies on to tell the two
+  // parties apart, which was a direct cause of follow-ups getting the sender/recipient
+  // perspective backwards. Capped at the last 30 messages, same bound the old path used, to keep
+  // prompt size reasonable on very long threads.
+  function extractFollowupConversation(contactName, myName) {
+    const msgs = scrapeThreadMessages(contactName, myName).slice(-30);
+    const isRaw = msgs.length === 1 && msgs[0].sender === '__raw__';
+    const text = !msgs.length ? '' : isRaw ? msgs[0].text : msgs.map(m => `${m.sender}: ${m.text}`).join('\n\n');
+    return { text, isRaw, count: msgs.length };
   }
 
   async function renderFollowupForm(intent) {
@@ -1944,8 +1989,19 @@
     const tabs = panel.querySelector('.lia-tabs');
     if (tabs) tabs.style.display = 'none';
 
+    // This tool is opened while viewing the contact's own profile page, so their name is
+    // already known reliably from the loaded page itself — far more trustworthy than
+    // re-scraping it from whatever messaging DOM (if any) happens to be open, which is what fed
+    // the "who said what" mix-ups (a wrong/empty contact name silently mislabeled the whole
+    // scraped conversation as coming from the account owner).
+    const profileData = extractProfile();
+    const contactName = profileData.name || getContactName();
+    const { googleUser } = await chrome.storage.local.get('googleUser');
+    const myName = googleUser?.name || googleUser?.given_name || '';
+
     // Try to auto-extract the open conversation immediately
-    const extracted = extractLinkedInConversation();
+    let { text: extracted, isRaw: extractedIsRaw } = extractFollowupConversation(contactName, myName);
+    let currentIsRaw = extracted ? extractedIsRaw : true; // nothing found yet — treat a manual paste as raw text
     const statusHtml = extracted
       ? `<div class="lia-convo-status lia-convo-found">
            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -2017,7 +2073,8 @@
 
     // Refresh button re-scrapes the page
     body.querySelector('#lia-convo-refresh')?.addEventListener('click', () => {
-      const fresh = extractLinkedInConversation();
+      const { text: fresh, isRaw: freshIsRaw } = extractFollowupConversation(contactName, myName);
+      currentIsRaw = fresh ? freshIsRaw : true;
       const textarea = body.querySelector('#lia-followup-convo');
       const statusEl = body.querySelector('.lia-convo-status');
       if (fresh) {
@@ -2053,7 +2110,6 @@
       resultDiv.style.display = 'none';
 
       try {
-        const profileData = extractProfile();
         if (!entry) {
           // Auto-track this contact — generating a follow-up means we're actively following up
           // with them, so the pipeline should reflect that instead of only tracking contacts the
@@ -2079,8 +2135,14 @@
         } else if (selectedStage !== entry.stage) {
           await setContactStage(currentProfileUrl, selectedStage);
         }
-        const result = await sendMessage('GENERATE_FOLLOW_UP', profileData, {
-          intent, conversationText: convoText, userInstructions,
+        // Same purpose-built handler the messaging-bar quick action uses (handleGenerateChatFollowup)
+        // instead of the older, weaker handleGenerateFollowUp — that one assumed the conversation
+        // text used a "You" label for the sender's messages, which this tool's old extraction path
+        // never actually produced, and it also fed the CURRENTLY LOADED PAGE's profile in as
+        // "recipient profile" with no cross-check that it really was the contact being messaged.
+        const result = await sendMessage('GENERATE_CHAT_FOLLOWUP', null, {
+          conversationText: convoText, isRaw: currentIsRaw, contactName, senderName: myName,
+          intent, userInstructions,
           stage: selectedStage, daysSinceLastTouch, analysis: cachedAnalysis,
         });
         if (result.error) throw new Error(result.error);
@@ -2120,8 +2182,12 @@
         btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg> Regenerate`;
         btn.disabled = false;
       } catch (err) {
-        const msg = err.message === 'NO_API_KEY' ? 'No API key found. Add your OpenAI key in Settings → Step 3.' : err.message;
-        resultDiv.innerHTML = `<p class="lia-error-msg">${escHtml(msg)}</p>`;
+        if (err.message === 'NO_API_KEY') {
+          resultDiv.innerHTML = `<p class="lia-error-msg">No API key found. Add your OpenAI key in Settings → Integrations.</p>`;
+        } else {
+          resultDiv.innerHTML = `<p class="lia-error-msg" id="lia-followup-gen-error"></p>`;
+          renderInlineAiError(resultDiv.querySelector('#lia-followup-gen-error'), err.message);
+        }
         resultDiv.style.display = '';
         btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg> Generate Follow-up`;
         btn.disabled = false;
@@ -2216,6 +2282,7 @@
     if (_analyzing) return;
     const hasKey = await checkApiKey();
     if (!hasKey) { renderNoApiKey(); return; }
+    panelNeedsRecheck = false;
 
     // Make sure tabs are visible for full analysis
     const tabs = panel?.querySelector('.lia-tabs');
@@ -2265,7 +2332,7 @@
       <div class="lia-header">
         <div class="lia-header-title">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+            <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/>
           </svg>
           <span>LinkPilot AI</span>
           <span class="lia-mode-badge" id="lia-header-mode-badge"></span>
@@ -2314,8 +2381,21 @@
       if (body) body._rendered = null;
       renderPurposePicker();
     });
-    panel.querySelector('#lia-save-btn').addEventListener('click', () =>
-      toggleSaveContact().catch(err => console.error('[LinkPilot AI] Save failed:', err)));
+    panel.querySelector('#lia-save-btn').addEventListener('click', async () => {
+      const saveBtn = panel.querySelector('#lia-save-btn');
+      const origTitle = saveBtn.title;
+      try {
+        await toggleSaveContact();
+      } catch (err) {
+        console.error('[LinkPilot AI] Save failed:', err);
+        saveBtn.classList.add('lia-save-btn-error');
+        saveBtn.title = 'Save failed — try again';
+        setTimeout(() => {
+          saveBtn.classList.remove('lia-save-btn-error');
+          saveBtn.title = origTitle;
+        }, 2500);
+      }
+    });
 
     document.body.appendChild(panel);
     reflectHubSpotState();
@@ -2386,18 +2466,27 @@
   }
 
   // Moves a saved contact one step forward from wherever it currently sits — used for follow-ups,
-  // where "the next stage" depends on the current one rather than a fixed target.
+  // where "the next stage" depends on the current one rather than a fixed target. Same
+  // auto-create-if-untracked behavior as advanceStage above — every current caller happens to
+  // pre-create the entry before reaching this, but a silent no-op here would be an easy trap for
+  // whatever calls this next without knowing that.
   async function advanceStageBySteps(url, steps = 1) {
     if (!url) return;
-    const contacts = await getSavedContacts();
-    const entry = contacts.find(c => c.url === url);
-    if (!entry) return;
+    let contacts = await getSavedContacts();
+    let entry = contacts.find(c => c.url === url);
+    if (!entry) {
+      await saveCurrentContact();
+      contacts = await getSavedContacts();
+      entry = contacts.find(c => c.url === url);
+      if (!entry) return;
+    }
     const currentIdx = STAGE_ORDER.indexOf(entry.stage || 'new');
     const nextIdx = Math.min(currentIdx + steps, STAGE_ORDER.indexOf('followup_3plus'));
     if (nextIdx <= currentIdx) return;
     entry.stage = STAGE_ORDER[nextIdx];
     entry.stageUpdatedAt = Date.now();
     await chrome.storage.local.set({ savedContacts: contacts });
+    syncSaveButtons();
   }
 
   // Unconditional stage set — used when the user manually corrects the stage tag in the
@@ -2496,6 +2585,20 @@
     if (triggerBtn) triggerBtn.classList.toggle('lia-active', show);
   }
 
+  // The analysis panel, Post Creator, and World Clock are three independent floating panels that
+  // can each be opened from their own dock button — without this, opening a second one while the
+  // first is still open just silently buries it (they share the same stacking layer), with no
+  // visual cue the first panel is still there. Keeping only one open at a time avoids the
+  // conflict entirely instead of trying to coordinate z-index between all three.
+  function closeOtherFloatingPanels(keep) {
+    if (keep !== 'panel' && panel?.classList.contains('lia-open')) togglePanel(false);
+    if (keep !== 'post' && postPanel?.classList.contains('lia-pc-open')) postPanel.classList.remove('lia-pc-open');
+    if (keep !== 'time' && timePanel?.classList.contains('lia-pc-open')) {
+      timePanel.classList.remove('lia-pc-open');
+      if (_timeInterval) { clearInterval(_timeInterval); _timeInterval = null; }
+    }
+  }
+
   function switchTab(tab) {
     activeTab = tab;
     panel.querySelectorAll('.lia-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
@@ -2545,6 +2648,10 @@
   function renderNoApiKey() {
     const body = document.getElementById('lia-body');
     if (!body) return;
+    // Same dead-end problem as the sign-in gate — the user's most likely next move is to add
+    // the key in Settings and come straight back, not navigate away, so nothing else would
+    // naturally refresh this screen without this flag.
+    panelNeedsRecheck = true;
     _renderGate(body, {
       iconColor: '#06b6d4',
       iconGlow: 'rgba(6,182,212,0.35)',
@@ -2611,6 +2718,7 @@
     const body = document.getElementById('lia-body');
     if (!body) return;
     if (message === 'NO_API_KEY') { renderNoApiKey(); return; }
+    if (message === 'SIGN_IN_REQUIRED') { renderSignInRequired(); return; }
     if (message === 'INVALID_KEY') { message = 'Your OpenAI API key is invalid. Please update it in Settings.'; }
     if (message === 'RATE_LIMITED') { message = 'OpenAI rate limit reached. Please wait a moment and try again.'; }
     if (message === 'API_DOWN') { message = 'OpenAI is temporarily unavailable. Please try again shortly.'; }
@@ -2655,6 +2763,59 @@
 
     refreshSaveBtn();
     renderTabContent(analysis, connectionRequest, activeTab, intent);
+  }
+
+  // Friendly text for backend error codes shown inline (i.e. inside an already-rendered card,
+  // not the full-panel gate renderError()/renderNoApiKey()/etc. use) — Refine-with-AI, Connection
+  // Request retry/regenerate, and Post Creator's generation steps used to show these raw (e.g. the
+  // literal text "LIMIT_REACHED") instead of translating them like the main Analyze flow does.
+  const AI_ERROR_MESSAGES = {
+    NO_API_KEY: 'No API key — add one in Settings → Integrations.',
+    INVALID_KEY: 'Your OpenAI API key is invalid — check it in Settings.',
+    RATE_LIMITED: 'OpenAI rate limit reached — try again in a moment.',
+    API_DOWN: 'OpenAI is temporarily unavailable — try again shortly.',
+    TRUNCATED_RESPONSE: 'The AI response was cut short — try again.',
+    LIMIT_REACHED: 'Monthly free limit reached.',
+    PRO_REQUIRED: 'This feature requires a Pro plan.',
+    SIGN_IN_REQUIRED: 'Sign in required — open the LinkPilot AI panel on a profile to sign in.',
+  };
+
+  function friendlyAiErrorText(code) {
+    if (AI_ERROR_MESSAGES[code]) return AI_ERROR_MESSAGES[code];
+    // Not a known code — if it looks like real sentence text (e.g. a raw OpenAI error message
+    // that made it through unmapped), show it as-is rather than hiding it behind a generic
+    // message; only fall back to generic phrasing for unrecognized SCREAMING_SNAKE_CASE codes.
+    if (code && !/^[A-Z_]+$/.test(code)) return code;
+    return 'Something went wrong — try again.';
+  }
+
+  // Renders a friendly inline error into `el` — for LIMIT_REACHED/PRO_REQUIRED specifically, also
+  // adds a click-to-upgrade affordance, since those need a real next step and this is shown
+  // inline (inside an already-rendered card) rather than as the full-panel upgrade gate.
+  function renderInlineAiError(el, code) {
+    if (!el) return;
+    el.textContent = '';
+    el.style.display = '';
+    const isUpgrade = code === 'LIMIT_REACHED' || code === 'PRO_REQUIRED';
+    el.append(document.createTextNode(friendlyAiErrorText(code) + (isUpgrade ? ' ' : '')));
+    if (!isUpgrade) return;
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'lia-inline-upgrade-link';
+    link.textContent = 'Upgrade to Pro →';
+    link.addEventListener('click', () => {
+      link.disabled = true;
+      link.textContent = 'Opening checkout…';
+      chrome.runtime.sendMessage({ type: 'START_CHECKOUT' }, res => {
+        if (chrome.runtime.lastError || !res?.url) {
+          link.disabled = false;
+          link.textContent = 'Upgrade to Pro →';
+          return;
+        }
+        chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: res.url });
+      });
+    });
+    el.appendChild(link);
   }
 
   // Shared "Refine with AI" collapsible — same tone+instructions pattern the Message tab already
@@ -2718,7 +2879,7 @@
       try {
         await onRefine(tone, instructions);
       } catch (e) {
-        if (errEl) { errEl.textContent = e.message; errEl.style.display = ''; }
+        renderInlineAiError(errEl, e.message);
         btn.disabled = false;
         btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refine with AI`;
       }
@@ -3206,8 +3367,13 @@
           genBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Regenerate`;
           genBtn.disabled = false;
         } catch (err) {
-          const msg = err.message === 'NO_API_KEY' ? 'No API key — open Settings.' : err.message;
-          resultDiv.innerHTML = `<p class="lia-error-msg">${escHtml(msg)}</p>`; resultDiv.style.display = '';
+          if (err.message === 'NO_API_KEY') {
+            resultDiv.innerHTML = `<p class="lia-error-msg">No API key — open Settings.</p>`;
+          } else {
+            resultDiv.innerHTML = `<p class="lia-error-msg" id="lia-msgtab-gen-error"></p>`;
+            renderInlineAiError(resultDiv.querySelector('#lia-msgtab-gen-error'), err.message);
+          }
+          resultDiv.style.display = '';
           genBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> ${intent === 'job_search' ? 'Generate Outreach Message' : 'Generate First Message'}`;
           genBtn.disabled = false;
         }
@@ -3219,12 +3385,15 @@
           <div class="lia-section">
             <p class="lia-error-msg">Couldn't generate a connection request for this profile — the analysis above is still good, this piece alone failed.</p>
             <button class="lia-btn-primary" id="lia-conn-retry-btn">Retry</button>
+            <div id="lia-conn-retry-error" class="lia-error-msg" style="display:none;margin-top:8px"></div>
           </div>
         `;
         body.querySelector('#lia-conn-retry-btn').addEventListener('click', async () => {
           const btn = body.querySelector('#lia-conn-retry-btn');
+          const errEl = body.querySelector('#lia-conn-retry-error');
           btn.textContent = 'Retrying...';
           btn.disabled = true;
+          if (errEl) errEl.style.display = 'none';
           try {
             const profileData = extractProfile();
             const result = await sendMessage('GENERATE_CONNECTION_REQUEST', profileData, { intent });
@@ -3234,7 +3403,8 @@
             if (stored) await dbPut(currentProfileUrl, { ...stored, connectionRequest: result.text }).catch(() => {});
             renderTabContent(analysis, result.text, 'connection', intent);
           } catch (e) {
-            btn.textContent = e.message || 'Error — try again';
+            renderInlineAiError(errEl, e.message);
+            btn.textContent = 'Retry';
             btn.disabled = false;
           }
         });
@@ -3262,6 +3432,7 @@
             </svg>
             Regenerate
           </button>
+          <div id="lia-regen-error" class="lia-error-msg" style="display:none;margin-top:8px"></div>
         </div>
         ${buildRefineSectionHtml('conn')}
       `;
@@ -3277,9 +3448,11 @@
 
       body.querySelector('#lia-regen-btn').addEventListener('click', async () => {
         const btn = body.querySelector('#lia-regen-btn');
+        const errEl = body.querySelector('#lia-regen-error');
         const notes = body.querySelector('#lia-conn-notes')?.value.trim() || '';
         btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="lia-spin"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> Regenerating...`;
         btn.disabled = true;
+        if (errEl) errEl.style.display = 'none';
         try {
           const profileData = extractProfile();
           const result = await sendMessage('GENERATE_CONNECTION_REQUEST', profileData, { intent, userNotes: notes || undefined });
@@ -3291,7 +3464,8 @@
           }
           renderTabContent(analysis, result.text, 'connection', intent);
         } catch (e) {
-          btn.textContent = e.message || 'Error — try again';
+          renderInlineAiError(errEl, e.message);
+          btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg> Regenerate`;
           btn.disabled = false;
         }
       });
@@ -3439,7 +3613,8 @@
           <option value="">— Unassigned —</option>
           ${owners.map(o => `<option value="${escHtml(o.id)}">${escHtml(o.label)}</option>`).join('')}
         </select>
-      </div>` : ''}
+      </div>` : ownersResult.error ? `
+      <p class="lia-hs-owner-warning">⚠ Couldn't load deal owners (${escHtml(ownersResult.error)}) — you can still push the deal unassigned.</p>` : ''}
       <div class="lia-hs-row">
         <label class="lia-hs-label">Remarks <span class="lia-hs-optional">(optional — goes to top of notes)</span></label>
         <textarea class="lia-hs-textarea" id="lia-hs-remarks" placeholder="Add any notes about this contact..."></textarea>
@@ -3550,7 +3725,7 @@
     modal.innerHTML = `
       <div class="lia-hs-modal-header">
         <span class="lia-hs-modal-title">Push to HubSpot</span>
-        <button class="lia-hs-modal-close" id="lia-hs-modal-close">&times;</button>
+        <button class="lia-hs-modal-close" id="lia-hs-modal-close" aria-label="Close">&times;</button>
       </div>
       ${innerHtml}
     `;
@@ -3586,9 +3761,13 @@
                        document.querySelector('[data-field="location_of_origin"]');
     if (locationEl) profile.location = locationEl.textContent.trim();
 
-    // Connections & followers
-    const connEl = document.querySelector('span.t-bold');
-    if (connEl) profile.connections = connEl.textContent.trim();
+    // Connections & followers — `.t-bold` is one of LinkedIn's most reused utility classes on
+    // the page (name, headline emphasis, etc.), not scoped to the connections count, so a plain
+    // querySelector for it could grab unrelated text. Match the visible "500+ connections" text
+    // pattern instead, the same robust approach already used for followers/mutual connections
+    // just below.
+    const connectionsMatch = document.body.innerText.match(/([0-9,]+\+?)\s+connections?\b/i);
+    if (connectionsMatch) profile.connections = connectionsMatch[1];
 
     const followerMatch = document.body.innerText.match(/([0-9,]+)\s+followers/i);
     if (followerMatch) profile.followers = followerMatch[1];
@@ -3737,6 +3916,7 @@
   function renderSignInRequired() {
     const body = document.getElementById('lia-body');
     if (!body) return;
+    panelNeedsRecheck = true;
     const tabs = panel?.querySelector('.lia-tabs');
     if (tabs) tabs.style.display = 'none';
     body.innerHTML = `
@@ -3769,10 +3949,14 @@
       this.disabled = true;
       const res = await chrome.runtime.sendMessage({ type: 'GOOGLE_SIGN_IN' });
       if (res?.success) {
-        this.textContent = '✓ Signed in! Click ANALYZE to continue.';
-        this.style.background = '#f0fdf4';
-        this.style.color = '#16a34a';
-        this.style.borderColor = '#bbf7d0';
+        // Brand-new account: send them to the full onboarding flow in Options (same as the
+        // popup's sign-in does) rather than silently skipping it just because they happened to
+        // sign in from the LinkedIn panel instead.
+        if (res.isNew) chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' });
+        // Continue straight into the panel instead of leaving a "click Analyze to continue"
+        // dead end — the whole point of the retry is to get the user to real content, not back
+        // to another manual step.
+        await runPanelGateChecks();
       } else {
         this.textContent = 'Try again';
         this.disabled = false;

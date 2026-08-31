@@ -11,13 +11,22 @@ async function getApiKey() {
 const DEFAULT_EXCLUDES = ['Tech service providers', 'IT outsourcing / staffing', 'Digital / marketing agencies'];
 
 // ─── Shared Authenticity Rules ─────────────────────────────────────────────────
-// Applied to every message-writing prompt so a fix here fixes all of them at once.
+// Applied to every message-writing prompt so a fix here fixes all of them at once. Users have
+// reported messages reading as visibly AI-generated — these rules target the actual tells (not
+// just banned phrases): restating what the other person said before responding, formulaic
+// acknowledge-plus-value-plus-question structure, corporate jargon, and uniform sentence rhythm.
 const AUTHENTICITY_RULES = `- No em dashes, zero hyphens used as dashes
 - No emojis
 - Do not start with "Hi [Name]" or "Hey [Name]"
 - Never use generic filler openers: "I hope you're doing well", "I hope this finds you well", "I hope all is well"
 - Never say "I came across your profile", "I noticed from your profile", or "impressive background"
-- Never say "would love to connect"`;
+- Never say "would love to connect"
+- Never restate or summarize what the other person just said before responding ("It's great to hear that...", "I see you mentioned...", "Thanks for sharing that...") — a real person just responds, they don't recap first
+- No corporate or marketing language: "synergies", "circle back", "touch base", "leverage", "unlock", "elevate", "seamless", "value proposition", "reach out", "excited to explore"
+- No generic enthusiasm ("That's amazing!", "Impressive!", "Love this!") — if something is genuinely worth reacting to, react to the specific detail, not with a generic exclamation
+- Do not follow a fixed acknowledge-then-pitch-then-question template every time — real conversation doesn't have a formula, and back-to-back messages that all end in a question read as scripted
+- Vary sentence length and rhythm like a real person typing quickly, not evenly-structured prose
+- Contractions are normal ("I'm", "it's", "don't") — avoid stiff, fully-spelled-out phrasing`;
 
 // Stage values come from content/index.js's saved-contact pipeline tracking (STAGE_ORDER).
 // When a tracked stage is available it gives the model ground truth instead of asking it to
@@ -633,8 +642,12 @@ export async function handleGenerateFirstMessage(profileData, analysis, intent, 
   const jobPresets = isJobSearch ? await getJobMessagePresets() : null;
   const a = analysis || {};
 
-  const dm = a.decisionMakerLevel || a.decisionMaker || '';
-  const isDecisionMaker = /c.level|ceo|cto|coo|cfo|founder|owner|vp|director|head of/i.test(dm);
+  // The analysis schema (see the "decisionMaker" field def above) only ever produces
+  // "Yes" | "Likely" | "No" — never a title string — so a regex matching title keywords like
+  // "ceo"/"vp"/"founder" against it could never fire, silently treating every contact (including
+  // confirmed decision-makers) as a non-decision-maker.
+  const dm = a.decisionMaker || '';
+  const isDecisionMaker = dm === 'Yes' || dm === 'Likely';
   const cs = a.companySize || a.company?.size || '';
   const hasBudgetSignals = isDecisionMaker || /enterprise|mid.market|series [bcd]|funded/i.test(cs + ' ' + (a.companyName || ''));
 
@@ -718,8 +731,8 @@ ${AUTHENTICITY_RULES}
 
   } else {
     const dmGuide = isDecisionMaker
-      ? `Decision-maker detected (${dm || 'senior level'}). Be direct and business-outcome focused. They are busy — get to the point. Hint at ROI or efficiency gain without pitching.`
-      : `Not a final decision-maker (${dm || 'likely IC or manager'}). Be more exploratory and relationship-focused. Build rapport before hinting at any value exchange.`;
+      ? `Decision-maker detected (${dm === 'Yes' ? 'confirmed' : 'likely'}). Be direct and business-outcome focused. They are busy — get to the point. Hint at ROI or efficiency gain without pitching.`
+      : `Not a final decision-maker. Be more exploratory and relationship-focused. Build rapport before hinting at any value exchange.`;
 
     const budgetGuide = hasBudgetSignals
       ? 'Budget signals: company size and role suggest budget authority. Can be slightly more direct about value relevance.'
@@ -765,82 +778,6 @@ ${AUTHENTICITY_RULES}
   systemPrompt += `\n\n${analysisCtx}`;
 
   const userPrompt = buildProfileText(profileData);
-  return { text: await callAI(systemPrompt, userPrompt) };
-}
-
-// ─── Follow-Up ────────────────────────────────────────────────────────────────
-
-export async function handleGenerateFollowUp(profileData, conversationText, intent, userInstructions, stage, daysSinceLastTouch, analysis) {
-  const followupAngleRules = buildFollowupAngleRules(stage, daysSinceLastTouch);
-  const isJobSearch = intent === 'job_search';
-  const isB2c = intent === 'b2c_sales';
-  const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
-  const b2cProfile = isB2c ? await getB2cProfile() : null;
-  const jobProfile = isJobSearch ? await getJobProfile() : null;
-  const b2cPresets = isB2c ? await getB2cMessagePresets() : null;
-  const jobPresets = isJobSearch ? await getJobMessagePresets() : null;
-
-  let systemPrompt;
-
-  if (isJobSearch) {
-    systemPrompt = `You write follow-up LinkedIn messages for a job seeker who is already in an active conversation with this person. Read the conversation carefully and write a natural, contextual follow-up that moves the conversation forward.
-
-Rules:
-- Max 300 characters total
-- No corporate speak, no buzzwords
-- Pick up naturally from where the conversation left off
-- Sound human and genuinely interested — not pushy or needy
-${AUTHENTICITY_RULES}
-- Never mention "I'm looking for a job" or "open to work"
-
-${followupAngleRules}
-
-Return ONLY the follow-up message text. No quotes.`;
-    const jobCtx = buildJobContext(jobProfile);
-    if (jobCtx) systemPrompt += `\n\n${jobCtx}`;
-    systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStylePresetRules(jobPresets)}`;
-
-  } else if (isB2c) {
-    systemPrompt = `You write follow-up LinkedIn messages for a freelancer or consultant who has an ongoing conversation with a potential client. Read the existing conversation and write a contextual follow-up that feels natural and moves things forward.
-
-Rules:
-- Max 350 characters total
-- No pitching, no "I can help you", no service offers
-- Reference what was already discussed — show you were listening
-- Sound like a trusted peer, not a sales rep following up
-${AUTHENTICITY_RULES}
-
-${followupAngleRules}
-
-Return ONLY the follow-up message text. No quotes.`;
-    if (b2cProfile && Object.keys(b2cProfile).length) {
-      systemPrompt += `\n\n--- SENDER PROFILE ---\n${buildB2cContext(b2cProfile)}`;
-    }
-    systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStylePresetRules(b2cPresets)}`;
-
-  } else {
-    systemPrompt = `You write follow-up LinkedIn messages for a B2B sales professional in an active conversation with a prospect. Read the conversation carefully and write a follow-up that feels natural, contextual, and moves things forward without being pushy.
-
-Rules:
-- Max 350 characters total
-- Reference what was already discussed — never repeat an opening
-- Sound like a real person, not a sales follow-up template
-${AUTHENTICITY_RULES}
-
-${followupAngleRules}
-
-Return ONLY the follow-up message text. No quotes.`;
-    if (cfg) systemPrompt += `\n\n--- SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
-  }
-
-  if (analysis) {
-    systemPrompt += `\n\n${buildAnalysisContext(analysis, intent)}`;
-  }
-  if (userInstructions?.trim()) {
-    systemPrompt += `\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly, even if it overrides the angle guidance above):\n${userInstructions.trim()}`;
-  }
-
-  const userPrompt = `RECIPIENT PROFILE:\n${buildProfileText(profileData)}\n\nEXISTING CONVERSATION ("You" = messages sent by the person you are writing for; all other names = the recipient's messages. Write the follow-up continuing FROM "You", NOT as the recipient):\n${conversationText || '(no conversation provided)'}`;
   return { text: await callAI(systemPrompt, userPrompt) };
 }
 
@@ -1054,8 +991,11 @@ Hashtag rules: 5-7 tags. ${hashtagContext}`;
   }
 }
 
-// ─── Chat Follow-up (messaging page) ─────────────────────────────────────────
-// Dedicated handler — avoids the profile-as-writer confusion of handleGenerateFollowUp
+// ─── Follow-Up ────────────────────────────────────────────────────────────────
+// The single handler for both follow-up entry points (the messaging-page quick action and the
+// profile-panel Follow-up tool) — takes contactName/senderName explicitly rather than inferring
+// sender/recipient from a "RECIPIENT PROFILE" blob, which used to let the wrong page's scraped
+// profile (e.g. the account owner's own) leak in as if it belonged to the contact.
 
 export async function handleGenerateChatFollowup({ conversationText, isRaw, contactName, senderName, intent, userInstructions, stage, daysSinceLastTouch, analysis }) {
   const isJobSearch = intent === 'job_search';
@@ -1084,18 +1024,19 @@ export async function handleGenerateChatFollowup({ conversationText, isRaw, cont
     ? `The conversation below is raw text copied from LinkedIn messaging. It includes timestamps and sender names. Identify who said what based on the names: "${writer}" = the person you are writing for, "${recipient}" = the other person.`
     : `In the conversation below: messages labeled "You" were sent by ${writer}. Messages labeled "${recipient}" were sent by the contact.`;
 
-  const systemPrompt = `You are a LinkedIn messaging assistant writing the next message for ${writer} to send to ${recipient}.
+  const systemPrompt = `You are an elite LinkedIn outreach strategist ghostwriting this message for ${writer}. You've read thousands of real LinkedIn conversations and know exactly how a sharp, busy professional actually talks — never like a chatbot or an email template.
 
-CRITICAL — never write as ${recipient}. You are writing FOR ${writer}.
+CRITICAL — never write as ${recipient}. You are writing FOR ${writer}, TO ${recipient}. Everything in the conversation labeled as coming from ${writer} (or "You") is ${writer}'s own words about ${writer}'s own situation — never treat it as something ${recipient} said or shared, and never compliment or react to ${writer}'s own experience, skills, or story as though it belongs to ${recipient}. If ${writer} shared their own background, resume, or an ask (e.g. "I'm looking for X"), the next message continues advancing THAT, addressed to ${recipient} — it does not praise ${writer} for it.
 
 ${conversationFormat}
 
+Read the ENTIRE conversation below before writing anything — not just the last message. Understand the full arc: what's already been said by each side, where the conversation actually stands right now, and what the one natural next beat is. A follow-up that ignores earlier context (repeats something already covered, misses a question that was already answered, or restarts a thread that's already moved on) is worse than no follow-up at all.
+
 ${senderCtx ? `CONTEXT ABOUT ${writer.toUpperCase()}:\n${senderCtx}\n\n` : ''}Rules:
 - Max 300 characters
-- Sound like a real person, not a template
-- Read the full conversation to understand context and tone
+- Sound like a real person typing a quick, thoughtful message — not a template
 - If ${recipient} has not replied yet: write a natural follow-up to ${writer}'s last message (never copy-paste the previous message)
-- If ${recipient} has replied: acknowledge what they said and keep the conversation moving naturally
+- If ${recipient} has replied: respond to what they specifically said and keep the conversation moving naturally, grounded in the whole thread so far — not just their most recent line
 ${AUTHENTICITY_RULES}
 
 ${buildFollowupAngleRules(stage, daysSinceLastTouch)}

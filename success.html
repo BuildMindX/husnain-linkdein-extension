@@ -248,7 +248,7 @@
         if (attempts < maxAttempts) {
           setTimeout(attempt, 2000);
         } else if (statusEl) {
-          statusEl.textContent = "Still syncing — this'll finish within a few minutes, no action needed.";
+          statusEl.textContent = "Still syncing — this can take a little longer. It'll finish on its own, or instantly the next time you open the extension's Settings page.";
         }
       });
     }

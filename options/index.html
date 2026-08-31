@@ -20,10 +20,82 @@
         <div class="ob-welcome-sub">by Satyron Private Limited</div>
         <div class="ob-user-row" id="ob-user-row"></div>
         <div class="ob-welcome-desc">AI-powered LinkedIn intelligence for B2B sales, freelancing, and job search. Let's get you set up.</div>
-        <button class="ob-btn-primary" id="ob-welcome-next">See Plans &amp; Pricing →</button>
+        <button class="ob-btn-primary" id="ob-welcome-next">Get Started →</button>
       </div>
 
-      <!-- Step 2: Pricing -->
+      <!-- Step 2: Mode choice -->
+      <div class="ob-step hidden" id="ob-step-mode">
+        <div class="ob-welcome-title" style="font-size:19px">What are you using LinkedIn for?</div>
+        <div class="ob-welcome-desc">This shapes how the AI scores contacts and writes your outreach — you can change it anytime in Settings.</div>
+        <div class="mode-selector ob-mode-selector" id="ob-mode-selector">
+          <button class="mode-card" type="button" data-intent="b2b_sales" id="ob-mode-b2b">
+            <span class="mode-card-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+              </svg>
+            </span>
+            <div class="mode-card-body">
+              <span class="mode-card-name">B2B Sales</span>
+              <span class="mode-card-tagline">Score and qualify prospects for your sales pipeline</span>
+            </div>
+            <span class="mode-card-check" aria-hidden="true">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                <path d="M2 6.5l2.8 2.8 5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </button>
+          <button class="mode-card" type="button" data-intent="b2c_sales" id="ob-mode-b2c">
+            <span class="mode-card-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+            </span>
+            <div class="mode-card-body">
+              <span class="mode-card-name">Freelance / Consulting</span>
+              <span class="mode-card-tagline">Find clients for your individual expertise and services</span>
+            </div>
+            <span class="mode-card-check" aria-hidden="true">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                <path d="M2 6.5l2.8 2.8 5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </button>
+          <button class="mode-card" type="button" data-intent="job_search" id="ob-mode-job">
+            <span class="mode-card-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
+              </svg>
+            </span>
+            <div class="mode-card-body">
+              <span class="mode-card-name">Job Search</span>
+              <span class="mode-card-tagline">Identify recruiters, hiring managers, and open-role signals</span>
+            </div>
+            <span class="mode-card-check" aria-hidden="true">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                <path d="M2 6.5l2.8 2.8 5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </button>
+        </div>
+        <button class="ob-btn-primary" id="ob-mode-next" disabled>Continue →</button>
+      </div>
+
+      <!-- Step 3: Connect OpenAI -->
+      <div class="ob-step hidden" id="ob-step-apikey">
+        <div class="ob-logo">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.6"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <div class="ob-welcome-title" style="font-size:19px">Connect your OpenAI account</div>
+        <div class="ob-welcome-desc">Every analysis and message runs on your own OpenAI account, not ours — so you'll need an API key to use any AI feature. <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="color:#c4b5fd">Get a key →</a></div>
+        <input type="password" id="ob-api-key-input" class="ob-apikey-input" placeholder="sk-proj-..." autocomplete="off" spellcheck="false" />
+        <div id="ob-apikey-status" class="status-msg" aria-live="polite"></div>
+        <button class="ob-btn-primary" id="ob-apikey-save">Connect &amp; Continue →</button>
+        <div class="ob-skip"><button class="ob-skip-btn" id="ob-apikey-skip">I'll add this later</button></div>
+      </div>
+
+      <!-- Step 4: Pricing -->
       <div class="ob-step hidden" id="ob-step-pricing">
         <div class="ob-pricing-header">
           <div class="ob-pricing-title">Choose your plan</div>
@@ -662,8 +734,8 @@
         <!-- OpenAI -->
         <div class="card">
           <div class="card-title-row">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0A66C2" stroke-width="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="#c4b5fd">
+              <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/>
             </svg>
             <h3>OpenAI API Key <span class="required-badge">Required</span></h3>
           </div>
@@ -716,7 +788,7 @@
             <div class="input-wrapper">
               <input type="password" id="hs-key" placeholder="pat-na1-..." autocomplete="off" spellcheck="false" />
               <button type="button" id="hs-toggle-visibility" class="toggle-btn" aria-label="Show/hide token">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg id="hs-eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                   <circle cx="12" cy="12" r="3"></circle>
                 </svg>

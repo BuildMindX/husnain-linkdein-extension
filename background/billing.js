@@ -1,11 +1,15 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
-// Check limit AND record usage atomically. Returns { allowed, limit, used } or { allowed: true } on error (fail open).
+// Check limit AND record usage atomically. Returns { allowed, limit, used }.
+// Transient failures (network error, a bad response) fail OPEN — those shouldn't block a user
+// who has already proven their identity. Having no identity at all is different: there's no way
+// to enforce a quota for a user we can't identify, so that case fails CLOSED instead — otherwise
+// the free-tier limit could be bypassed completely by simply never signing in with Google.
 export async function checkAndTrackUsage(eventType, metadata = {}) {
   try {
     const authResult = await chrome.identity.getAuthToken({ interactive: false });
     const token = typeof authResult === 'string' ? authResult : authResult?.token;
-    if (!token) return { allowed: true };
+    if (!token) return { allowed: false, error: 'SIGN_IN_REQUIRED' };
     const resp = await fetch(`${SUPABASE_URL}/functions/v1/track-usage`, {
       method: 'POST',
       headers: {

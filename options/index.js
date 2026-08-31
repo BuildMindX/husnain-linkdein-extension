@@ -16,11 +16,40 @@ function showOnboarding(googleUser) {
     `;
   }
 
-  // Step navigation
-  document.getElementById('ob-welcome-next').addEventListener('click', () => {
-    document.getElementById('ob-step-welcome').classList.add('hidden');
-    document.getElementById('ob-step-pricing').classList.remove('hidden');
+  // Step navigation — Welcome → Mode choice → Connect OpenAI → Pricing
+  function goToObStep(id) {
+    overlay.querySelectorAll('.ob-step').forEach(s => s.classList.add('hidden'));
+    document.getElementById(id)?.classList.remove('hidden');
+  }
+
+  document.getElementById('ob-welcome-next').addEventListener('click', () => goToObStep('ob-step-mode'));
+
+  // Mode choice — asks explicitly instead of silently defaulting to B2B Sales the way an empty
+  // analysisIntent used to. The click handling/persistence itself is the existing global
+  // modeCards logic further down this file (these buttons share the same .mode-card markup and
+  // data-intent attribute) — this only needs to unlock the Continue button once a real choice
+  // has been made.
+  const obModeNextBtn = document.getElementById('ob-mode-next');
+  overlay.querySelectorAll('#ob-mode-selector .mode-card').forEach(card => {
+    card.addEventListener('click', () => { obModeNextBtn.disabled = false; });
   });
+  obModeNextBtn.addEventListener('click', () => goToObStep('ob-step-apikey'));
+
+  // Connect OpenAI — the product does nothing without this key, and previously nothing in
+  // onboarding ever said so; a user could sail through Welcome/Pricing and only discover the
+  // requirement after a confusing failure back on LinkedIn.
+  const obApiKeyInput = document.getElementById('ob-api-key-input');
+  const obApiKeyStatus = document.getElementById('ob-apikey-status');
+  document.getElementById('ob-apikey-save').addEventListener('click', () => {
+    const key = obApiKeyInput.value.trim();
+    if (!key) { showStatus(obApiKeyStatus, 'Please enter an API key.', 'error'); return; }
+    if (!key.startsWith('sk-')) { showStatus(obApiKeyStatus, 'Invalid format. OpenAI keys start with "sk-".', 'error'); return; }
+    chrome.storage.local.set({ openaiApiKey: key }, () => {
+      if (apiKeyInput) apiKeyInput.value = key; // keep the Integrations tab in sync
+      goToObStep('ob-step-pricing');
+    });
+  });
+  document.getElementById('ob-apikey-skip').addEventListener('click', () => goToObStep('ob-step-pricing'));
 
   // Start Free — land on the mode picker (Outreach tab) rather than a blank Account
   // tab, so a new free user is immediately prompted to pick a mode and fill in the
@@ -53,7 +82,7 @@ function showOnboarding(googleUser) {
       } else {
         btn.disabled = false;
         btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Upgrade to Pro`;
-        status.textContent = res?.error || 'Something went wrong. Try again.';
+        status.textContent = res?.error || 'Couldn\'t start checkout — try again in a moment.';
         status.style.color = '#f87171';
       }
     });
@@ -156,7 +185,7 @@ document.querySelectorAll('.pc-stoggle').forEach(btn => {
 const MODE_INFO = {
   b2b_sales: {
     title: 'B2B Sales mode active',
-    desc: 'The AI reads each LinkedIn profile and tells you exactly how valuable this contact is for your pipeline — in seconds.',
+    desc: 'The AI reads each LinkedIn profile and tells you exactly how valuable this contact is for your pipeline — in seconds. Works on standard LinkedIn profiles and search; Sales Navigator support is coming soon.',
     items: [
       'Prospect score (High / Medium / Low) with AI reasoning',
       'Industry fit — does their company match your target ICP?',
@@ -211,7 +240,10 @@ function updateModeInfoBox(intent) {
 }
 
 // ── Mode Selector ─────────────────────────────────────────────────────────────
-const modeCards = document.querySelectorAll('.mode-card');
+// Scoped to the Outreach tab's own selector, not just `.mode-card` — the onboarding overlay's
+// mode-choice step (added below) reuses the same card markup/class for visual consistency but
+// needs its own independent click handling, not this one.
+const modeCards = document.querySelectorAll('#mode-selector .mode-card');
 const intentStatus = document.getElementById('intent-status');
 
 function applyIntentVisibility(intent) {
@@ -569,7 +601,7 @@ chrome.storage.local.get('hubspotApiKey', result => {
   if (result.hubspotApiKey) { hsKeyInput.value = result.hubspotApiKey; showStatus(hsStatusMsg, 'HubSpot token is saved and active.', 'success'); }
 });
 
-hsToggleBtn?.addEventListener('click', () => makeToggle(hsKeyInput, hsToggleBtn, null));
+hsToggleBtn?.addEventListener('click', () => makeToggle(hsKeyInput, hsToggleBtn, 'hs-eye-icon'));
 
 hsSaveBtn?.addEventListener('click', () => {
   const key = hsKeyInput.value.trim();
@@ -992,6 +1024,7 @@ function renderPipelineBoard() {
       const days = daysInStage(c.stageUpdatedAt || c.savedAt);
       const detail = c.company || c.headline || '';
       const snoozed = c.snoozedUntil && c.snoozedUntil > Date.now();
+      const snoozeDaysLeft = snoozed ? Math.max(1, Math.ceil((c.snoozedUntil - Date.now()) / 86400000)) : 0;
       const showSnooze = REMINDER_STAGES.includes(stage);
       return `
         <div class="pipeline-card">
@@ -1009,7 +1042,7 @@ function renderPipelineBoard() {
             </select>
             ${days ? `<span class="pipeline-card-days">${days}</span>` : ''}
           </div>
-          ${showSnooze ? `<button type="button" class="pipeline-card-snooze" data-url="${escapeHtml(c.url)}">${snoozed ? '😴 Snoozed' : '😴 Snooze reminder 3d'}</button>` : ''}
+          ${showSnooze ? `<button type="button" class="pipeline-card-snooze${snoozed ? ' pipeline-card-snooze-active' : ''}" data-url="${escapeHtml(c.url)}" title="${snoozed ? 'Click to cancel snooze' : ''}">${snoozed ? `😴 Snoozed ${snoozeDaysLeft}d — click to cancel` : '😴 Snooze reminder 3d'}</button>` : ''}
           <a href="${escapeHtml(c.url)}" target="_blank" class="pipeline-card-link">Open on LinkedIn ↗</a>
         </div>`;
     }).join('');
@@ -1026,39 +1059,57 @@ function renderPipelineBoard() {
   }).join('');
 
   board.querySelectorAll('.pipeline-card-select').forEach(sel => {
-    sel.addEventListener('change', () => {
+    sel.addEventListener('change', async () => {
       const url = sel.dataset.url;
-      const entry = _pipelineContacts.find(c => c.url === url);
-      if (!entry) return;
-      entry.stage = sel.value;
-      entry.stageUpdatedAt = Date.now();
-      chrome.storage.local.set({ savedContacts: _pipelineContacts });
+      await patchSavedContacts(contacts => {
+        const entry = contacts.find(c => c.url === url);
+        if (entry) { entry.stage = sel.value; entry.stageUpdatedAt = Date.now(); }
+      });
     });
   });
 
   board.querySelectorAll('.pipeline-card-snooze').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const url = btn.dataset.url;
-      const entry = _pipelineContacts.find(c => c.url === url);
-      if (!entry) return;
-      entry.snoozedUntil = Date.now() + 3 * 24 * 60 * 60 * 1000;
-      chrome.storage.local.set({ savedContacts: _pipelineContacts }, () => renderPipelineBoard());
+      await patchSavedContacts(contacts => {
+        const entry = contacts.find(c => c.url === url);
+        if (!entry) return;
+        // Clicking again while already snoozed cancels it, instead of silently pushing the
+        // reminder out another 3 days from whenever it happened to be clicked.
+        const currentlySnoozed = entry.snoozedUntil && entry.snoozedUntil > Date.now();
+        entry.snoozedUntil = currentlySnoozed ? undefined : Date.now() + 3 * 24 * 60 * 60 * 1000;
+      });
+      renderPipelineBoard();
     });
   });
 
   board.querySelectorAll('.pipeline-card-remove').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const url = btn.dataset.url;
       const entry = _pipelineContacts.find(c => c.url === url);
       if (!entry) return;
       if (!confirm(`Remove ${entry.name || 'this contact'} from the pipeline?`)) return;
-      _pipelineContacts = _pipelineContacts.filter(c => c.url !== url);
-      chrome.storage.local.set({ savedContacts: _pipelineContacts }, () => {
-        renderPipelineBoard();
-        renderNotificationsPanel();
+      await patchSavedContacts(contacts => {
+        const idx = contacts.findIndex(c => c.url === url);
+        if (idx !== -1) contacts.splice(idx, 1);
       });
+      renderPipelineBoard();
+      renderNotificationsPanel();
     });
   });
+}
+
+// Re-reads storage immediately before writing, instead of trusting the possibly-stale
+// _pipelineContacts cache (only refreshed by the storage.onChanged listener, which can lag) —
+// the content script, popup, and this page can all write this same list independently, so
+// writing back a snapshot older than what's actually in storage risks silently discarding
+// another surface's more recent edit to a *different* contact.
+async function patchSavedContacts(mutateFn) {
+  const { savedContacts } = await chrome.storage.local.get('savedContacts');
+  const fresh = Array.isArray(savedContacts) ? savedContacts : [];
+  mutateFn(fresh);
+  await chrome.storage.local.set({ savedContacts: fresh });
+  _pipelineContacts = fresh;
 }
 
 function exportPipelineCSV() {

@@ -6,7 +6,6 @@ import {
   handleBulkScoreProfiles,
   handleGenerateConnectionRequest,
   handleGenerateFirstMessage,
-  handleGenerateFollowUp,
   handleGenerateChatFollowup,
   handleRefineMessage,
   handleSuggestPostTopics,
@@ -41,7 +40,10 @@ async function withUsageGate(eventType, fn) {
     return fn();
   }
   const usage = await checkAndTrackUsage(eventType);
-  if (!usage.allowed) return { error: 'LIMIT_REACHED', limit: usage.limit, used: usage.used };
+  if (!usage.allowed) {
+    if (usage.error === 'SIGN_IN_REQUIRED') return { error: 'SIGN_IN_REQUIRED' };
+    return { error: 'LIMIT_REACHED', limit: usage.limit, used: usage.used };
+  }
   return fn();
 }
 
@@ -66,10 +68,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === 'GENERATE_FIRST_MESSAGE') {
     withUsageGate('message', () => handleGenerateFirstMessage(msg.profileData, msg.analysis, msg.intent, msg.tone, msg.userInstructions)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
-    return true;
-  }
-  if (msg.type === 'GENERATE_FOLLOW_UP') {
-    withUsageGate('message', () => handleGenerateFollowUp(msg.profileData, msg.conversationText, msg.intent, msg.userInstructions, msg.stage, msg.daysSinceLastTouch, msg.analysis)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'GENERATE_CHAT_FOLLOWUP') {

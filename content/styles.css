@@ -191,15 +191,6 @@
   background: #fff;
 }
 
-.lia-analyzed-at {
-  margin-left: auto;
-  font-size: 10px;
-  color: #94a3b8;
-  white-space: nowrap;
-  padding: 0 8px;
-  align-self: center;
-}
-
 /* ── Body ──────────────────────────────────────────────────────────────────── */
 #lia-body {
   flex: 1;
@@ -485,6 +476,7 @@
   margin: 0 0 8px;
   line-height: 1.65;
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .lia-char-count { font-size: 11px; text-align: right; margin-top: 4px; }
@@ -1074,6 +1066,17 @@
   color: #475569;
   margin: 0 0 4px;
   line-height: 1.5;
+}
+
+.lia-hs-owner-warning {
+  font-size: 11.5px;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 7px 10px;
+  margin: 0 0 4px;
+  line-height: 1.45;
 }
 
 .lia-hs-pushed-notice {
@@ -2104,9 +2107,6 @@
 
 .lia-tone-btn.active .lia-tone-desc { color: #3b82f6; }
 
-/* ── Remove lia-analyzed-at style (no longer used) ───────────────────────────── */
-.lia-analyzed-at { display: none; }
-
 /* ── Sidebar dock — single fixed container prevents button overlap ───────────── */
 #lia-sidebar-dock {
   position: fixed;
@@ -2201,87 +2201,6 @@
   line-height: 1.5;
 }
 
-/* Score chip inside insight block */
-.lia-insight-score-chip {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.lia-insight-score-chip.high   { background: #dcfce7; color: #15803d; }
-.lia-insight-score-chip.medium { background: #fef9c3; color: #854d0e; }
-.lia-insight-score-chip.low    { background: #fee2e2; color: #b91c1c; }
-.lia-insight-score-chip.strong { background: #dcfce7; color: #15803d; }
-.lia-insight-score-chip.possible { background: #fef9c3; color: #854d0e; }
-
-/* Message tab generate button */
-.lia-msg-gen-btn {
-  width: 100%;
-  padding: 11px;
-  background: #0A66C2;
-  color: #fff;
-  border: none;
-  border-radius: 9px;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.18s;
-  margin-top: 4px;
-}
-
-.lia-msg-gen-btn:hover { background: #004182; }
-.lia-msg-gen-btn:disabled { opacity: 0.6; cursor: default; }
-
-/* Message tab result */
-.lia-msg-tab-result {
-  margin-top: 14px;
-  background: #f0f7ff;
-  border: 1.5px solid #bfdbfe;
-  border-radius: 10px;
-  padding: 13px 14px 10px;
-}
-
-.lia-msg-tab-result-label {
-  font-size: 10.5px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: #64748b;
-  margin-bottom: 8px;
-}
-
-.lia-msg-tab-text {
-  font-size: 13px;
-  color: #1e293b;
-  line-height: 1.6;
-  white-space: pre-wrap;
-}
-
-.lia-msg-tab-actions {
-  display: flex;
-  gap: 7px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid #dbeafe;
-}
-
-.lia-msg-copy-btn {
-  flex: 1;
-  padding: 8px;
-  background: #0A66C2;
-  color: #fff;
-  border: none;
-  border-radius: 7px;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.lia-msg-copy-btn:hover { background: #004182; }
-
 /* Refine toggle */
 .lia-refine-toggle {
   flex: 1;
@@ -2308,16 +2227,12 @@
   font-style: normal;
 }
 
-.lia-refine-toggle.open .lia-refine-arrow { transform: rotate(180deg); }
-
 .lia-refine-body {
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid #dbeafe;
   display: none;
 }
-
-.lia-refine-body.open { display: block; }
 
 /* ══════════════════════════════════════════════════════════════════════════════
    SATYRON DARK THEME — Full panel redesign
@@ -2356,6 +2271,19 @@
 .lia-hs-btn:hover {
   background: rgba(124,58,237,0.28) !important;
   color: #fff !important;
+}
+
+/* ── Sign-in gate — never got a dark pass, was rendering near-black text on the dark panel ── */
+.lia-sign-gate-title {
+  color: #f1f5f9 !important;
+}
+
+.lia-sign-gate-desc {
+  color: rgba(196,181,253,0.75) !important;
+}
+
+.lia-sign-gate-footer {
+  color: rgba(196,181,253,0.45) !important;
 }
 
 /* ── Mode indicator (purpose picker) ─────────────────────────────────────── */
@@ -2648,6 +2576,74 @@
 .ind-score-badge.score-medium { background: rgba(245,158,11,0.15) !important; color: #fbbf24 !important; border-color: rgba(245,158,11,0.25) !important; }
 .ind-score-badge.score-low    { background: rgba(239,68,68,0.15) !important; color: #f87171 !important; border-color: rgba(239,68,68,0.25) !important; }
 
+/* ── Indicator cards, contact list, callouts, excluded banner — these never got a dark pass and
+   were rendering as solid white/light boxes on the dark panel on essentially every analysis. ── */
+.lia-indicator-card {
+  background: rgba(255,255,255,0.05) !important;
+  border-color: rgba(255,255,255,0.1) !important;
+  box-shadow: none !important;
+}
+.ind-label { color: rgba(196,181,253,0.55) !important; }
+.ind-score-bar-track { background: rgba(255,255,255,0.08) !important; }
+.ind-reasoning { color: rgba(196,181,253,0.7) !important; }
+.ind-dot { background: rgba(255,255,255,0.12) !important; }
+.ind-dot.filled { background: #a78bfa !important; }
+
+.lia-contact-list li {
+  background: rgba(255,255,255,0.05) !important;
+  border-color: rgba(255,255,255,0.1) !important;
+}
+.contact-type { color: rgba(196,181,253,0.5) !important; }
+.contact-value { color: #f1f5f9 !important; }
+
+/* Same badge concept as the score badges above (dm-/cs-/er-/fit-/ind-industry), never given the
+   equivalent dark treatment — solid pastel-on-light colors that fought the dark panel. */
+.dm-yes, .er-daily      { background: rgba(34,197,94,0.15) !important; color: #4ade80 !important; }
+.dm-likely, .er-occasional { background: rgba(245,158,11,0.15) !important; color: #fbbf24 !important; }
+.dm-no                  { background: rgba(239,68,68,0.15) !important; color: #f87171 !important; }
+.er-weekly               { background: rgba(59,130,246,0.15) !important; color: #7ea2ff !important; }
+.er-rarely               { background: rgba(255,255,255,0.08) !important; color: rgba(196,181,253,0.6) !important; }
+
+.cs-enterprise { background: rgba(124,58,237,0.18) !important; color: #c4b5fd !important; }
+.cs-mid        { background: rgba(59,130,246,0.15) !important; color: #7ea2ff !important; }
+.cs-smb        { background: rgba(6,182,212,0.15) !important; color: #67e8f9 !important; }
+.cs-startup    { background: rgba(236,72,153,0.15) !important; color: #f9a8d4 !important; }
+.cs-unknown    { background: rgba(255,255,255,0.08) !important; color: rgba(196,181,253,0.6) !important; }
+
+.ind-industry { background: rgba(6,182,212,0.15) !important; color: #67e8f9 !important; }
+
+.fit-strong  { background: rgba(34,197,94,0.15) !important; color: #4ade80 !important; }
+.fit-partial { background: rgba(245,158,11,0.15) !important; color: #fbbf24 !important; }
+.fit-poor    { background: rgba(239,68,68,0.15) !important; color: #f87171 !important; }
+
+.lia-excluded-banner {
+  background: rgba(234,88,12,0.12) !important;
+  color: #fb923c !important;
+  border-color: rgba(234,88,12,0.3) !important;
+}
+
+.lia-company-cell {
+  background: rgba(255,255,255,0.05) !important;
+  border-color: rgba(255,255,255,0.1) !important;
+}
+.lia-company-key { color: rgba(196,181,253,0.5) !important; }
+.lia-company-val { color: #f1f5f9 !important; }
+.lia-company-link { color: #c4b5fd !important; }
+
+.lia-chip {
+  background: rgba(6,182,212,0.12) !important;
+  color: #67e8f9 !important;
+  border-color: rgba(6,182,212,0.28) !important;
+}
+
+.lia-callout {
+  background: rgba(255,255,255,0.05) !important;
+  border-color: rgba(255,255,255,0.1) !important;
+  border-left-color: #7c3aed !important;
+}
+.callout-num { background: #7c3aed !important; }
+.callout-text { color: rgba(226,232,240,0.85) !important; }
+
 /* ── Inputs / textareas ───────────────────────────────────────────────────── */
 .lia-notes-input,
 .lia-follow-input,
@@ -2703,8 +2699,16 @@
 .lia-icp-warning-link { color: #c4b5fd !important; }
 
 /* ── Refine section ───────────────────────────────────────────────────────── */
+.lia-refine-section { background: rgba(255,255,255,0.04) !important; border-color: rgba(255,255,255,0.1) !important; }
 .lia-refine-body { border-top-color: rgba(124,58,237,0.15) !important; }
-.lia-msg-tab-actions { border-top-color: rgba(124,58,237,0.15) !important; }
+
+/* ── Leftover LinkedIn-blue accents — everything else in this theme uses the purple accent ── */
+.lia-back-btn { color: #c4b5fd !important; }
+.lia-back-btn:hover { color: #fff !important; }
+.lia-regen-section, .lia-first-msg-section { border-top-color: rgba(255,255,255,0.1) !important; }
+.lia-spinner { border-color: rgba(255,255,255,0.15) !important; border-top-color: #a78bfa !important; }
+.lia-text { color: rgba(226,232,240,0.85) !important; }
+.lia-muted { color: rgba(196,181,253,0.5) !important; }
 
 /* ── Error ────────────────────────────────────────────────────────────────── */
 .lia-error-msg {
@@ -2712,6 +2716,20 @@
   border-color: rgba(239,68,68,0.2) !important;
   color: #f87171 !important;
 }
+
+.lia-inline-upgrade-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 2px;
+  font: inherit;
+  font-weight: 700;
+  color: #c4b5fd !important;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.lia-inline-upgrade-link:hover { color: #fff !important; }
+.lia-inline-upgrade-link:disabled { opacity: 0.6; cursor: default; }
 
 /* ── Trigger buttons (dock) — Satyron purple ──────────────────────────────── */
 #lia-trigger {
@@ -2779,6 +2797,16 @@
   border-color: rgba(255,255,255,0.12) !important;
   color: #c4b5fd !important;
 }
+
+.lia-pc-loading { color: rgba(196,181,253,0.7) !important; }
+
+.lia-pc-image-prompt {
+  background: rgba(255,255,255,0.06) !important;
+  border-color: rgba(255,255,255,0.12) !important;
+  color: rgba(196,181,253,0.75) !important;
+}
+
+.lia-pc-image-note { color: rgba(196,181,253,0.45) !important; }
 
 .lia-pc-company-badge {
   background: rgba(234,88,12,0.15) !important;
@@ -3059,6 +3087,11 @@
 .lia-save-btn-active svg {
   fill: #fbbf24 !important;
   stroke: #fbbf24 !important;
+}
+.lia-save-btn-error {
+  background: rgba(220,38,38,0.18) !important;
+  border-color: rgba(220,38,38,0.4) !important;
+  color: #f87171 !important;
 }
 
 /* ── Search Results Banner ───────────────────────────────────────────────── */

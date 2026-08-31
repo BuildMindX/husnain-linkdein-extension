@@ -246,8 +246,18 @@ function daysInStage(ts) {
 function renderSavedContacts(contacts) {
   const section = document.getElementById('saved-section');
   const list = document.getElementById('saved-list');
+  const exportBtn = document.getElementById('export-csv-btn');
   if (!section || !list) return;
-  if (!contacts || contacts.length === 0) { section.style.display = 'none'; return; }
+  if (!contacts || contacts.length === 0) {
+    // A brand-new user opening the popup for the first time used to see no hint this feature
+    // even exists — show a short empty-state instead of hiding the section outright, same as
+    // the Options Pipeline board already does.
+    if (exportBtn) exportBtn.style.display = 'none';
+    list.innerHTML = `<p class="saved-empty">No saved contacts yet — click Save on a LinkedIn profile to start tracking your pipeline.</p>`;
+    section.style.display = '';
+    return;
+  }
+  if (exportBtn) exportBtn.style.display = '';
 
   const SCORE_COLOR = {
     High: '#16a34a', Medium: '#d97706', Low: '#6b7280',

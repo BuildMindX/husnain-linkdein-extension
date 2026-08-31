@@ -363,7 +363,7 @@ body {
 .badge-sales   { background: rgba(79,70,229,0.15); color: #a5b4fc; border: 1px solid rgba(79,70,229,0.25); }
 .badge-b2c     { background: var(--purple-dim);     color: var(--purple-pale); border: 1px solid var(--purple-border); }
 .badge-job     { background: var(--success-dim);    color: #4ade80; border: 1px solid rgba(34,197,94,0.2); }
-.badge-creator { background: var(--purple-dim);     color: var(--purple-pale); border: 1px solid var(--purple-border); }
+.badge-creator { background: rgba(6,182,212,0.15);  color: #67e8f9; border: 1px solid rgba(6,182,212,0.28); }
 .badge-company { background: var(--warning-dim);    color: #fbbf24; border: 1px solid rgba(245,158,11,0.2); }
 
 .required-badge {
@@ -1555,6 +1555,36 @@ body {
   transition: box-shadow 0.2s, transform 0.15s;
 }
 .ob-btn-primary:hover { box-shadow: 0 8px 28px rgba(124,58,237,0.55); transform: translateY(-1px); }
+.ob-btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* ── Mode-choice step ──────────────────────────────────────────────────── */
+.ob-mode-selector { width: 100%; max-width: 620px; }
+
+/* ── Connect-OpenAI step ───────────────────────────────────────────────── */
+.ob-apikey-input {
+  width: 100%;
+  max-width: 380px;
+  padding: 12px 16px;
+  background: rgba(255,255,255,0.06);
+  border: 1.5px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  color: #fff;
+  font-size: 13.5px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s;
+  margin-bottom: 12px;
+  text-align: center;
+}
+.ob-apikey-input::placeholder { color: rgba(196,181,253,0.4); }
+.ob-apikey-input:focus { border-color: rgba(124,58,237,0.6); }
+
+#ob-step-apikey .status-msg { max-width: 380px; margin-bottom: 12px; }
 
 /* ── Pricing step ──────────────────────────────────────────────────────── */
 .ob-pricing-header { margin-bottom: 28px; }
@@ -1776,6 +1806,7 @@ body {
 
 .pipeline-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   margin-bottom: 20px;
@@ -2093,6 +2124,11 @@ body {
   transition: border-color 0.15s, color 0.15s;
 }
 .pipeline-card-snooze:hover { border-color: var(--purple-border); color: var(--text-primary); }
+.pipeline-card-snooze-active {
+  background: var(--purple-dim);
+  border-color: var(--purple-border);
+  color: var(--purple-pale);
+}
 
 .pipeline-card-link {
   display: block;
