@@ -791,6 +791,9 @@
         <button id="lia-followup-instr-toggle" class="lia-followup-instr-toggle" type="button" title="Add instructions (e.g. be more direct)">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
         </button>
+        <button id="lia-followup-context-toggle" class="lia-followup-instr-toggle" type="button" title="Add context (e.g. paste a recent post or notes)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        </button>
         <button id="lia-followup-btn" class="lia-followup-btn">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><polyline points="17 8 21 12 17 16"/><path d="M3 12h18"/></svg>
           AI Follow-up
@@ -798,6 +801,9 @@
       </div>
       <div id="lia-followup-instr-row" class="lia-followup-instr-row" style="display:none">
         <input type="text" id="lia-followup-instr-input" class="lia-followup-instr-input" placeholder="Optional: be more direct, ask for a call this week..." />
+      </div>
+      <div id="lia-followup-context-row" class="lia-followup-instr-row" style="display:none">
+        <textarea id="lia-followup-context-input" class="lia-followup-instr-input" rows="2" placeholder="Optional: paste a recent post, article, or notes to draw from..."></textarea>
       </div>`;
 
     formWrapper.insertAdjacentElement('beforebegin', bar);
@@ -809,6 +815,13 @@
       const opening = row.style.display === 'none';
       row.style.display = opening ? 'block' : 'none';
       if (opening) document.getElementById('lia-followup-instr-input')?.focus();
+    });
+    document.getElementById('lia-followup-context-toggle')?.addEventListener('click', () => {
+      const row = document.getElementById('lia-followup-context-row');
+      if (!row) return;
+      const opening = row.style.display === 'none';
+      row.style.display = opening ? 'block' : 'none';
+      if (opening) document.getElementById('lia-followup-context-input')?.focus();
     });
     updateFollowupTag();
   }
@@ -917,6 +930,7 @@
         ? msgs[0].text
         : msgs.map(m => `${m.sender}: ${m.text}`).join('\n\n');
       const userInstructions = document.getElementById('lia-followup-instr-input')?.value.trim() || '';
+      const contextMaterial = document.getElementById('lia-followup-context-input')?.value.trim() || '';
 
       // Resolve the conversation back to a profile URL so this gets the same tracked stage /
       // elapsed time / cached analysis the profile-panel Follow-up tool already uses, instead of
@@ -968,6 +982,7 @@
           senderName: myName,
           intent,
           userInstructions,
+          contextMaterial,
           stage, daysSinceLastTouch, analysis,
         }, r => {
           if (chrome.runtime.lastError) resolve({ error: chrome.runtime.lastError.message });
@@ -2108,6 +2123,10 @@
         <textarea class="lia-notes-input" id="lia-followup-instructions" rows="2" placeholder="e.g. Be more direct, focus on AI automation, ask for a call this week..."></textarea>
       </div>
       <div class="lia-section">
+        <div class="lia-refine-label" style="margin-bottom:6px">Context <span class="lia-optional">(optional — real material to draw from)</span></div>
+        <textarea class="lia-notes-input" id="lia-followup-context" rows="2" placeholder="e.g. paste one of their recent posts, an article, call notes..."></textarea>
+      </div>
+      <div class="lia-section">
         <button class="lia-btn-primary" id="lia-followup-gen-btn" style="width:100%">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
             <polyline points="17 1 21 5 17 9"></polyline>
@@ -2156,6 +2175,7 @@
       const resultDiv = body.querySelector('#lia-followup-result');
       const convoText = body.querySelector('#lia-followup-convo')?.value.trim() || '';
       const userInstructions = body.querySelector('#lia-followup-instructions')?.value.trim() || '';
+      const contextMaterial = body.querySelector('#lia-followup-context')?.value.trim() || '';
       const selectedStage = body.querySelector('#lia-followup-stage-select')?.value || trackedStage;
 
       btn.disabled = true;
@@ -2195,7 +2215,7 @@
         // "recipient profile" with no cross-check that it really was the contact being messaged.
         const result = await sendMessage('GENERATE_CHAT_FOLLOWUP', null, {
           conversationText: convoText, isRaw: currentIsRaw, contactName, senderName: myName,
-          intent, userInstructions,
+          intent, userInstructions, contextMaterial,
           stage: selectedStage, daysSinceLastTouch, analysis: cachedAnalysis,
         });
         if (result.error) throw new Error(result.error);
@@ -3392,6 +3412,10 @@
           <div class="lia-refine-label" style="margin-bottom:6px">Instructions <span class="lia-optional">(optional)</span></div>
           <textarea class="lia-notes-input" id="lia-msgtab-instructions" rows="3" placeholder="e.g. Keep it under 2 sentences, mention their recent AI post, ask about their roadmap..."></textarea>
         </div>
+        <div class="lia-section">
+          <div class="lia-refine-label" style="margin-bottom:6px">Context <span class="lia-optional">(optional — real material to draw from)</span></div>
+          <textarea class="lia-notes-input" id="lia-msgtab-context" rows="2" placeholder="e.g. paste one of their recent posts, an article, call notes..."></textarea>
+        </div>
         <button class="lia-btn-primary" id="lia-msgtab-generate" style="width:100%;margin-bottom:4px">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           ${intent === 'job_search' ? 'Generate Outreach Message' : 'Generate First Message'}
@@ -3474,11 +3498,20 @@
         const resultDiv = body.querySelector('#lia-msgtab-result');
         if (!genBtn || !resultDiv) return;
         const userInstructions = body.querySelector('#lia-msgtab-instructions')?.value.trim() || '';
+        const contextMaterial = body.querySelector('#lia-msgtab-context')?.value.trim() || '';
         genBtn.disabled = true;
         genBtn.innerHTML = `<svg width="13" height="13" class="lia-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Writing...`;
         resultDiv.style.display = 'none';
         try {
-          const result = await sendMessage('GENERATE_FIRST_MESSAGE', extractProfile(), { intent, analysis, tone: msgSelectedTone, userInstructions });
+          // Pipeline stage + elapsed time (ground truth from tracked stageUpdatedAt), so a
+          // first message to a connection sent days ago doesn't read as same-day.
+          const contacts = await getSavedContacts();
+          const entry = contacts.find(c => c.url === currentProfileUrl);
+          const stage = STAGE_META[entry?.stage] ? entry.stage : 'new';
+          const daysSinceLastTouch = (entry && entry.stage && entry.stage !== 'new')
+            ? Math.floor((Date.now() - (entry.stageUpdatedAt || entry.savedAt || Date.now())) / 86400000)
+            : null;
+          const result = await sendMessage('GENERATE_FIRST_MESSAGE', extractProfile(), { intent, analysis, tone: msgSelectedTone, userInstructions, contextMaterial, stage, daysSinceLastTouch });
           if (result.error) throw new Error(result.error);
           renderMsgTabResult(result.text || '');
           genBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Regenerate`;
