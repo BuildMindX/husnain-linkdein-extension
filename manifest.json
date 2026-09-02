@@ -41,6 +41,12 @@
     "page": "options/index.html",
     "open_in_tab": true
   },
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/fonts/*.woff2"],
+      "matches": ["https://www.linkedin.com/*"]
+    }
+  ],
   "action": {
     "default_title": "LinkPilot AI",
     "default_popup": "popup/index.html",

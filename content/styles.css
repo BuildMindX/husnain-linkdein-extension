@@ -1,3 +1,21 @@
+/* ── Brand type ────────────────────────────────────────────────────────────────
+   Self-hosted (not loaded from Google's CDN) so the panel never makes a third-party
+   request at runtime — consistent with the "nothing but OpenAI/HubSpot ever leaves
+   your browser" promise made in Settings → Account. Used for headings and labels
+   only; body copy stays on the system stack for density and legibility. */
+@font-face {
+  font-family: 'Sora';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  /* A relative url() here resolves against the LinkedIn page's own origin, not the
+     extension's — Chrome injects content_scripts CSS into the page's rendering
+     context. The extension ID is pinned by manifest.json's "key", so an absolute
+     chrome-extension:// URL is the correct, stable way to reference a bundled asset
+     from here (see supabase/DEPLOY.md for the same pinned-ID pattern elsewhere). */
+  src: url(chrome-extension://cidjcnappdecphoecngmnpkgcnhnmipd/assets/fonts/Sora-Bold.woff2) format('woff2');
+}
+
 /* ── Reset ─────────────────────────────────────────────────────────────────── */
 #lia-trigger,
 #lia-panel,
@@ -5,6 +23,16 @@
   box-sizing: border-box;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif;
   line-height: 1.5;
+}
+
+.lia-header-title span,
+.lia-purpose-title,
+.reach-label,
+.reach-verdict,
+.ind-label,
+.lia-label {
+  /* #lia-panel * above is an id-specificity reset — beats a plain class without !important */
+  font-family: 'Sora', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif !important;
 }
 
 /* ── Trigger Button ────────────────────────────────────────────────────────── */
@@ -762,11 +790,12 @@
 .dm-likely { background: #fef3c7; color: #b45309; }
 .dm-no     { background: #fee2e2; color: #dc2626; }
 
-/* Company size */
-.cs-enterprise { background: #ede9fe; color: #6d28d9; }
-.cs-mid        { background: #dbeafe; color: #1d4ed8; }
-.cs-smb        { background: #e0f2fe; color: #0369a1; }
-.cs-startup    { background: #fce7f3; color: #be185d; }
+/* Company size — a classification, not a good/bad signal, so it doesn't get four
+   competing hues: one neutral indigo tint for every tier. */
+.cs-enterprise,
+.cs-mid,
+.cs-smb,
+.cs-startup    { background: #ede9fe; color: #6d28d9; }
 .cs-unknown    { background: #f1f5f9; color: #64748b; }
 
 /* Engagement dots */
@@ -779,14 +808,17 @@
   background: #e2e8f0;
 }
 
-.ind-dot.filled { background: #0A66C2; }
+.ind-dot.filled { background: #7c3aed; }
 
+/* Engagement rate — a real activity gradient (more active reads as a better signal),
+   so unlike company size this keeps semantic color, but as one consistent scale
+   instead of green/blue/amber/grey. */
 .er-daily      { background: #dcfce7; color: #15803d; }
-.er-weekly     { background: #dbeafe; color: #1d4ed8; }
+.er-weekly     { background: #ecfdf5; color: #0d9488; }
 .er-occasional { background: #fef3c7; color: #b45309; }
 .er-rarely     { background: #f1f5f9; color: #64748b; }
 
-.ind-industry { background: #f0f9ff; color: #0369a1; }
+.ind-industry { background: #ede9fe; color: #6d28d9; }
 
 /* Score badges */
 .score-high   { background: #dcfce7; color: #15803d; }
@@ -2064,9 +2096,15 @@
 
 /* Tone grid */
 .lia-tone-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 6px;
+}
+
+/* Odd option count (5 tones) — rather than let the last one wrap onto a half-empty
+   row by accident, give it the full row on purpose. */
+.lia-tone-btn:last-child {
+  grid-column: 1 / -1;
 }
 
 .lia-tone-btn {
@@ -2267,8 +2305,18 @@
   color: #c4b5fd !important;
 }
 
-.lia-reanalyze-btn:hover,
+/* HubSpot keeps its real brand orange rather than following the shared lavender icon
+   color — the same logo mark shows true-color in Settings, so this button shouldn't
+   recolor it to something unrecognizable. */
+.lia-hs-btn {
+  color: #FF7A59 !important;
+}
 .lia-hs-btn:hover {
+  background: rgba(255,122,89,0.16) !important;
+  border-color: rgba(255,122,89,0.4) !important;
+}
+
+.lia-reanalyze-btn:hover {
   background: rgba(124,58,237,0.28) !important;
   color: #fff !important;
 }
@@ -2444,26 +2492,28 @@
   background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%) !important;
 }
 
-/* Connection Request — blue */
+/* Connection Request — same indigo family as Analyze, not a second brand color.
+   Differentiated by icon and copy, not hue. */
 #lia-purpose-connection {
-  border-color: rgba(10,102,194,0.3) !important;
+  border-color: rgba(124,58,237,0.3) !important;
 }
 #lia-purpose-connection .lia-purpose-icon {
-  background: linear-gradient(135deg, #0A66C2 0%, #0284c7 100%) !important;
+  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%) !important;
   color: #fff !important;
-  box-shadow: 0 4px 12px rgba(10,102,194,0.4) !important;
+  box-shadow: 0 4px 12px rgba(124,58,237,0.4) !important;
 }
 #lia-purpose-connection:hover {
-  background: rgba(10,102,194,0.1) !important;
-  border-color: rgba(10,102,194,0.55) !important;
-  box-shadow: 0 4px 20px rgba(10,102,194,0.2) !important;
+  background: rgba(124,58,237,0.1) !important;
+  border-color: rgba(124,58,237,0.55) !important;
+  box-shadow: 0 4px 20px rgba(124,58,237,0.2) !important;
   transform: translateY(-2px) !important;
 }
 #lia-purpose-connection:hover .lia-purpose-icon {
-  background: linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%) !important;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%) !important;
 }
 
-/* Follow-up — teal */
+/* Follow-up — same indigo family, third tile stays full-width by design (an
+   intentional third row, not a leftover). */
 #lia-purpose-followup {
   grid-column: 1 / -1 !important;
   flex-direction: row !important;
@@ -2471,25 +2521,25 @@
   text-align: left !important;
   gap: 14px !important;
   padding: 15px 16px !important;
-  border-color: rgba(5,150,105,0.3) !important;
+  border-color: rgba(124,58,237,0.3) !important;
 }
 #lia-purpose-followup .lia-purpose-icon {
-  background: linear-gradient(135deg, #059669 0%, #0d9488 100%) !important;
+  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%) !important;
   color: #fff !important;
-  box-shadow: 0 4px 12px rgba(5,150,105,0.4) !important;
+  box-shadow: 0 4px 12px rgba(124,58,237,0.4) !important;
   flex-shrink: 0 !important;
 }
 #lia-purpose-followup .lia-purpose-content {
   text-align: left !important;
 }
 #lia-purpose-followup:hover {
-  background: rgba(5,150,105,0.1) !important;
-  border-color: rgba(5,150,105,0.55) !important;
-  box-shadow: 0 4px 20px rgba(5,150,105,0.2) !important;
+  background: rgba(124,58,237,0.1) !important;
+  border-color: rgba(124,58,237,0.55) !important;
+  box-shadow: 0 4px 20px rgba(124,58,237,0.2) !important;
   transform: translateY(-2px) !important;
 }
 #lia-purpose-followup:hover .lia-purpose-icon {
-  background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%) !important;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%) !important;
 }
 
 /* ICP warning — handled by .lia-icp-warning-* rules in gate section */
@@ -2601,16 +2651,18 @@
 .dm-yes, .er-daily      { background: rgba(34,197,94,0.15) !important; color: #4ade80 !important; }
 .dm-likely, .er-occasional { background: rgba(245,158,11,0.15) !important; color: #fbbf24 !important; }
 .dm-no                  { background: rgba(239,68,68,0.15) !important; color: #f87171 !important; }
-.er-weekly               { background: rgba(59,130,246,0.15) !important; color: #7ea2ff !important; }
+.er-weekly               { background: rgba(20,184,166,0.15) !important; color: #5eead4 !important; }
 .er-rarely               { background: rgba(255,255,255,0.08) !important; color: rgba(196,181,253,0.6) !important; }
 
-.cs-enterprise { background: rgba(124,58,237,0.18) !important; color: #c4b5fd !important; }
-.cs-mid        { background: rgba(59,130,246,0.15) !important; color: #7ea2ff !important; }
-.cs-smb        { background: rgba(6,182,212,0.15) !important; color: #67e8f9 !important; }
-.cs-startup    { background: rgba(236,72,153,0.15) !important; color: #f9a8d4 !important; }
+/* Company size is a classification, not a signal — one indigo tint for every tier
+   instead of a different hue each (previously purple/blue/cyan/pink). */
+.cs-enterprise,
+.cs-mid,
+.cs-smb,
+.cs-startup    { background: rgba(124,58,237,0.18) !important; color: #c4b5fd !important; }
 .cs-unknown    { background: rgba(255,255,255,0.08) !important; color: rgba(196,181,253,0.6) !important; }
 
-.ind-industry { background: rgba(6,182,212,0.15) !important; color: #67e8f9 !important; }
+.ind-industry { background: rgba(124,58,237,0.18) !important; color: #c4b5fd !important; }
 
 .fit-strong  { background: rgba(34,197,94,0.15) !important; color: #4ade80 !important; }
 .fit-partial { background: rgba(245,158,11,0.15) !important; color: #fbbf24 !important; }
@@ -2732,19 +2784,37 @@
 .lia-inline-upgrade-link:disabled { opacity: 0.6; cursor: default; }
 
 /* ── Trigger buttons (dock) — Satyron purple ──────────────────────────────── */
-#lia-trigger {
+/* All four dock buttons (Analyze, Time, Save, Post) share one accent family —
+   previously each carried its own unrelated hue (green/orange/cyan) left over from
+   before this theme existed. Differentiated by icon and label only; Save's "already
+   saved" state uses a brighter fill rather than an unrelated color. */
+#lia-trigger,
+#lia-time-trigger,
+#lia-save-trigger,
+#lia-post-trigger {
   background: linear-gradient(180deg, #7c3aed 0%, #4f46e5 100%) !important;
   box-shadow: -4px 0 24px rgba(124,58,237,0.45), -1px 0 6px rgba(0,0,0,0.15) !important;
   border-radius: 12px 0 0 12px !important;
 }
 
-#lia-trigger:hover {
+#lia-trigger:hover,
+#lia-time-trigger:hover,
+#lia-save-trigger:hover,
+#lia-post-trigger:hover {
   background: linear-gradient(180deg, #6d28d9 0%, #4338ca 100%) !important;
   box-shadow: -6px 0 28px rgba(124,58,237,0.6) !important;
 }
 
 #lia-trigger.lia-active {
   background: linear-gradient(180deg, #5b21b6 0%, #3730a3 100%) !important;
+}
+
+#lia-save-trigger.lia-save-trigger-active {
+  background: linear-gradient(180deg, #a78bfa 0%, #7c3aed 100%) !important;
+  box-shadow: -4px 0 24px rgba(167,139,250,0.55), -1px 0 6px rgba(0,0,0,0.15) !important;
+}
+#lia-save-trigger.lia-save-trigger-active:hover {
+  background: linear-gradient(180deg, #9370f8 0%, #6d28d9 100%) !important;
 }
 
 /* ── Post Creator panel background ───────────────────────────────────────── */

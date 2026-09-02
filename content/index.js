@@ -3092,7 +3092,6 @@
               <div class="ind-score-bar-fill" style="width:${hsBarWidth};background:${hsBarColor}"></div>
             </div>
             <div class="ind-score-badge ${hsClass}">${hs}</div>
-            <div class="ind-reasoning">${escHtml(analysis.hiringSignal?.reasoning || '')}</div>
           </div>`;
 
         secondaryRow = `
@@ -3141,7 +3140,6 @@
               <div class="ind-score-bar-fill" style="width:${scoreBarWidth};background:${scoreBarColor}"></div>
             </div>
             <div class="ind-score-badge ${scoreClass}">${score}</div>
-            <div class="ind-reasoning">${escHtml(analysis.clientPotential?.reasoning || '')}</div>
           </div>`;
 
         fitCard = `
@@ -3200,7 +3198,6 @@
               <div class="ind-score-bar-fill" style="width:${scoreBarWidth};background:${scoreBarColor}"></div>
             </div>
             <div class="ind-score-badge ${scoreClass}">${score}</div>
-            <div class="ind-reasoning">${escHtml(analysis.potentialClient?.reasoning || '')}</div>
           </div>`;
 
         secondaryRow = `
@@ -3398,6 +3395,7 @@
 
       body.innerHTML = `
         ${insightsSection}
+        <div id="lia-msgtab-result" style="display:none;margin-bottom:16px"></div>
         <div class="lia-section" style="margin-top:0">
           <div class="lia-refine-label" style="margin-bottom:7px">Tone</div>
           <div class="lia-tone-grid" id="lia-msgtab-tone">
@@ -3419,8 +3417,7 @@
         <button class="lia-btn-primary" id="lia-msgtab-generate" style="width:100%;margin-bottom:4px">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           ${intent === 'job_search' ? 'Generate Outreach Message' : 'Generate First Message'}
-        </button>
-        <div id="lia-msgtab-result" style="display:none;margin-top:10px"></div>`;
+        </button>`;
 
       body.querySelectorAll('.lia-tone-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -3457,6 +3454,7 @@
             </div>
           </div>`;
         resultDiv.style.display = '';
+        resultDiv.scrollIntoView({ block: 'start', behavior: 'smooth' });
 
         resultDiv.querySelector('#lia-msgtab-copy')?.addEventListener('click', async () => {
           const btn = resultDiv.querySelector('#lia-msgtab-copy');

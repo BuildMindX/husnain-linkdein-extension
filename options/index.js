@@ -772,6 +772,13 @@ function renderAccountTab(user, plan) {
   if (!section) return;
   const isPro = plan === 'pro';
 
+  const subEl = document.getElementById('account-panel-sub');
+  if (subEl) {
+    subEl.textContent = user
+      ? `Signed in as ${user.name || user.email || 'your Google account'} — manage your account and subscription below.`
+      : 'Sign in with Google to sync your settings across devices and enable personalized features.';
+  }
+
   if (user) {
     const initial = (user.name || user.email || '?')[0].toUpperCase();
     section.innerHTML = `

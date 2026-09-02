@@ -42,6 +42,15 @@
   --shadow-glow:   0 0 0 1px var(--purple-border), 0 4px 20px rgba(124,58,237,0.2);
 }
 
+/* Self-hosted, same file as the LinkedIn panel — no runtime request to Google's CDN. */
+@font-face {
+  font-family: 'Sora';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(../assets/fonts/Sora-Bold.woff2) format('woff2');
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
@@ -49,6 +58,13 @@ body {
   background: var(--bg-base);
   color: var(--text-primary);
   min-height: 100vh;
+}
+
+.panel-header h1,
+.card h3,
+.brand-name,
+.ob-welcome-title {
+  font-family: 'Sora', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* ── Layout ───────────────────────────────────────────────────────────────── */
