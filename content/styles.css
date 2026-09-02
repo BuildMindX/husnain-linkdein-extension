@@ -2783,38 +2783,61 @@
 .lia-inline-upgrade-link:hover { color: #fff !important; }
 .lia-inline-upgrade-link:disabled { opacity: 0.6; cursor: default; }
 
-/* ── Trigger buttons (dock) — Satyron purple ──────────────────────────────── */
-/* All four dock buttons (Analyze, Time, Save, Post) share one accent family —
-   previously each carried its own unrelated hue (green/orange/cyan) left over from
-   before this theme existed. Differentiated by icon and label only; Save's "already
-   saved" state uses a brighter fill rather than an unrelated color. */
-#lia-trigger,
-#lia-time-trigger,
-#lia-save-trigger,
-#lia-post-trigger {
+/* ── Trigger buttons (dock) — one coordinated jewel-tone family ─────────────── */
+/* Each of the four dock buttons keeps its own color so they stay instantly
+   distinguishable at a glance — but pulled from one deliberate palette (violet
+   through blue, teal, and pink, all the same saturation/depth) instead of the old
+   grab-bag (green/orange/cyan/purple, one of them a jarring warm note against three
+   cool ones). Same gradient direction, same shadow treatment on all four — only the
+   hue changes. */
+#lia-trigger {
   background: linear-gradient(180deg, #7c3aed 0%, #4f46e5 100%) !important;
   box-shadow: -4px 0 24px rgba(124,58,237,0.45), -1px 0 6px rgba(0,0,0,0.15) !important;
   border-radius: 12px 0 0 12px !important;
 }
-
-#lia-trigger:hover,
-#lia-time-trigger:hover,
-#lia-save-trigger:hover,
-#lia-post-trigger:hover {
+#lia-trigger:hover {
   background: linear-gradient(180deg, #6d28d9 0%, #4338ca 100%) !important;
   box-shadow: -6px 0 28px rgba(124,58,237,0.6) !important;
 }
-
 #lia-trigger.lia-active {
   background: linear-gradient(180deg, #5b21b6 0%, #3730a3 100%) !important;
 }
 
+#lia-time-trigger {
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%) !important;
+  box-shadow: -4px 0 24px rgba(37,99,235,0.45), -1px 0 6px rgba(0,0,0,0.15) !important;
+  border-radius: 12px 0 0 12px !important;
+}
+#lia-time-trigger:hover {
+  background: linear-gradient(180deg, #1d4ed8 0%, #1e40af 100%) !important;
+  box-shadow: -6px 0 28px rgba(37,99,235,0.6) !important;
+}
+
+#lia-save-trigger {
+  background: linear-gradient(180deg, #0891b2 0%, #0e7490 100%) !important;
+  box-shadow: -4px 0 24px rgba(8,145,178,0.45), -1px 0 6px rgba(0,0,0,0.15) !important;
+  border-radius: 12px 0 0 12px !important;
+}
+#lia-save-trigger:hover {
+  background: linear-gradient(180deg, #0e7490 0%, #155e75 100%) !important;
+  box-shadow: -6px 0 28px rgba(8,145,178,0.6) !important;
+}
 #lia-save-trigger.lia-save-trigger-active {
-  background: linear-gradient(180deg, #a78bfa 0%, #7c3aed 100%) !important;
-  box-shadow: -4px 0 24px rgba(167,139,250,0.55), -1px 0 6px rgba(0,0,0,0.15) !important;
+  background: linear-gradient(180deg, #22d3ee 0%, #0891b2 100%) !important;
+  box-shadow: -4px 0 24px rgba(34,211,238,0.55), -1px 0 6px rgba(0,0,0,0.15) !important;
 }
 #lia-save-trigger.lia-save-trigger-active:hover {
-  background: linear-gradient(180deg, #9370f8 0%, #6d28d9 100%) !important;
+  background: linear-gradient(180deg, #67e8f9 0%, #0e7490 100%) !important;
+}
+
+#lia-post-trigger {
+  background: linear-gradient(180deg, #db2777 0%, #a21caf 100%) !important;
+  box-shadow: -4px 0 24px rgba(219,39,119,0.45), -1px 0 6px rgba(0,0,0,0.15) !important;
+  border-radius: 12px 0 0 12px !important;
+}
+#lia-post-trigger:hover {
+  background: linear-gradient(180deg, #be185d 0%, #86198f 100%) !important;
+  box-shadow: -6px 0 28px rgba(219,39,119,0.6) !important;
 }
 
 /* ── Post Creator panel background ───────────────────────────────────────── */
