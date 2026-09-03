@@ -698,6 +698,23 @@ Return ONLY the connection request text. Nothing else. No quotes around it.`;
 
 // ─── First Message ────────────────────────────────────────────────────────────
 
+// Grounded in current outbound-messaging research (independently corroborated across multiple
+// 2026 cold-outreach playbooks): messages that pitch in the first touch — even just hinting at
+// ROI, efficiency, or what the sender offers — measurably underperform ones that stay purely
+// curious about the recipient. Reply rates for first-touch pitches fall below 5%; concise
+// (40-70 word) messages built around one real, specific detail and closed with a low-friction
+// question routinely land in the 25-40% range. This replaces the older "hint at value" guidance
+// that used to live in the b2b decision-maker branch, which was itself fighting this framework.
+const FIRST_MESSAGE_FRAMEWORK = `FIRST-MESSAGE FRAMEWORK — this is the actual structure of a message that gets replies, not a style suggestion:
+
+1. SPECIFIC HOOK (first line): open on one real, individual detail — something true of THIS person that couldn't be copy-pasted to the next 1,000 profiles unchanged. If nothing specific enough exists, say so honestly (a warm, generic opener beats a faked-specific one) — never invent one.
+2. THEIR SITUATION, NOT YOUR PITCH: the body stays entirely about them — an observation, a genuine question, or what you noticed about their situation. Do not describe what the sender does, offers, or has achieved, and do not hint at value, ROI, or efficiency gains — even softly. The moment a message explains the sender instead of the recipient, it reads as a pitch and reply rates collapse. That conversation happens after they reply, never in message 1.
+3. ONE LOW-FRICTION QUESTION: end with a single question that's easy and low-stakes to answer — never a request for a call, a meeting, a demo, pricing, or any other real commitment. It should feel genuinely optional — the recipient should be able to ignore it without feeling rude.
+
+LENGTH: the single most consistent finding in current outreach data. Keep the whole message to 40-70 words (tighter — 40-50 — for senior or executive recipients, who get the most outreach and scan the fastest). Every sentence past that measurably hurts reply rate rather than helping it. If a draft runs long, cut explanation before cutting personalization.
+
+Self-check before finalizing: does the first line prove real, specific knowledge of THIS person? Does any part of the message describe the sender's company, product, or value instead of the recipient's own situation? If either check fails, rewrite before returning.`;
+
 function buildConnectionRecencyNote(stage, daysSinceLastTouch) {
   if (stage !== 'connection_sent' || !Number.isFinite(daysSinceLastTouch) || daysSinceLastTouch <= 2) return '';
   return `CONNECTION TIMING: this connection was sent/accepted ${daysSinceLastTouch} days ago, not moments ago (tracked from the sender's saved pipeline stage) — do not write as if the connection just happened ("thanks for connecting", "just connected", etc). Open as a considered first message to someone already in their network, not a reflexive same-day follow-up.`;
@@ -744,7 +761,7 @@ export async function handleGenerateFirstMessage(profileData, analysis, intent, 
     const approachGuide = scoreVal === 'Strong'
       ? 'Strong hiring signal — be direct and purposeful. Reference their active hiring context or recent company move. Make it clear you are someone worth talking to, not just someone looking for a job.'
       : isMidValue
-      ? 'Possible hiring signal — be curious and exploratory. Express genuine interest in their work, and hint at your background in a way that is relevant to their domain.'
+      ? 'Possible hiring signal — be curious and exploratory. Express genuine interest in their work.'
       : 'Weak hiring signal — keep it short and very low-commitment. Pure relationship-building, no hint of job-seeking.';
 
     systemPrompt = `You are a senior career coach who has helped hundreds of executives land roles through LinkedIn. You write first messages that get replies because they feel researched, specific, and non-desperate.
@@ -752,13 +769,12 @@ export async function handleGenerateFirstMessage(profileData, analysis, intent, 
 TONE: ${toneGuide}
 APPROACH FOR THIS CONTACT: ${approachGuide}
 
-CORE STRATEGY:
-- Open with THEIR world, not yours — their company, role, content, or industry situation
-- Make it specific: reference at least one concrete detail from the analysis (hiring signal, company context, recent activity, or key insight)
+${FIRST_MESSAGE_FRAMEWORK}
+
+JOB-SEARCH-SPECIFIC RULES:
 - Sound like an accomplished professional reaching out to exchange ideas — never like a job seeker asking for a favour
 - Never mention "looking for opportunities", "open to work", "my next role", or anything that frames you as seeking something
-- Create a natural reason to talk — a relevant question, shared domain, or interesting observation
-- End with ONE easy-to-answer question or a soft open door
+- Never reference your own background, resume, or job search in this message — the specific hook and the question are both about THEM
 
 HARD RULES:
 - Max 300 characters total
@@ -767,7 +783,6 @@ ${PRECONVERSATION_GROUNDING}
 
 ${WHY_THEM_WHY_NOW_GATE}
 ${AUTHENTICITY_RULES}
-- Do NOT mention pricing, calls, demos, or meetings in message 1 — the only ask is a single easy-to-answer question, placed as the final sentence
 - Never reference the analysis itself — weave the insights in naturally
 - Return ONLY the message. No quotes, no explanation.`;
     const jobCtx = buildJobContext(jobProfile);
@@ -776,9 +791,9 @@ ${AUTHENTICITY_RULES}
 
   } else if (isB2c) {
     const approachGuide = isHighValue
-      ? 'High-potential client. They likely work with contractors and have budget. Be specific about a pain point or challenge you spotted. Hint at your expertise without pitching. Create curiosity.'
+      ? 'High-potential client. They likely work with contractors and have budget. Be specific about a pain point or challenge you spotted — stay curious about it, don\'t position yourself as the answer to it yet.'
       : isMidValue
-      ? 'Mid-tier prospect. Be exploratory — show genuine interest in their work and ask an insightful question that positions your expertise implicitly.'
+      ? 'Mid-tier prospect. Be exploratory — show genuine interest in their work and ask an insightful question about their situation.'
       : 'Low-tier prospect. Keep it warm and brief. Pure relationship-building message — no hints at services.';
 
     systemPrompt = `You are a senior business developer writing a first LinkedIn message on behalf of a freelancer or consultant. You have 15+ years of experience winning enterprise clients through relationship-based outreach.
@@ -786,13 +801,11 @@ ${AUTHENTICITY_RULES}
 TONE: ${toneGuide}
 APPROACH FOR THIS PROSPECT: ${approachGuide}
 
-CORE STRATEGY (this is non-negotiable):
-- Lead with THEM: open with an observation, question, or acknowledgment about their business, role, or content
-- Specificity signals research: you must reference at least one concrete detail from the analysis (pain point, freelancer signal, approach angle, key insight, or recent activity)
-- Create relevance BEFORE hinting at value: why is this message relevant to their situation specifically?
-- Establish peer credibility: position the sender as someone who works in the same domain — not a vendor or service provider
-- Curiosity hook: end with one focused question about their situation that is easy to answer
-- Never pitch. Never offer help. Never say "I can help you with X" or "my services include Y"
+${FIRST_MESSAGE_FRAMEWORK}
+
+B2C-SPECIFIC RULES:
+- Establish peer credibility through how the message sounds, not by stating it — position the sender as someone who works in the same domain, not a vendor
+- Never say "I can help you with X", "my services include Y", or anything naming what the sender offers — that is the exact pitch pattern the framework above bans
 
 HARD RULES:
 - Max 350 characters total
@@ -801,7 +814,6 @@ ${PRECONVERSATION_GROUNDING}
 
 ${WHY_THEM_WHY_NOW_GATE}
 ${AUTHENTICITY_RULES}
-- Do NOT offer services, mention pricing, or ask for a call in the first message — the only ask is one focused question, placed as the final sentence
 - Return ONLY the message. No quotes, no explanation.`;
     if (b2cProfile && Object.keys(b2cProfile).length) {
       systemPrompt += `\n\n--- SENDER PROFILE ---\n${buildB2cContext(b2cProfile)}`;
@@ -810,11 +822,11 @@ ${AUTHENTICITY_RULES}
 
   } else {
     const dmGuide = isDecisionMaker
-      ? `Decision-maker detected (${dm === 'Yes' ? 'confirmed' : 'likely'}). Be direct and business-outcome focused. They are busy — get to the point. Hint at ROI or efficiency gain without pitching.`
-      : `Not a final decision-maker. Be more exploratory and relationship-focused. Build rapport before hinting at any value exchange.`;
+      ? `Decision-maker detected (${dm === 'Yes' ? 'confirmed' : 'likely'}). They get the most outreach of anyone on LinkedIn and scan the fastest — be tighter and more direct than usual (aim for the low end of the framework's word range below), never more explanatory.`
+      : `Not a final decision-maker. Be more exploratory and relationship-focused — a slightly longer, more curious message reads fine here.`;
 
     const budgetGuide = hasBudgetSignals
-      ? 'Budget signals: company size and role suggest budget authority. Can be slightly more direct about value relevance.'
+      ? 'Budget signals: company size and role suggest budget authority. This changes nothing about whether to pitch — it never justifies mentioning value or ROI in message 1 — only that a real conversation, if it starts, has somewhere to go.'
       : 'Budget unclear. Stay in pure curiosity mode — start a conversation, not a sales process.';
 
     const approachGuide = isHighValue
@@ -830,18 +842,12 @@ DECISION-MAKER ASSESSMENT: ${dmGuide}
 BUDGET SIGNAL: ${budgetGuide}
 APPROACH FOR THIS PROSPECT: ${approachGuide}
 
-CORE OUTREACH STRATEGY (replicate exactly):
-1. Open with THEM, not you: start with an observation, relevant question, or acknowledgment about their company, role, recent news, or industry situation
-2. Specificity is trust: reference at least one concrete detail from the analysis (score reasoning, company context, key insight, recent activity, or ICP fit signal) — this proves research, builds instant credibility
-3. Bridge to relevance: one sentence that connects their situation to why hearing from you could be valuable — without pitching
-4. One question: end with a single, focused, easy-to-answer question that naturally opens a conversation
+${FIRST_MESSAGE_FRAMEWORK}
 
-FIRST-MESSAGE PHILOSOPHY:
-- Goal of message 1 is to START a conversation, not close a deal
-- Never pitch in message 1. The pitch is reserved for when they respond.
-- For high-value decision-makers: hint at ROI, efficiency, or competitive advantage — not features
-- For mid-tier: focus on their challenges or goals, not your solution
-- Always sound like a peer: smart, direct, respectful of their time
+B2B-SPECIFIC RULES:
+- Seniority changes tightness and directness, never how much you pitch — a decision-maker gets a shorter, sharper version of the exact same no-pitch structure, not a more "business-outcome-focused" one
+- Reference at least one concrete detail from the analysis (company context, key insight, recent activity, or ICP fit signal) as the specific hook — this is what proves research, not a stated credential
+- Goal of message 1 is to start a conversation, not close a deal — the pitch, if there ever is one, is reserved for when they reply
 
 HARD RULES:
 - Max 350 characters total
@@ -850,7 +856,6 @@ ${PRECONVERSATION_GROUNDING}
 
 ${WHY_THEM_WHY_NOW_GATE}
 ${AUTHENTICITY_RULES}
-- Do NOT mention pricing, calls, demos, or meetings in message 1 — the only ask is one focused question, placed as the final sentence
 - Return ONLY the message. No quotes, no explanation.`;
     if (cfg) systemPrompt += `\n\n--- SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
   }
