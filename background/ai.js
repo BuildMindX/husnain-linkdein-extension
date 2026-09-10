@@ -615,6 +615,21 @@ One entry per input person, in the same order, using the exact same "id" value g
 
 // ─── Connection Request ───────────────────────────────────────────────────────
 
+// Grounded in 2026 LinkedIn acceptance-rate research (Leadriver's 50,000+ request benchmark,
+// Belkins' 20M+ outreach study, Closely's connection-request psychology data): acceptance barely
+// moves for a note vs. no note at all (~26% either way) UNLESS the note is genuinely trigger-based
+// — a real, recent, individual signal, not just their name or title restated. Trigger-based
+// personalization adds 12-20% acceptance on top of basic company/role context, layered on top of
+// each other; a note that sells is the fastest way to get ignored, even faster than in a first
+// message, since there isn't even a relationship yet to justify it.
+const CONNECTION_REQUEST_FRAMEWORK = `CONNECTION REQUEST FRAMEWORK — a recipient decides in 3-7 seconds, so every word has to earn its place:
+
+1. ONE REAL TRIGGER: name one specific, individual, ideally recent reason for reaching out — a post they made, a role change, something concrete about their current work. A real trigger beats a static fact (their title or company name alone) every time — static facts barely move acceptance on their own.
+2. NO SELLING: a connection note that pitches, offers, or explains what the sender does gets ignored faster here than anywhere else in the sequence — there isn't even a relationship yet to justify it. The trigger itself is the reason to connect; it doesn't need a value pitch attached.
+3. SHORTER THAN THE LIMIT: the character cap below is a ceiling, not a target to fill. The strongest notes in the data run 140-180 characters — well under most limits — not padded out to the maximum. Only use more of the budget if there's a second real, specific detail worth adding, never to sound more thorough.
+
+If there is no genuine trigger for this person, a short, honest, low-key note beats a generic one dressed up to sound personalized — vague flattery performs worse than no note at all.`;
+
 export async function handleGenerateConnectionRequest(profileData, intent, userNotes, contextMaterial) {
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
@@ -631,9 +646,10 @@ export async function handleGenerateConnectionRequest(profileData, intent, userN
 
 PRIORITY RULE: Base the message on their CURRENT role if possible. Only reference posts if they clearly relate to their current job — never reference posts from a previous employer. Never fabricate a specific detail that isn't actually in the profile data (see GROUNDING below) — if there is nothing specific enough to reference, write a warm, natural message using just their name, current title, and company. Always produce a message — never refuse, never ask for clarification, and never leave a placeholder or note saying information is missing.
 
+${CONNECTION_REQUEST_FRAMEWORK}
+
 Rules:
 - Hard limit: 200 characters total (count carefully)
-- Name one specific, real reason for reaching out, drawn from their actual profile — never generic flattery
 - No corporate speak, no buzzwords
 - Show genuine interest in their company or work — not desperation
 - No mention of "looking for opportunities" or "open to work"
@@ -653,9 +669,10 @@ Return ONLY the connection request text. Nothing else. No quotes around it.`;
 
 PRIORITY RULE: Base the message on their CURRENT role, company, or recent activity. Never reference posts from a previous employer. Never fabricate a specific detail that isn't actually in the profile data (see GROUNDING below) — if nothing specific is available, write a warm human message using their current title and company. Always produce a message — never refuse, never ask for clarification, and never leave a placeholder or note saying information is missing.
 
+${CONNECTION_REQUEST_FRAMEWORK}
+
 Rules:
 - Hard limit: 200 characters total (count carefully)
-- Name one specific, real reason for reaching out, drawn from their actual work, company, or background — never generic flattery
 - No selling, no pitching, no mention of services or offers
 - Sound like one professional reaching out to another — collegial, not promotional
 ${PRECONVERSATION_GROUNDING}
@@ -675,9 +692,10 @@ Return ONLY the connection request text. Nothing else. No quotes around it.`;
 
 PRIORITY RULE: Base the message on their CURRENT role if possible. Only reference posts if they clearly relate to their current job — never reference posts from a previous employer. Never fabricate a specific detail that isn't actually in the profile data (see GROUNDING below) — if there is nothing specific enough to reference, write a warm, natural message using just their current title and company. Always produce a message — never refuse, never ask for clarification, and never leave a placeholder or note saying information is missing.
 
+${CONNECTION_REQUEST_FRAMEWORK}
+
 Rules:
 - Hard limit: 200 characters total (count carefully)
-- Name one specific, real reason for reaching out, drawn from their actual profile — never generic flattery
 - No corporate speak, no buzzwords
 - No selling, no pitching, no mention of your own work
 - Sound like a genuine human reaching out
@@ -864,6 +882,7 @@ ${AUTHENTICITY_RULES}
     systemPrompt += `\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly):\n${userInstructions.trim()}`;
   }
   systemPrompt += `\n\n${analysisCtx}`;
+  systemPrompt += `\n\nHOW TO USE THE ANALYSIS ABOVE: "Recent Activity" and "Key Insights" are where the specific hook required by the framework should come from — they're the closest thing to a real trigger you have. Score, Decision Maker, Industry Fit, and Company Size exist purely to calibrate directness and tone (per the guidance above) — they are never something to reference, restate, or hint at in the message itself; the recipient never sees how they were scored.`;
   const recencyNote = buildConnectionRecencyNote(stage, daysSinceLastTouch);
   if (recencyNote) systemPrompt += `\n\n${recencyNote}`;
   systemPrompt += buildUserContextSection(contextMaterial);
