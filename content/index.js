@@ -928,6 +928,30 @@
       if (engEl) engEl.style.display = 'none';
       return;
     }
+
+    // Passive reply detection — ground-truthed against LinkedIn's own open thread, never via
+    // background polling (this runs only while the user already has the conversation open, the
+    // same as every other scrape in this file — no new tab-opening, no scheduled re-visiting).
+    // Before this, "Replied" only ever got set by the user manually correcting the stage
+    // themselves; a real inbound message sitting in an open thread never advanced it on its own.
+    const repliedIdx = STAGE_ORDER.indexOf('replied');
+    if (STAGE_ORDER.indexOf(entry.stage || 'new') < repliedIdx) {
+      try {
+        const { googleUser } = await chrome.storage.local.get('googleUser');
+        const myName = googleUser?.name || googleUser?.given_name || '';
+        const msgs = scrapeThreadMessages(entry.name || getContactName(), myName);
+        const last = msgs[msgs.length - 1];
+        if (last?.sender && last.sender !== 'You' && last.sender !== '__raw__') {
+          entry.stage = 'replied';
+          entry.stageUpdatedAt = Date.now();
+          entry.newReply = true;
+          await chrome.storage.local.set({ savedContacts: contacts });
+        }
+      } catch (err) {
+        console.error('[LinkPilot AI] Passive reply detection failed:', err);
+      }
+    }
+
     tagEl.textContent = stageLabel(entry.stage, entry.intent);
     tagEl.className = 'lia-followup-tag lia-followup-tag-editable';
     tagEl.title = 'Click to correct the stage';

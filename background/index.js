@@ -13,7 +13,7 @@ import {
   handleGeneratePostImage,
 } from './ai.js';
 import { fetchHubSpotPipelines, fetchHubSpotOwners, pushHubSpotDeal } from './hubspot.js';
-import { checkFollowUpReminders, updateReminderBadge } from './reminders.js';
+import { checkFollowUpReminders, checkNewReplyNotifications, updateReminderBadge } from './reminders.js';
 
 async function pushSettingsToCloud(settings) {
   try {
@@ -173,7 +173,7 @@ chrome.alarms.get('followup-reminder-check', existing => {
   if (!existing) chrome.alarms.create('followup-reminder-check', { delayInMinutes: 5, periodInMinutes: 1440 });
 });
 chrome.alarms.onAlarm.addListener(alarm => {
-  if (alarm.name === 'followup-reminder-check') { checkFollowUpReminders(); updateReminderBadge(); return; }
+  if (alarm.name === 'followup-reminder-check') { checkFollowUpReminders(); checkNewReplyNotifications(); updateReminderBadge(); return; }
   if (alarm.name !== 'daily-plan-sync') return;
   chrome.identity.getAuthToken({ interactive: false }, token => {
     if (chrome.runtime.lastError || !token) return;

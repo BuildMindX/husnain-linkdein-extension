@@ -1985,6 +1985,19 @@ body {
 }
 .notifications-item-open:hover { text-decoration: underline; }
 
+.notifications-section-label {
+  padding: 8px 14px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.notifications-item-reply {
+  border-left: 2px solid var(--success);
+}
+
 .pipeline-search {
   flex: 1;
   min-width: 0;

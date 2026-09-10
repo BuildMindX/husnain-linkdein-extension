@@ -30,12 +30,15 @@ export function getDueContacts(savedContacts, now = Date.now(), settings = DEFAU
 
 export async function updateReminderBadge() {
   const settings = await getReminderSettings();
-  if (!settings.enabled) { chrome.action.setBadgeText({ text: '' }); return; }
   const { savedContacts } = await chrome.storage.local.get('savedContacts');
-  const due = getDueContacts(savedContacts, Date.now(), settings);
-  if (due.length > 0) {
-    chrome.action.setBadgeText({ text: String(due.length) });
-    chrome.action.setBadgeBackgroundColor({ color: '#dc2626' });
+  const due = settings.enabled ? getDueContacts(savedContacts, Date.now(), settings) : [];
+  const replies = Array.isArray(savedContacts) ? savedContacts.filter(c => c.newReply) : [];
+  const total = due.length + replies.length;
+  if (total > 0) {
+    chrome.action.setBadgeText({ text: String(total) });
+    // A reply is good news, not a nag — give it its own color rather than the same red used for
+    // "you're falling behind" reminders, when replies make up any part of the count.
+    chrome.action.setBadgeBackgroundColor({ color: replies.length ? '#16a34a' : '#dc2626' });
   } else {
     chrome.action.setBadgeText({ text: '' });
   }
@@ -70,5 +73,39 @@ export async function checkFollowUpReminders() {
 
   const dueUrls = new Set(due.map(c => c.url));
   const updated = savedContacts.map(c => dueUrls.has(c.url) ? { ...c, lastReminderAt: now } : c);
+  await chrome.storage.local.set({ savedContacts: updated });
+}
+
+// newReply is set by content/index.js's passive reply detection (checked only against a thread
+// the user already has open, never via background polling) when an inbound message advances a
+// contact's stage to Replied on its own. This is the one-time OS ping for that — replyOsNotified
+// is a separate, never-reset flag so the same reply isn't re-announced on every daily alarm tick
+// while it sits un-dismissed in the notification bell.
+export async function checkNewReplyNotifications() {
+  const { savedContacts } = await chrome.storage.local.get('savedContacts');
+  if (!Array.isArray(savedContacts) || !savedContacts.length) return;
+
+  const unnotified = savedContacts.filter(c => c.newReply && !c.replyOsNotified);
+  if (!unnotified.length) return;
+
+  const title = unnotified.length === 1
+    ? `${unnotified[0].name || 'A lead'} replied`
+    : `${unnotified.length} leads replied`;
+  const body = unnotified.length === 1
+    ? 'Open LinkPilot AI to see their message and follow up.'
+    : `${unnotified.slice(0, 3).map(c => c.name || 'Unnamed').join(', ')}${unnotified.length > 3 ? ` and ${unnotified.length - 3} more` : ''} — worth a look.`;
+
+  try {
+    chrome.notifications.create('lia-new-reply', {
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('assets/extension_icon.png'),
+      title: `LinkPilot AI — ${title}`,
+      message: body,
+      priority: 1,
+    });
+  } catch (_) { /* notifications may be blocked at the OS level — non-fatal */ }
+
+  const notifiedUrls = new Set(unnotified.map(c => c.url));
+  const updated = savedContacts.map(c => notifiedUrls.has(c.url) ? { ...c, replyOsNotified: true } : c);
   await chrome.storage.local.set({ savedContacts: updated });
 }

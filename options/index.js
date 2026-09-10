@@ -1349,22 +1349,55 @@ function getDueContactsLocal(contacts, settings) {
   });
 }
 
+// Set by content/index.js's passive reply detection (updateFollowupTag) — checked only against
+// LinkedIn's own open thread, never via background polling — whenever an inbound message advances
+// a contact's stage to Replied on its own. "Seen" here just means the user opened this dropdown
+// with it visible, not that they've necessarily acted on it.
+function getNewRepliesLocal(contacts) {
+  return contacts.filter(c => c.newReply === true);
+}
+
+function dismissNewReply(url) {
+  chrome.storage.local.get('savedContacts', r => {
+    const contacts = Array.isArray(r.savedContacts) ? r.savedContacts : [];
+    const entry = contacts.find(c => c.url === url);
+    if (!entry) return;
+    delete entry.newReply;
+    chrome.storage.local.set({ savedContacts: contacts });
+  });
+}
+
 function renderNotificationsPanel() {
   const countEl = document.getElementById('notifications-count');
   const listEl = document.getElementById('notifications-list');
   if (!countEl || !listEl) return;
 
   const due = _reminderSettings.enabled ? getDueContactsLocal(_pipelineContacts, _reminderSettings) : [];
-  countEl.textContent = String(due.length);
-  countEl.classList.toggle('hidden', due.length === 0);
+  const replies = getNewRepliesLocal(_pipelineContacts);
+  countEl.textContent = String(due.length + replies.length);
+  countEl.classList.toggle('hidden', due.length + replies.length === 0);
 
-  if (!due.length) {
+  if (!due.length && !replies.length) {
     listEl.innerHTML = `<div class="notifications-empty">${_reminderSettings.enabled ? "Nothing due today — you're caught up." : 'Reminders are turned off.'}</div>`;
     return;
   }
-  listEl.innerHTML = due.map(c => {
-    const days = Math.floor((Date.now() - (c.stageUpdatedAt || c.savedAt || Date.now())) / 86400000);
-    return `
+
+  const repliesHtml = replies.length ? `
+    <div class="notifications-section-label">Replied</div>
+    ${replies.map(c => `
+      <div class="notifications-item notifications-item-reply">
+        <div class="notifications-item-info">
+          <span class="notifications-item-name">${escapeHtml(c.name || 'Unknown')}</span>
+          <span class="notifications-item-detail">${escapeHtml(c.company || c.headline || '')}</span>
+        </div>
+        <a href="${escapeHtml(c.url)}" target="_blank" class="notifications-item-open" data-dismiss-url="${escapeHtml(c.url)}">Open ↗</a>
+      </div>`).join('')}` : '';
+
+  const dueHtml = due.length ? `
+    ${replies.length ? '<div class="notifications-section-label">Due for follow-up</div>' : ''}
+    ${due.map(c => {
+      const days = Math.floor((Date.now() - (c.stageUpdatedAt || c.savedAt || Date.now())) / 86400000);
+      return `
       <div class="notifications-item">
         <div class="notifications-item-info">
           <span class="notifications-item-name">${escapeHtml(c.name || 'Unknown')}</span>
@@ -1373,7 +1406,12 @@ function renderNotificationsPanel() {
         <span class="notifications-item-days">${days}d · ${stageLabel(c.stage, c.intent)}</span>
         <a href="${escapeHtml(c.url)}" target="_blank" class="notifications-item-open">Open ↗</a>
       </div>`;
-  }).join('');
+    }).join('')}` : '';
+
+  listEl.innerHTML = repliesHtml + dueHtml;
+  listEl.querySelectorAll('[data-dismiss-url]').forEach(el => {
+    el.addEventListener('click', () => dismissNewReply(el.dataset.dismissUrl));
+  });
 }
 
 document.getElementById('notifications-btn')?.addEventListener('click', e => {
