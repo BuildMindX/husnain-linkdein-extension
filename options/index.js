@@ -655,6 +655,30 @@ chrome.storage.local.get('creatorProfile', r => {
   renderCreatorDomainTags();
 });
 
+// Post Creator's creatorProfile/companyProfile and the messaging businessProfile are separate
+// storage keys with no shared source of truth — a user fills out "what I do / who I sell to"
+// twice, and the two can silently drift. Rather than merging the schemas (real risk of breaking
+// either flow), this is a one-click, blanks-only prefill: existing values are never overwritten.
+document.getElementById('creator-prefill-btn')?.addEventListener('click', () => {
+  chrome.storage.local.get('businessProfile', r => {
+    const b = r.businessProfile || {};
+    if (!Object.keys(b).length) {
+      showStatus(document.getElementById('creator-status'), 'No Business Profile found — fill it in under Outreach settings first.', 'info');
+      return;
+    }
+    const fillIfEmpty = (id, val) => { const el = document.getElementById(id); if (el && val && !el.value.trim()) el.value = val; };
+    fillIfEmpty('creator-name', b.senderName);
+    fillIfEmpty('creator-audience', b.idealCustomer);
+    if (b.expertise && !creatorDomainTagState.domains.length) {
+      b.expertise.split(',').map(s => s.trim()).filter(Boolean).forEach(t => {
+        if (!creatorDomainTagState.domains.some(existing => existing.toLowerCase() === t.toLowerCase())) creatorDomainTagState.domains.push(t);
+      });
+      renderCreatorDomainTags();
+    }
+    showStatus(document.getElementById('creator-status'), 'Filled in from your Business Profile — review and save.', 'success');
+  });
+});
+
 document.getElementById('creator-save-btn')?.addEventListener('click', () => {
   const raw = {
     name: document.getElementById('creator-name')?.value.trim(),
@@ -674,6 +698,21 @@ chrome.storage.local.get('companyProfile', r => {
   const setVal = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
   setVal('co-name', p.name); setVal('co-industry', p.industry); setVal('co-about', p.about);
   setVal('co-products', p.products); setVal('co-icp', p.icp); setVal('co-goal', p.goal); setVal('co-style', p.postStyle);
+});
+
+document.getElementById('co-prefill-btn')?.addEventListener('click', () => {
+  chrome.storage.local.get('businessProfile', r => {
+    const b = r.businessProfile || {};
+    if (!Object.keys(b).length) {
+      showStatus(document.getElementById('co-status'), 'No Business Profile found — fill it in under Outreach settings first.', 'info');
+      return;
+    }
+    const fillIfEmpty = (id, val) => { const el = document.getElementById(id); if (el && val && !el.value.trim()) el.value = val; };
+    fillIfEmpty('co-name', b.companyName);
+    fillIfEmpty('co-products', b.offer);
+    fillIfEmpty('co-icp', b.idealCustomer);
+    showStatus(document.getElementById('co-status'), 'Filled in from your Business Profile — review and save.', 'success');
+  });
 });
 
 document.getElementById('co-save-btn')?.addEventListener('click', () => {
@@ -1245,6 +1284,58 @@ document.getElementById('reminder-settings-save-btn')?.addEventListener('click',
     showStatus(document.getElementById('reminder-settings-status'), 'Reminder settings saved.', 'success');
     renderNotificationsPanel();
   });
+});
+
+// ── Outreach safety bar — LinkedIn account-safety tracking ─────────────────────
+// Safe ranges from current outreach research (mirrored from content/index.js's own copy of the
+// same constants — no shared bundler between content/ and options/ here, same pattern already
+// used for SETTINGS_KEYS/SYNC_KEYS elsewhere in this codebase).
+const OUTREACH_SAFE_LIMITS = {
+  connection: { day: { caution: 25, risky: 40 }, week: { caution: 100, risky: 150 } },
+  message:    { day: { caution: 40, risky: 60 } },
+};
+
+function outreachLevel(count, limits) {
+  if (!limits) return 'ok';
+  if (count >= limits.risky) return 'risky';
+  if (count >= limits.caution) return 'caution';
+  return 'ok';
+}
+
+function renderOutreachSafetyBar(log) {
+  const now = Date.now();
+  const DAY = 86400000, WEEK = 7 * DAY;
+  const list = Array.isArray(log) ? log : [];
+  const countSince = (type, since) => list.filter(a => a.type === type && now - a.ts < since).length;
+
+  const connDay = countSince('connection', DAY);
+  const connWeek = countSince('connection', WEEK);
+  const msgDay = countSince('message', DAY);
+
+  const connDayLevel = outreachLevel(connDay, OUTREACH_SAFE_LIMITS.connection.day);
+  const connWeekLevel = outreachLevel(connWeek, OUTREACH_SAFE_LIMITS.connection.week);
+  const msgDayLevel = outreachLevel(msgDay, OUTREACH_SAFE_LIMITS.message.day);
+  const connLevel = connWeekLevel === 'risky' || connDayLevel === 'risky' ? 'risky'
+    : connWeekLevel === 'caution' || connDayLevel === 'caution' ? 'caution' : 'ok';
+
+  const connEl = document.getElementById('outreach-safety-conn');
+  const connTextEl = document.getElementById('outreach-safety-conn-text');
+  const msgEl = document.getElementById('outreach-safety-msg');
+  const msgTextEl = document.getElementById('outreach-safety-msg-text');
+  const weekEl = document.getElementById('outreach-safety-week');
+
+  if (connEl) connEl.className = `outreach-safety-stat${connLevel !== 'ok' ? ` ${connLevel}` : ''}`;
+  if (connTextEl) connTextEl.textContent = `${connDay} connection request${connDay === 1 ? '' : 's'}`;
+  if (msgEl) msgEl.className = `outreach-safety-stat${msgDayLevel !== 'ok' ? ` ${msgDayLevel}` : ''}`;
+  if (msgTextEl) msgTextEl.textContent = `${msgDay} message${msgDay === 1 ? '' : 's'}`;
+  if (weekEl) weekEl.textContent = `· ${connWeek} connections this week`;
+}
+
+chrome.storage.local.get('outreachActionLog', r => renderOutreachSafetyBar(r.outreachActionLog));
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !('outreachActionLog' in changes)) return;
+  renderOutreachSafetyBar(changes.outreachActionLog.newValue);
 });
 
 // ── Notifications: "who's due today" on demand, not just the once-daily OS notification ───────

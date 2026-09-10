@@ -566,6 +566,19 @@
           <button type="button" id="reminder-settings-save-btn" class="btn-secondary">Save</button>
           <span id="reminder-settings-status" class="status-msg" aria-live="polite"></span>
         </div>
+        <div class="outreach-safety-bar" id="outreach-safety-bar">
+          <span class="outreach-safety-label">Today's outreach</span>
+          <span class="outreach-safety-stat" id="outreach-safety-conn">
+            <span class="outreach-safety-dot"></span>
+            <span id="outreach-safety-conn-text">0 connection requests</span>
+          </span>
+          <span class="outreach-safety-stat" id="outreach-safety-msg">
+            <span class="outreach-safety-dot"></span>
+            <span id="outreach-safety-msg-text">0 messages</span>
+          </span>
+          <span class="outreach-safety-week" id="outreach-safety-week"></span>
+          <span class="outreach-safety-info" id="outreach-safety-info" tabindex="0" title="Safe LinkedIn ranges based on current outreach research: roughly 20-40 connection requests/day, 30-60 messages/day, and under ~150 connection requests/week. Going over these regularly raises the risk of LinkedIn restricting your account — this counts every message or connection request this extension has helped you copy or send.">ⓘ</span>
+        </div>
         <div class="pipeline-toolbar">
           <input type="text" id="pipeline-search" class="pipeline-search" placeholder="Filter by name or company..." />
           <select id="pipeline-intent-filter" class="pipeline-intent-filter">
@@ -660,6 +673,7 @@
             <div id="creator-status" class="status-msg" aria-live="polite"></div>
             <div class="actions">
               <button type="button" id="creator-save-btn" class="btn-primary">Save Creator Profile</button>
+              <button type="button" id="creator-prefill-btn" class="btn-secondary" title="Fill in blank fields from your Business Profile in Outreach settings">Prefill from Business Profile</button>
             </div>
           </div>
         </div>
@@ -718,6 +732,7 @@
             <div id="co-status" class="status-msg" aria-live="polite"></div>
             <div class="actions">
               <button type="button" id="co-save-btn" class="btn-primary">Save Company Profile</button>
+              <button type="button" id="co-prefill-btn" class="btn-secondary" title="Fill in blank fields from your Business Profile in Outreach settings">Prefill from Business Profile</button>
             </div>
           </div>
         </div>
