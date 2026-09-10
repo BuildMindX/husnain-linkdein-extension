@@ -152,9 +152,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (_signedIn && changedKeys.length) syncSettingsToCloud();
 });
 
+// Must stay identical to background/auth.js's SETTINGS_KEYS — this is what actually gets pushed
+// to the cloud (syncSettingsToCloud below), while SETTINGS_KEYS governs what a sign-in restore
+// merges back in. icpProfiles/activeIcpProfileId were added to SETTINGS_KEYS when multi-profile
+// support shipped but missed here, meaning profile data was never actually reaching the cloud at
+// all despite editing it locally — a real, silent cross-device sync gap, separate from the
+// tagState reference-aliasing bug fixed above.
 const SYNC_KEYS = [
   'analysisIntent',
   'targetIndustries', 'excludeIndustries', 'businessProfile',
+  'icpProfiles', 'activeIcpProfileId',
   'messagePresets', 'b2cProfile', 'jobProfile',
   'b2cMessagePresets', 'jobMessagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries',
   'creatorProfile', 'companyProfile', 'reminderSettings',
@@ -432,12 +439,33 @@ function renderIcpProfileSelect() {
 function loadActiveIcpProfileIntoForm() {
   const active = icpProfilesState.find(p => p.id === activeIcpProfileIdState) || icpProfilesState[0];
   if (!active) return;
-  tagState.targets = Array.isArray(active.targetIndustries) ? active.targetIndustries : [];
-  tagState.excludes = Array.isArray(active.excludeIndustries) ? active.excludeIndustries : [...DEFAULT_EXCLUDES];
+  // Copy, never alias — assigning active.targetIndustries directly made tagState.targets the
+  // SAME array object, so every tag typed/removed mutated the profile in storage in place, with
+  // no Save click involved at all. That looked like it "just worked" — until icpProfilesState got
+  // rebuilt from a fresh storage read (initIcpProfiles() re-running after sign-in), which replaces
+  // every profile with newly-deserialized objects and leaves tagState pointing at a now-detached,
+  // orphaned array. Anything typed after that point had nothing real to land in and was silently
+  // lost — the exact "filled it in, refreshed, gone" bug this fixes.
+  tagState.targets = Array.isArray(active.targetIndustries) ? [...active.targetIndustries] : [];
+  tagState.excludes = Array.isArray(active.excludeIndustries) ? [...active.excludeIndustries] : [...DEFAULT_EXCLUDES];
   renderTags('targets');
   renderTags('excludes');
   const b = active.businessProfile || {};
   Object.entries(bizFields).forEach(([k, id]) => { const el = document.getElementById(id); if (el) el.value = b[k] || ''; });
+}
+
+// Safety net for switching away from a profile with edits still sitting in the form, unsaved —
+// commits whatever's currently typed into the OLD active profile before the switch, so creating
+// or picking a different profile can never silently discard in-progress work just because the
+// user didn't click Save ICP / Save Business Profile first.
+function commitFormIntoActiveProfile() {
+  const active = icpProfilesState.find(p => p.id === activeIcpProfileIdState);
+  if (!active) return;
+  active.targetIndustries = [...tagState.targets];
+  active.excludeIndustries = [...tagState.excludes];
+  const businessProfile = {};
+  Object.entries(bizFields).forEach(([key, id]) => { const v = document.getElementById(id)?.value.trim(); if (v) businessProfile[key] = v; });
+  active.businessProfile = businessProfile;
 }
 
 function initIcpProfiles() {
@@ -465,6 +493,7 @@ function initIcpProfiles() {
 initIcpProfiles();
 
 document.getElementById('icp-profile-select')?.addEventListener('change', (e) => {
+  commitFormIntoActiveProfile();
   activeIcpProfileIdState = e.target.value;
   loadActiveIcpProfileIntoForm();
   persistIcpProfiles();
@@ -473,6 +502,7 @@ document.getElementById('icp-profile-select')?.addEventListener('change', (e) =>
 document.getElementById('icp-profile-new-btn')?.addEventListener('click', () => {
   const name = (window.prompt('Name this profile — e.g. "Healthcare clients"', '') || '').trim();
   if (!name) return;
+  commitFormIntoActiveProfile();
   const newProfile = { id: genIcpProfileId(), name, targetIndustries: [], excludeIndustries: [...DEFAULT_EXCLUDES], businessProfile: {} };
   icpProfilesState.push(newProfile);
   activeIcpProfileIdState = newProfile.id;
