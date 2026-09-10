@@ -63,11 +63,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === 'GENERATE_CONNECTION_REQUEST') {
-    withUsageGate('message', () => handleGenerateConnectionRequest(msg.profileData, msg.intent, msg.userNotes, msg.contextMaterial)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withUsageGate('message', () => handleGenerateConnectionRequest(msg.profileData, msg.intent, msg.userNotes, msg.contextMaterial, msg.previousAttempt)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'GENERATE_FIRST_MESSAGE') {
-    withUsageGate('message', () => handleGenerateFirstMessage(msg.profileData, msg.analysis, msg.intent, msg.tone, msg.userInstructions, msg.stage, msg.daysSinceLastTouch, msg.contextMaterial)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withUsageGate('message', () => handleGenerateFirstMessage(msg.profileData, msg.analysis, msg.intent, msg.tone, msg.userInstructions, msg.stage, msg.daysSinceLastTouch, msg.contextMaterial, msg.previousAttempt)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'GENERATE_CHAT_FOLLOWUP') {

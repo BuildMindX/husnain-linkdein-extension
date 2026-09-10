@@ -848,6 +848,24 @@
 
 .lia-excluded-banner svg { flex-shrink: 0; }
 
+/* Distinct amber tone from .lia-excluded-banner's orange — that one is a fit problem, this one is
+   a timing problem, and the two can both be true at once so they need to read as different things. */
+.lia-timing-caution-banner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  padding: 10px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-bottom: 12px;
+}
+.lia-timing-caution-banner svg { flex-shrink: 0; }
+
 /* Company details grid */
 .lia-company-grid {
   display: grid;
@@ -2672,6 +2690,12 @@
   background: rgba(234,88,12,0.12) !important;
   color: #fb923c !important;
   border-color: rgba(234,88,12,0.3) !important;
+}
+
+.lia-timing-caution-banner {
+  background: rgba(245,158,11,0.12) !important;
+  color: #fbbf24 !important;
+  border-color: rgba(245,158,11,0.3) !important;
 }
 
 .lia-company-cell {

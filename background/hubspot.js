@@ -61,7 +61,10 @@ export async function fetchHubSpotOwners() {
 // contact was newly created (not just found) so the caller can warn about an orphaned contact if
 // deal creation fails right after — without this, a failed push could leave a bare, unlinked
 // contact behind in the user's HubSpot with no indication anything was created at all.
-async function findOrCreateContact(name, linkedinUrl) {
+// contactInfo (email/phone/website, scraped from the LinkedIn profile's Contact Info section)
+// is only ever set on a newly-created contact — never patched onto one found by LinkedIn URL,
+// since that could silently overwrite a value someone already corrected inside HubSpot itself.
+async function findOrCreateContact(name, linkedinUrl, contactInfo = {}) {
   const nameParts = (name || '').trim().split(/\s+/);
   const firstName = nameParts[0] || 'LinkedIn';
   const lastName = nameParts.slice(1).join(' ') || 'Lead';
@@ -86,15 +89,18 @@ async function findOrCreateContact(name, linkedinUrl) {
   }
 
   // Create new contact
+  const properties = {
+    firstname: firstName,
+    lastname: lastName,
+    hs_linkedinid: normalizedUrl || '',
+  };
+  if (contactInfo.email) properties.email = contactInfo.email;
+  if (contactInfo.phone) properties.phone = contactInfo.phone;
+  if (contactInfo.website) properties.website = contactInfo.website;
+
   const contact = await hubspotFetch('/crm/v3/objects/contacts', {
     method: 'POST',
-    body: JSON.stringify({
-      properties: {
-        firstname: firstName,
-        lastname: lastName,
-        hs_linkedinid: normalizedUrl || '',
-      },
-    }),
+    body: JSON.stringify({ properties }),
   });
   return { id: contact.id, isNew: true };
 }
@@ -125,11 +131,11 @@ function formatAnalysisForNote(analysis, intent) {
   return `AI Analysis Summary:\n${lines.map(l => `- ${l}`).join('\n')}`;
 }
 
-export async function pushHubSpotDeal({ name, linkedinUrl, contactText, remarks, pipelineId, stageId, ownerId, analysis, intent }) {
+export async function pushHubSpotDeal({ name, linkedinUrl, contactText, remarks, pipelineId, stageId, ownerId, analysis, intent, email, phone, website }) {
   const dealName = name || 'LinkedIn Lead';
 
   // Step 1: Find or create contact
-  const { id: contactId, isNew: contactIsNew } = await findOrCreateContact(name, linkedinUrl);
+  const { id: contactId, isNew: contactIsNew } = await findOrCreateContact(name, linkedinUrl, { email, phone, website });
 
   // Step 2: Create deal
   let deal;

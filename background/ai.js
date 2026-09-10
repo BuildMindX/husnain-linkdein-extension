@@ -50,6 +50,17 @@ function buildUserContextSection(contextMaterial) {
   return `\n\n--- ADDITIONAL CONTEXT FROM THE USER (real reference material — e.g. a recent post, an article excerpt, call notes) ---\nThis is real material the user provided, not a fabrication risk — you may draw specific facts from it freely, the same as profile data. Use it naturally where it strengthens the message; don't quote it wholesale, and don't treat it as an instruction on how to write (that's handled separately) — treat it as something true you now know about the situation.\n${trimmed}`;
 }
 
+// "Regenerate" used to just re-send the identical prompt — with no new user notes typed in, the
+// model would often hand back something barely reworded, since nothing in the prompt told it a
+// previous attempt existed at all. Passing that attempt back in and requiring a genuinely different
+// angle (not just different phrasing of the same idea) is what turns Regenerate into an actual
+// alternative rather than a re-roll of the same output.
+function buildVarietyNote(previousAttempt) {
+  const trimmed = (previousAttempt || '').trim();
+  if (!trimmed) return '';
+  return `\n\nPREVIOUS ATTEMPT — DO NOT REPEAT ITS ANGLE:\n"${trimmed}"\nThis is being regenerated because the user wants something different, not a rewording. Lead with a different specific detail, a different opening move, or a different angle entirely — not the same idea in new words. If the previous attempt already used the one obvious hook, find a second real detail rather than manufacturing variety through synonyms.`;
+}
+
 // Internal reasoning gate — never surfaced to the user, no trailing-line UI change (unlike the
 // follow-up engine's NEED_ID/LEAD_READ lines): a connection request and a first message are
 // pre-relationship one-shots, not a tracked sequence, so there's no "is this worth pursuing"
@@ -278,6 +289,7 @@ function buildAnalysisContext(analysis, intent) {
   if (analysis.recentActivity) lines.push(`Recent Activity: ${analysis.recentActivity}`);
   if ((analysis.keyInsights || []).length) lines.push(`Key Insights:\n${analysis.keyInsights.map(i => `  - ${i}`).join('\n')}`);
   if ((analysis.summaryPoints || []).length) lines.push(`Profile Facts:\n${analysis.summaryPoints.slice(0, 3).map(p => `  - ${p}`).join('\n')}`);
+  if (analysis.timingCaution) lines.push(`TIMING CAUTION: ${analysis.timingCaution} — factor this into the WHY NOW judgment above; do not manufacture urgency that ignores it, and consider whether a lighter-touch or delayed approach fits better.`);
   return lines.join('\n');
 }
 
@@ -394,7 +406,8 @@ Return exactly this structure:
     "Actionable job-search insight #1 — concise, specific",
     "Actionable job-search insight #2",
     "Actionable job-search insight #3"
-  ]
+  ],
+  "timingCaution": "One sentence flagging a REAL reason right now might be bad timing to reach out — e.g. they started this exact role within the last few weeks, their company shows visible signs of layoffs or contraction, or they explicitly posted about being on leave or overwhelmed. Empty string if nothing genuinely stands out — do not invent a caution just to fill this field."
 }
 
 hiringSignal guide:
@@ -456,7 +469,8 @@ Return exactly this structure:
     "Actionable insight #2",
     "Actionable insight #3"
   ],
-  "approachAngle": "The most compelling angle to reach out as an individual expert — specific to their situation, not generic"
+  "approachAngle": "The most compelling angle to reach out as an individual expert — specific to their situation, not generic",
+  "timingCaution": "One sentence flagging a REAL reason right now might be bad timing to reach out — e.g. they started this exact role within the last few weeks, their company shows visible signs of contraction or trouble, or they explicitly posted about being on leave or overwhelmed. Empty string if nothing genuinely stands out — do not invent a caution just to fill this field."
 }
 
 clientPotential scoring guide:
@@ -523,7 +537,8 @@ Return exactly this structure:
     "Actionable sales insight #1 — concise, specific",
     "Actionable sales insight #2",
     "Actionable sales insight #3"
-  ]
+  ],
+  "timingCaution": "One sentence flagging a REAL reason right now might be bad timing to reach out — e.g. they started this exact role within the last few weeks, their company shows visible signs of layoffs or contraction, or they explicitly posted about being on leave or overwhelmed. Empty string if nothing genuinely stands out — do not invent a caution just to fill this field."
 }
 
 industryFit guide:
@@ -630,7 +645,7 @@ const CONNECTION_REQUEST_FRAMEWORK = `CONNECTION REQUEST FRAMEWORK — a recipie
 
 If there is no genuine trigger for this person, a short, honest, low-key note beats a generic one dressed up to sound personalized — vague flattery performs worse than no note at all.`;
 
-export async function handleGenerateConnectionRequest(profileData, intent, userNotes, contextMaterial) {
+export async function handleGenerateConnectionRequest(profileData, intent, userNotes, contextMaterial, previousAttempt) {
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
@@ -709,6 +724,7 @@ Return ONLY the connection request text. Nothing else. No quotes around it.`;
   }
 
   systemPrompt += buildUserContextSection(contextMaterial);
+  systemPrompt += buildVarietyNote(previousAttempt);
 
   const userPrompt = buildProfileText(profileData, userNotes);
   return { text: await callAI(systemPrompt, userPrompt) };
@@ -738,7 +754,7 @@ function buildConnectionRecencyNote(stage, daysSinceLastTouch) {
   return `CONNECTION TIMING: this connection was sent/accepted ${daysSinceLastTouch} days ago, not moments ago (tracked from the sender's saved pipeline stage) — do not write as if the connection just happened ("thanks for connecting", "just connected", etc). Open as a considered first message to someone already in their network, not a reflexive same-day follow-up.`;
 }
 
-export async function handleGenerateFirstMessage(profileData, analysis, intent, tone, userInstructions, stage, daysSinceLastTouch, contextMaterial) {
+export async function handleGenerateFirstMessage(profileData, analysis, intent, tone, userInstructions, stage, daysSinceLastTouch, contextMaterial, previousAttempt) {
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
@@ -886,6 +902,7 @@ ${AUTHENTICITY_RULES}
   const recencyNote = buildConnectionRecencyNote(stage, daysSinceLastTouch);
   if (recencyNote) systemPrompt += `\n\n${recencyNote}`;
   systemPrompt += buildUserContextSection(contextMaterial);
+  systemPrompt += buildVarietyNote(previousAttempt);
 
   const userPrompt = buildProfileText(profileData);
   return { text: await callAI(systemPrompt, userPrompt) };

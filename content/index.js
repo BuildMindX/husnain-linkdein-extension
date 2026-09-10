@@ -287,6 +287,7 @@
         </svg>
         <span class="lia-search-banner-label" id="lia-search-banner-label">LinkPilot AI — ICP-aware AI scoring</span>
         <button id="lia-search-upgrade-btn" class="lia-search-upgrade-btn" style="display:none">Upgrade to Pro</button>
+        <button id="lia-search-addall-btn" class="lia-search-score-btn" style="display:none">Add All Qualified to Pipeline</button>
         <button id="lia-score-btn" class="lia-search-score-btn">Score Results</button>
       </div>`;
 
@@ -321,11 +322,82 @@
         document.querySelectorAll('[data-lia-scored]').forEach(el => delete el.dataset.liaScored);
         btn.textContent = 'Score Results';
         _searchScored = false;
+        const addAllBtn = document.getElementById('lia-search-addall-btn');
+        if (addAllBtn) addAllBtn.style.display = 'none';
         return;
       }
 
       await scoreVisibleCards();
     });
+
+    document.getElementById('lia-search-addall-btn')?.addEventListener('click', addAllQualifiedToPipeline);
+  }
+
+  // A scored search-results page otherwise dead-ends at the badge (click-to-open-profile only) —
+  // this is the "now actually do something with a scored list" action: every card scored High or
+  // Strong that isn't already tracked gets added to the pipeline at once, instead of opening each
+  // profile one at a time just to click Save.
+  async function addAllQualifiedToPipeline() {
+    const btn = document.getElementById('lia-search-addall-btn');
+    if (!btn || btn.disabled) return;
+    const origLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Adding...';
+
+    try {
+      const { analysisIntent: intent = 'b2b_sales' } = await chrome.storage.local.get('analysisIntent');
+      const existing = await getSavedContacts();
+      const existingUrls = new Set(existing.map(c => c.url));
+      const qualifyScores = intent === 'job_search' ? ['Strong'] : ['High'];
+      const now = Date.now();
+      const additions = [];
+
+      getSearchCards().forEach(card => {
+        if (!card.dataset.liaScored) return;
+        const badge = card.querySelector('.lia-search-badge');
+        const score = badge?.textContent.trim();
+        if (!score || !qualifyScores.includes(score)) return;
+
+        const profileLink = card.querySelector('a[href*="/in/"]');
+        if (!profileLink) return;
+        const url = profileLink.href.split('?')[0];
+        if (existingUrls.has(url)) return;
+
+        const nameEl = card.querySelector('.entity-result__title-text, .artdeco-entity-lockup__title');
+        const titleEl = card.querySelector('.entity-result__primary-subtitle, .artdeco-entity-lockup__subtitle, .t-14.t-black.t-normal');
+        const companyEl = card.querySelector('.entity-result__secondary-subtitle, .t-14.t-black--light');
+        // The score badge is appended as a child of nameEl — strip it before reading the name text
+        // rather than reading nameEl.textContent directly, which would include the badge's own text.
+        const nameClone = nameEl?.cloneNode(true);
+        nameClone?.querySelectorAll('.lia-search-badge').forEach(b => b.remove());
+
+        existingUrls.add(url); // guards against duplicate cards for the same profile on one page
+        additions.push({
+          url,
+          name: nameClone?.textContent.trim() || '',
+          headline: titleEl?.textContent.trim() || '',
+          company: companyEl?.textContent.trim() || '',
+          score,
+          intent,
+          savedAt: now,
+          stage: 'new',
+          stageUpdatedAt: now,
+        });
+      });
+
+      if (additions.length) {
+        const fresh = await getSavedContacts();
+        const freshUrls = new Set(fresh.map(c => c.url));
+        await chrome.storage.local.set({ savedContacts: [...additions.filter(a => !freshUrls.has(a.url)), ...fresh] });
+      }
+
+      btn.textContent = additions.length ? `Added ${additions.length}` : 'Already added';
+      setTimeout(() => { if (btn) { btn.textContent = origLabel; btn.disabled = false; } }, 2500);
+    } catch (err) {
+      console.error('[LinkPilot AI] Bulk add to pipeline failed:', err);
+      btn.textContent = 'Failed — try again';
+      setTimeout(() => { if (btn) { btn.textContent = origLabel; btn.disabled = false; } }, 2500);
+    }
   }
 
   // Sales Navigator search results use a different DOM structure than standard LinkedIn search,
@@ -433,6 +505,11 @@
 
       if (btn) { btn.disabled = false; btn.textContent = 'Clear Scores'; }
       _searchScored = true;
+      const addAllBtn = document.getElementById('lia-search-addall-btn');
+      if (addAllBtn) {
+        addAllBtn.textContent = intent === 'job_search' ? 'Add All Strong Signals to Pipeline' : 'Add All Qualified to Pipeline';
+        addAllBtn.style.display = '';
+      }
     } catch (err) {
       const errMap = {
         NO_API_KEY: 'No API key — open Settings',
@@ -729,6 +806,7 @@
       sendBtn.removeEventListener('click', handler);
       try {
         await advanceStageBySteps(url, 1);
+        await logOutreachAction('message');
         await updateFollowupTag();
       } catch (err) {
         console.error('[LinkPilot AI] Stage advance on send failed:', err);
@@ -1014,7 +1092,7 @@
           }
           // No composer to watch for an actual send — copying is the only signal we get, same as
           // every other Copy button in this extension advancing the stage on click.
-          if (contactProfileUrl) { await advanceStageBySteps(contactProfileUrl, 1); await updateFollowupTag(); }
+          if (contactProfileUrl) { await advanceStageBySteps(contactProfileUrl, 1); await logOutreachAction('message'); await updateFollowupTag(); }
         } else {
           if (status && !timingNote) {
             status.textContent = leadRead ? `✓ Inserted · ${leadRead}` : '✓ Inserted into chat';
@@ -2023,7 +2101,10 @@
 
     try {
       const profileData = extractProfile();
-      const result = await sendMessage('GENERATE_CONNECTION_REQUEST', profileData, { intent, userNotes: userNotes || undefined });
+      // Only fed back in when the cached draft was written under the same intent — comparing
+      // angles across a b2b vs. job-search rewrite, say, wouldn't mean anything.
+      const previousAttempt = intentMatches ? (stored?.connectionRequest || undefined) : undefined;
+      const result = await sendMessage('GENERATE_CONNECTION_REQUEST', profileData, { intent, userNotes: userNotes || undefined, previousAttempt });
       if (result.error) throw new Error(result.error);
 
       if (!userNotes) {
@@ -2245,6 +2326,7 @@
             copyBtn.classList.add('copied');
             setTimeout(() => { copyBtn.textContent = 'Copy to Clipboard'; copyBtn.classList.remove('copied'); }, 2000);
             advanceStageBySteps(currentProfileUrl, 1);
+            logOutreachAction('message');
           });
 
           wireRefineSection(resultDiv, 'followup', async (tone, instructions) => {
@@ -2327,6 +2409,7 @@
       btn.classList.add('copied');
       setTimeout(() => { btn.textContent = 'Copy to Clipboard'; btn.classList.remove('copied'); }, 2000);
       advanceStage(currentProfileUrl, 'connection_sent');
+      logOutreachAction('connection');
     });
 
     body.querySelector('#lia-single-regen').addEventListener('click', async () => {
@@ -2575,6 +2658,28 @@
   async function getContactStage(url) {
     const contacts = await getSavedContacts();
     return contacts.find(c => c.url === url)?.stage || null;
+  }
+
+  // ─── Outreach activity log (LinkedIn account-safety tracking) ─────────────────
+  // Safe LinkedIn automation ranges are well-documented and consistent across current outreach
+  // research: roughly 20-40 connection requests/day and 30-60 messages/day, with weekly connection
+  // volume ideally under ~150. This extension had no sense of volume at all before this — it could
+  // help generate outreach as fast as you could click, with nothing protecting the LinkedIn account
+  // itself from the platform's own detection. Logged at the same "copy/insert = sent" signal points
+  // advanceStage/advanceStageBySteps already treat as a real send (see comment above), so this never
+  // fires on stage corrections or auto-inferred stages, only genuine outreach actions.
+  const OUTREACH_LOG_RETENTION_MS = 8 * 86400000; // only daily/weekly windows are ever read back
+  const OUTREACH_SAFE_LIMITS = {
+    connection: { day: { caution: 25, risky: 40 }, week: { caution: 100, risky: 150 } },
+    message:    { day: { caution: 40, risky: 60 } },
+  };
+
+  async function logOutreachAction(type) {
+    const { outreachActionLog = [] } = await chrome.storage.local.get('outreachActionLog');
+    const now = Date.now();
+    const pruned = outreachActionLog.filter(a => now - a.ts < OUTREACH_LOG_RETENTION_MS);
+    pruned.push({ type, ts: now });
+    await chrome.storage.local.set({ outreachActionLog: pruned });
   }
 
   // Bumps a saved contact's stage forward — never moves it backward. Called from the "Copy to
@@ -3266,9 +3371,19 @@
         }
       }
 
+      const timingCautionBanner = analysis.timingCaution ? `
+        <div class="lia-timing-caution-banner">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span>${escHtml(analysis.timingCaution)}</span>
+        </div>` : '';
+
       body.innerHTML = `
         ${recommendationBlock}
         ${excludedBanner}
+        ${timingCautionBanner}
         <div class="lia-indicators">
 
           ${primaryCard}
@@ -3393,7 +3508,17 @@
           ${ki.length ? ki.map(i => `<div class="lia-insight-row lia-insight-ki"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0A66C2" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg><span class="lia-insight-note" style="color:#374151">${escHtml(i)}</span></div>`).join('') : ''}
         </div>` : '';
 
+      const msgTimingCautionBanner = analysis.timingCaution ? `
+        <div class="lia-timing-caution-banner" style="margin-bottom:12px">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span>${escHtml(analysis.timingCaution)}</span>
+        </div>` : '';
+
       body.innerHTML = `
+        ${msgTimingCautionBanner}
         ${insightsSection}
         <div id="lia-msgtab-result" style="display:none;margin-bottom:16px"></div>
         <div class="lia-section" style="margin-top:0">
@@ -3462,6 +3587,7 @@
           btn.textContent = 'Copied!'; btn.classList.add('copied');
           setTimeout(() => { btn.textContent = 'Copy to Clipboard'; btn.classList.remove('copied'); }, 2000);
           advanceStage(currentProfileUrl, 'messaged');
+          logOutreachAction('message');
         });
 
         const refToggle = resultDiv.querySelector('#lia-msgtab-refine-toggle');
@@ -3509,7 +3635,7 @@
           const daysSinceLastTouch = (entry && entry.stage && entry.stage !== 'new')
             ? Math.floor((Date.now() - (entry.stageUpdatedAt || entry.savedAt || Date.now())) / 86400000)
             : null;
-          const result = await sendMessage('GENERATE_FIRST_MESSAGE', extractProfile(), { intent, analysis, tone: msgSelectedTone, userInstructions, contextMaterial, stage, daysSinceLastTouch });
+          const result = await sendMessage('GENERATE_FIRST_MESSAGE', extractProfile(), { intent, analysis, tone: msgSelectedTone, userInstructions, contextMaterial, stage, daysSinceLastTouch, previousAttempt: msgCurrentText || undefined });
           if (result.error) throw new Error(result.error);
           renderMsgTabResult(result.text || '');
           genBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Regenerate`;
@@ -3592,6 +3718,7 @@
         btn.classList.add('copied');
         setTimeout(() => { btn.textContent = 'Copy to Clipboard'; btn.classList.remove('copied'); }, 2000);
         advanceStage(currentProfileUrl, 'connection_sent');
+        logOutreachAction('connection');
       });
 
       body.querySelector('#lia-regen-btn').addEventListener('click', async () => {
@@ -3603,7 +3730,7 @@
         if (errEl) errEl.style.display = 'none';
         try {
           const profileData = extractProfile();
-          const result = await sendMessage('GENERATE_CONNECTION_REQUEST', profileData, { intent, userNotes: notes || undefined });
+          const result = await sendMessage('GENERATE_CONNECTION_REQUEST', profileData, { intent, userNotes: notes || undefined, previousAttempt: connectionRequest || undefined });
           if (result.error) throw new Error(result.error);
           body._rendered.connectionRequest = result.text;
           if (!notes) {
@@ -3806,6 +3933,10 @@
       btn.disabled = true;
 
       const ownerEl = modal.querySelector('#lia-hs-owner');
+      // Only reaches HubSpot on a newly-created contact (see findOrCreateContact) — never
+      // overwrites one that already exists there.
+      const scrapedContactInfo = extractContactInfo();
+      const findValue = (type) => scrapedContactInfo.find(c => c.type === type)?.value || '';
       const pushResult = await sendMessage('PUSH_TO_HUBSPOT', {
         name: modal.querySelector('#lia-hs-dealname').value.trim() || profileName,
         linkedinUrl: currentProfileUrl,
@@ -3816,6 +3947,9 @@
         ownerId: ownerEl?.value || '',
         analysis: rendered?.analysis,
         intent: rendered?.intent,
+        email: findValue('Email'),
+        phone: findValue('Phone'),
+        website: findValue('Website'),
       });
 
       if (pushResult.error) {
