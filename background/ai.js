@@ -402,6 +402,37 @@ async function callAI(systemPrompt, userPrompt) {
   return (data.choices[0].message.content || '').trim();
 }
 
+// A small, deliberately narrow set of literal phrases confirmed via live testing to slip through
+// despite being explicitly banned in AUTHENTICITY_RULES — negative instructions are weakly
+// enforced by LLMs generally (documented earlier this session with the same model on the same
+// phrase), but a literal string match is one place that's cheaply and reliably catchable after
+// the fact, unlike fuzzier style violations ("don't restate what they said") with no reliable
+// programmatic check. One silent retry only, never a loop — a retry loop is a worse failure mode
+// than one imperfect message getting through.
+const BANNED_PHRASES = [
+  'would love to connect',
+  "i'd love to connect",
+  "i hope you're doing well",
+  'i hope this finds you well',
+  'i hope all is well',
+  'i came across your profile',
+  'i noticed from your profile',
+  'impressive background',
+];
+
+function findBannedPhrase(text) {
+  const lower = (text || '').toLowerCase();
+  return BANNED_PHRASES.find(p => lower.includes(p)) || null;
+}
+
+async function callAIWithBannedPhraseGuard(systemPrompt, userPrompt) {
+  const first = await callAI(systemPrompt, userPrompt);
+  const hit = findBannedPhrase(first);
+  if (!hit) return first;
+  const retryPrompt = `${systemPrompt}\n\nYour previous attempt used a banned phrase: "${hit}". Rewrite from scratch avoiding it entirely — don't just delete or swap that phrase, write a genuinely different sentence in its place.`;
+  return callAI(retryPrompt, userPrompt);
+}
+
 // ─── Profile Analysis ─────────────────────────────────────────────────────────
 
 export async function handleAnalyzeProfile(profileData, intent) {
@@ -762,7 +793,7 @@ Return ONLY the connection request text. Nothing else. No quotes around it.`;
   systemPrompt += buildVarietyNote(previousAttempt);
 
   const userPrompt = buildProfileText(profileData, userNotes);
-  return { text: await callAI(systemPrompt, userPrompt) };
+  return { text: await callAIWithBannedPhraseGuard(systemPrompt, userPrompt) };
 }
 
 // ─── First Message ────────────────────────────────────────────────────────────
@@ -940,7 +971,7 @@ ${AUTHENTICITY_RULES}
   systemPrompt += buildVarietyNote(previousAttempt);
 
   const userPrompt = buildProfileText(profileData);
-  return { text: await callAI(systemPrompt, userPrompt) };
+  return { text: await callAIWithBannedPhraseGuard(systemPrompt, userPrompt) };
 }
 
 // ─── Refine Message ───────────────────────────────────────────────────────────
@@ -979,7 +1010,7 @@ ${instructions?.trim() || 'No specific instructions — just apply the tone cons
 
 ${analysis ? `ANALYSIS CONTEXT:\n${buildAnalysisContext(analysis, intent)}` : ''}`;
 
-  return { text: await callAI(systemPrompt, userPrompt) };
+  return { text: await callAIWithBannedPhraseGuard(systemPrompt, userPrompt) };
 }
 
 // ─── Post Creator ─────────────────────────────────────────────────────────────
@@ -1216,7 +1247,7 @@ Return ONLY the message text, followed by the NEED_ID and LEAD_READ lines descri
     ? `${withContext}\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly, even if it overrides the angle guidance above):\n${userInstructions.trim()}`
     : withContext;
 
-  return { text: await callAI(finalPrompt, `CONVERSATION:\n${conversationText || '(no messages found)'}`) };
+  return { text: await callAIWithBannedPhraseGuard(finalPrompt, `CONVERSATION:\n${conversationText || '(no messages found)'}`) };
 }
 
 export async function handleGeneratePostImage(prompt) {
