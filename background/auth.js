@@ -2,7 +2,11 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
 export const SETTINGS_KEYS = [
   'analysisIntent',
+  // targetIndustries/excludeIndustries/businessProfile are the pre-multi-profile keys — kept here
+  // so an older cached cloud snapshot doesn't lose them, but nothing reads them once icpProfiles
+  // exists locally (see background/ai.js's ensureIcpProfilesMigrated).
   'targetIndustries', 'excludeIndustries', 'businessProfile',
+  'icpProfiles', 'activeIcpProfileId',
   'messagePresets', 'b2cProfile', 'jobProfile',
   'b2cMessagePresets', 'jobMessagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries',
   'creatorProfile', 'companyProfile', 'reminderSettings',

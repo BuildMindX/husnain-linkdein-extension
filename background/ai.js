@@ -144,12 +144,47 @@ async function getB2cIcpConfig() {
   };
 }
 
+// Multiple saved ICP/business profiles, for a user who sells to more than one kind of buyer
+// (e.g. "Healthcare clients" vs. "Logistics clients") — one is active at a time, same
+// one-config-at-a-time model as before, just switchable now instead of fixed. Message style
+// (tone/length/CTA) stays a single shared setting, not per-profile — that's about how the sender
+// writes, not who they're targeting, so splitting it added complexity without a real need.
+//
+// Migrates the old flat targetIndustries/excludeIndustries/businessProfile keys into a single
+// "Default" profile on first read after this shipped, exactly once (icpProfiles.length is the
+// migration marker) — the legacy keys are left in place afterward, unused but harmless, rather
+// than deleted, since nothing reads them again once icpProfiles exists.
+async function ensureIcpProfilesMigrated() {
+  const { icpProfiles } = await chrome.storage.local.get('icpProfiles');
+  if (Array.isArray(icpProfiles) && icpProfiles.length) return icpProfiles;
+
+  const legacy = await chrome.storage.local.get(['targetIndustries', 'excludeIndustries', 'businessProfile']);
+  const defaultProfile = {
+    id: `icp-${Date.now()}`,
+    name: 'Default',
+    targetIndustries: Array.isArray(legacy.targetIndustries) ? legacy.targetIndustries : [],
+    excludeIndustries: Array.isArray(legacy.excludeIndustries) ? legacy.excludeIndustries : DEFAULT_EXCLUDES,
+    businessProfile: legacy.businessProfile || {},
+  };
+  await chrome.storage.local.set({ icpProfiles: [defaultProfile], activeIcpProfileId: defaultProfile.id });
+  return [defaultProfile];
+}
+
+async function getActiveIcpProfile() {
+  const profiles = await ensureIcpProfilesMigrated();
+  const { activeIcpProfileId } = await chrome.storage.local.get('activeIcpProfileId');
+  return profiles.find(p => p.id === activeIcpProfileId) || profiles[0] || null;
+}
+
 async function getSalesConfig() {
-  const r = await chrome.storage.local.get(['targetIndustries', 'excludeIndustries', 'businessProfile', 'messagePresets']);
+  const [active, r] = await Promise.all([
+    getActiveIcpProfile(),
+    chrome.storage.local.get('messagePresets'),
+  ]);
   return {
-    targets: Array.isArray(r.targetIndustries) ? r.targetIndustries : [],
-    excludes: Array.isArray(r.excludeIndustries) ? r.excludeIndustries : DEFAULT_EXCLUDES,
-    business: r.businessProfile || {},
+    targets: Array.isArray(active?.targetIndustries) ? active.targetIndustries : [],
+    excludes: Array.isArray(active?.excludeIndustries) ? active.excludeIndustries : DEFAULT_EXCLUDES,
+    business: active?.businessProfile || {},
     presets: r.messagePresets || {},
   };
 }

@@ -251,6 +251,7 @@ function applyIntentVisibility(intent) {
   const isB2c   = intent === 'b2c_sales';
   const isJob   = intent === 'job_search';
 
+  document.getElementById('icp-profile-switcher')?.classList.toggle('hidden', !isSales);
   document.getElementById('sales-config')?.classList.toggle('hidden', !isSales);
   document.getElementById('business-config')?.classList.toggle('hidden', !isSales);
   document.getElementById('message-config')?.classList.toggle('hidden', !isSales);
@@ -314,16 +315,12 @@ function wireTagInput(inputId, kind) {
 wireTagInput('target-input', 'targets');
 wireTagInput('exclude-input', 'excludes');
 
-chrome.storage.local.get(['targetIndustries', 'excludeIndustries'], r => {
-  tagState.targets = Array.isArray(r.targetIndustries) ? r.targetIndustries : [];
-  tagState.excludes = Array.isArray(r.excludeIndustries) ? r.excludeIndustries : [...DEFAULT_EXCLUDES];
-  renderTags('targets');
-  renderTags('excludes');
-});
-
 document.getElementById('icp-save-btn')?.addEventListener('click', () => {
-  chrome.storage.local.set({ targetIndustries: tagState.targets, excludeIndustries: tagState.excludes }, () =>
-    showStatus(document.getElementById('icp-status'), 'ICP saved.', 'success'));
+  const active = icpProfilesState.find(p => p.id === activeIcpProfileIdState);
+  if (!active) return;
+  active.targetIndustries = tagState.targets;
+  active.excludeIndustries = tagState.excludes;
+  persistIcpProfiles().then(() => showStatus(document.getElementById('icp-status'), 'ICP saved.', 'success'));
 });
 
 document.getElementById('icp-reset-btn')?.addEventListener('click', () => {
@@ -395,15 +392,121 @@ const b2cIcpCard = setupTagCard({
 // ── Business Profile ──────────────────────────────────────────────────────────
 const bizFields = { expertise: 'biz-expertise', offer: 'biz-offer', idealCustomer: 'biz-customer', problem: 'biz-problem', valueProp: 'biz-valueprop', senderName: 'biz-name', companyName: 'biz-company' };
 
-chrome.storage.local.get('businessProfile', r => {
-  const b = r.businessProfile || {};
-  Object.entries(bizFields).forEach(([key, id]) => { const el = document.getElementById(id); if (el && b[key]) el.value = b[key]; });
-});
-
 document.getElementById('biz-save-btn')?.addEventListener('click', () => {
+  const active = icpProfilesState.find(p => p.id === activeIcpProfileIdState);
+  if (!active) return;
   const businessProfile = {};
   Object.entries(bizFields).forEach(([key, id]) => { const v = document.getElementById(id)?.value.trim(); if (v) businessProfile[key] = v; });
-  chrome.storage.local.set({ businessProfile }, () => showStatus(document.getElementById('biz-status'), 'Business profile saved.', 'success'));
+  active.businessProfile = businessProfile;
+  persistIcpProfiles().then(() => showStatus(document.getElementById('biz-status'), 'Business profile saved.', 'success'));
+});
+
+// ── ICP / Business Profiles (multiple saved targeting profiles) ────────────────
+// One "active" profile at a time, same model the ICP/Business Profile cards above always had —
+// this just makes it possible to save more than one and switch, for a user who sells to more than
+// one kind of buyer. Migrates the old flat targetIndustries/excludeIndustries/businessProfile keys
+// into a single "Default" profile the first time this runs, exactly once (mirrors the same
+// migration in background/ai.js's ensureIcpProfilesMigrated, since content/background/options share
+// no bundler here — same duplication pattern already used for SETTINGS_KEYS elsewhere).
+let icpProfilesState = [];
+let activeIcpProfileIdState = null;
+
+function genIcpProfileId() {
+  return `icp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function persistIcpProfiles() {
+  return new Promise(resolve => {
+    chrome.storage.local.set({ icpProfiles: icpProfilesState, activeIcpProfileId: activeIcpProfileIdState }, resolve);
+  });
+}
+
+function renderIcpProfileSelect() {
+  const sel = document.getElementById('icp-profile-select');
+  if (!sel) return;
+  sel.innerHTML = icpProfilesState.map(p =>
+    `<option value="${escapeHtml(p.id)}" ${p.id === activeIcpProfileIdState ? 'selected' : ''}>${escapeHtml(p.name)}</option>`
+  ).join('');
+}
+
+function loadActiveIcpProfileIntoForm() {
+  const active = icpProfilesState.find(p => p.id === activeIcpProfileIdState) || icpProfilesState[0];
+  if (!active) return;
+  tagState.targets = Array.isArray(active.targetIndustries) ? active.targetIndustries : [];
+  tagState.excludes = Array.isArray(active.excludeIndustries) ? active.excludeIndustries : [...DEFAULT_EXCLUDES];
+  renderTags('targets');
+  renderTags('excludes');
+  const b = active.businessProfile || {};
+  Object.entries(bizFields).forEach(([k, id]) => { const el = document.getElementById(id); if (el) el.value = b[k] || ''; });
+}
+
+function initIcpProfiles() {
+  chrome.storage.local.get(['icpProfiles', 'activeIcpProfileId', 'targetIndustries', 'excludeIndustries', 'businessProfile'], r => {
+    if (Array.isArray(r.icpProfiles) && r.icpProfiles.length) {
+      icpProfilesState = r.icpProfiles;
+      activeIcpProfileIdState = r.activeIcpProfileId && icpProfilesState.some(p => p.id === r.activeIcpProfileId)
+        ? r.activeIcpProfileId : icpProfilesState[0].id;
+    } else {
+      const defaultProfile = {
+        id: genIcpProfileId(),
+        name: 'Default',
+        targetIndustries: Array.isArray(r.targetIndustries) ? r.targetIndustries : [],
+        excludeIndustries: Array.isArray(r.excludeIndustries) ? r.excludeIndustries : [...DEFAULT_EXCLUDES],
+        businessProfile: r.businessProfile || {},
+      };
+      icpProfilesState = [defaultProfile];
+      activeIcpProfileIdState = defaultProfile.id;
+      persistIcpProfiles();
+    }
+    renderIcpProfileSelect();
+    loadActiveIcpProfileIntoForm();
+  });
+}
+initIcpProfiles();
+
+document.getElementById('icp-profile-select')?.addEventListener('change', (e) => {
+  activeIcpProfileIdState = e.target.value;
+  loadActiveIcpProfileIntoForm();
+  persistIcpProfiles();
+});
+
+document.getElementById('icp-profile-new-btn')?.addEventListener('click', () => {
+  const name = (window.prompt('Name this profile — e.g. "Healthcare clients"', '') || '').trim();
+  if (!name) return;
+  const newProfile = { id: genIcpProfileId(), name, targetIndustries: [], excludeIndustries: [...DEFAULT_EXCLUDES], businessProfile: {} };
+  icpProfilesState.push(newProfile);
+  activeIcpProfileIdState = newProfile.id;
+  renderIcpProfileSelect();
+  loadActiveIcpProfileIntoForm();
+  persistIcpProfiles();
+  showStatus(document.getElementById('icp-profile-status'), `Created "${name}" — fill in its ICP and Business Profile below, then save each.`, 'success');
+});
+
+document.getElementById('icp-profile-rename-btn')?.addEventListener('click', () => {
+  const active = icpProfilesState.find(p => p.id === activeIcpProfileIdState);
+  if (!active) return;
+  const name = (window.prompt('Rename this profile', active.name) || '').trim();
+  if (!name) return;
+  active.name = name;
+  renderIcpProfileSelect();
+  persistIcpProfiles();
+  showStatus(document.getElementById('icp-profile-status'), 'Renamed.', 'success');
+});
+
+document.getElementById('icp-profile-delete-btn')?.addEventListener('click', () => {
+  if (icpProfilesState.length <= 1) {
+    showStatus(document.getElementById('icp-profile-status'), "Can't delete your only profile.", 'info');
+    return;
+  }
+  const active = icpProfilesState.find(p => p.id === activeIcpProfileIdState);
+  if (!active) return;
+  if (!window.confirm(`Delete "${active.name}"? This can't be undone.`)) return;
+  icpProfilesState = icpProfilesState.filter(p => p.id !== active.id);
+  activeIcpProfileIdState = icpProfilesState[0].id;
+  renderIcpProfileSelect();
+  loadActiveIcpProfileIntoForm();
+  persistIcpProfiles();
+  showStatus(document.getElementById('icp-profile-status'), 'Deleted.', 'success');
 });
 
 // ── Message Style ─────────────────────────────────────────────────────────────
@@ -660,23 +763,24 @@ chrome.storage.local.get('creatorProfile', r => {
 // twice, and the two can silently drift. Rather than merging the schemas (real risk of breaking
 // either flow), this is a one-click, blanks-only prefill: existing values are never overwritten.
 document.getElementById('creator-prefill-btn')?.addEventListener('click', () => {
-  chrome.storage.local.get('businessProfile', r => {
-    const b = r.businessProfile || {};
-    if (!Object.keys(b).length) {
-      showStatus(document.getElementById('creator-status'), 'No Business Profile found — fill it in under Outreach settings first.', 'info');
-      return;
-    }
-    const fillIfEmpty = (id, val) => { const el = document.getElementById(id); if (el && val && !el.value.trim()) el.value = val; };
-    fillIfEmpty('creator-name', b.senderName);
-    fillIfEmpty('creator-audience', b.idealCustomer);
-    if (b.expertise && !creatorDomainTagState.domains.length) {
-      b.expertise.split(',').map(s => s.trim()).filter(Boolean).forEach(t => {
-        if (!creatorDomainTagState.domains.some(existing => existing.toLowerCase() === t.toLowerCase())) creatorDomainTagState.domains.push(t);
-      });
-      renderCreatorDomainTags();
-    }
-    showStatus(document.getElementById('creator-status'), 'Filled in from your Business Profile — review and save.', 'success');
-  });
+  // Reads whichever ICP profile is currently active (see "ICP / Business Profiles" above) —
+  // in-memory state already populated by initIcpProfiles(), which runs at load regardless of
+  // which settings tab happens to be visible.
+  const b = (icpProfilesState.find(p => p.id === activeIcpProfileIdState) || {}).businessProfile || {};
+  if (!Object.keys(b).length) {
+    showStatus(document.getElementById('creator-status'), 'No Business Profile found — fill it in under Outreach settings first.', 'info');
+    return;
+  }
+  const fillIfEmpty = (id, val) => { const el = document.getElementById(id); if (el && val && !el.value.trim()) el.value = val; };
+  fillIfEmpty('creator-name', b.senderName);
+  fillIfEmpty('creator-audience', b.idealCustomer);
+  if (b.expertise && !creatorDomainTagState.domains.length) {
+    b.expertise.split(',').map(s => s.trim()).filter(Boolean).forEach(t => {
+      if (!creatorDomainTagState.domains.some(existing => existing.toLowerCase() === t.toLowerCase())) creatorDomainTagState.domains.push(t);
+    });
+    renderCreatorDomainTags();
+  }
+  showStatus(document.getElementById('creator-status'), 'Filled in from your Business Profile — review and save.', 'success');
 });
 
 document.getElementById('creator-save-btn')?.addEventListener('click', () => {
@@ -701,18 +805,16 @@ chrome.storage.local.get('companyProfile', r => {
 });
 
 document.getElementById('co-prefill-btn')?.addEventListener('click', () => {
-  chrome.storage.local.get('businessProfile', r => {
-    const b = r.businessProfile || {};
-    if (!Object.keys(b).length) {
-      showStatus(document.getElementById('co-status'), 'No Business Profile found — fill it in under Outreach settings first.', 'info');
-      return;
-    }
-    const fillIfEmpty = (id, val) => { const el = document.getElementById(id); if (el && val && !el.value.trim()) el.value = val; };
-    fillIfEmpty('co-name', b.companyName);
-    fillIfEmpty('co-products', b.offer);
-    fillIfEmpty('co-icp', b.idealCustomer);
-    showStatus(document.getElementById('co-status'), 'Filled in from your Business Profile — review and save.', 'success');
-  });
+  const b = (icpProfilesState.find(p => p.id === activeIcpProfileIdState) || {}).businessProfile || {};
+  if (!Object.keys(b).length) {
+    showStatus(document.getElementById('co-status'), 'No Business Profile found — fill it in under Outreach settings first.', 'info');
+    return;
+  }
+  const fillIfEmpty = (id, val) => { const el = document.getElementById(id); if (el && val && !el.value.trim()) el.value = val; };
+  fillIfEmpty('co-name', b.companyName);
+  fillIfEmpty('co-products', b.offer);
+  fillIfEmpty('co-icp', b.idealCustomer);
+  showStatus(document.getElementById('co-status'), 'Filled in from your Business Profile — review and save.', 'success');
 });
 
 document.getElementById('co-save-btn')?.addEventListener('click', () => {
@@ -724,8 +826,7 @@ document.getElementById('co-save-btn')?.addEventListener('click', () => {
 // ── Reload all form fields from storage (called after sign-in) ────────────────
 function loadAllSettings() {
   chrome.storage.local.get([
-    'analysisIntent', 'targetIndustries', 'excludeIndustries',
-    'businessProfile', 'messagePresets', 'b2cProfile', 'jobProfile',
+    'analysisIntent', 'messagePresets', 'b2cProfile', 'jobProfile',
     'b2cMessagePresets', 'jobMessagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries',
     'openaiApiKey', 'hubspotApiKey', 'creatorProfile', 'companyProfile', 'reminderSettings',
   ], r => {
@@ -734,15 +835,9 @@ function loadAllSettings() {
     modeCards.forEach(c => c.classList.toggle('active', c.dataset.intent === intent));
     applyIntentVisibility(intent);
 
-    // ICP
-    tagState.targets = Array.isArray(r.targetIndustries) ? r.targetIndustries : [];
-    tagState.excludes = Array.isArray(r.excludeIndustries) ? r.excludeIndustries : [...DEFAULT_EXCLUDES];
-    renderTags('targets');
-    renderTags('excludes');
-
-    // Business profile
-    const b = r.businessProfile || {};
-    Object.entries(bizFields).forEach(([k, id]) => { const el = document.getElementById(id); if (el) el.value = b[k] || ''; });
+    // ICP / Business profile — re-fetches its own keys (icpProfiles may have just changed via
+    // cloud sync restore, which this generic loop above doesn't know how to merge itself)
+    initIcpProfiles();
 
     // Message presets
     const mp = r.messagePresets || {};

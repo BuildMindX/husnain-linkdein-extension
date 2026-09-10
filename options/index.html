@@ -277,6 +277,23 @@
         <!-- Profile cards — shown/hidden per mode -->
         <div id="step2-block">
 
+          <!-- B2B: multiple saved ICP/business profiles -->
+          <div class="card hidden" id="icp-profile-switcher">
+            <div class="card-mode-badge badge-sales">B2B Sales</div>
+            <h3>ICP / Business Profiles</h3>
+            <p class="card-desc">If you sell to more than one kind of buyer, save a separate profile for each — the ICP and Business Profile cards below always belong to whichever one is active here.</p>
+            <div class="form-group">
+              <label for="icp-profile-select">Active profile</label>
+              <select id="icp-profile-select" class="form-select"></select>
+            </div>
+            <div id="icp-profile-status" class="status-msg" aria-live="polite"></div>
+            <div class="actions">
+              <button type="button" id="icp-profile-new-btn" class="btn-secondary">+ New Profile</button>
+              <button type="button" id="icp-profile-rename-btn" class="btn-secondary">Rename</button>
+              <button type="button" id="icp-profile-delete-btn" class="btn-secondary">Delete</button>
+            </div>
+          </div>
+
           <!-- B2B: ICP -->
           <div class="card hidden" id="sales-config">
             <div class="card-mode-badge badge-sales">B2B Sales</div>

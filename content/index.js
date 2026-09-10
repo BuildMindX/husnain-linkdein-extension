@@ -1991,8 +1991,15 @@
       ? 'Get a warm note positioning you as a fellow expert'
       : 'Get a personalized note to send with a connection invite';
 
-    const { targetIndustries } = await chrome.storage.local.get('targetIndustries').catch(() => ({}));
-    const showIcpWarning = (currentIntent === 'b2b_sales') && (!Array.isArray(targetIndustries) || targetIndustries.length === 0);
+    // Multiple ICP profiles can exist now (see background/ai.js's ensureIcpProfilesMigrated) —
+    // read whichever is active rather than the old flat targetIndustries key directly, falling
+    // back to that legacy key only in the narrow window before any profile migration has run yet.
+    const { icpProfiles, activeIcpProfileId, targetIndustries: legacyTargets } = await chrome.storage.local.get(['icpProfiles', 'activeIcpProfileId', 'targetIndustries']).catch(() => ({}));
+    const activeIcpProfile = Array.isArray(icpProfiles) && icpProfiles.length
+      ? (icpProfiles.find(p => p.id === activeIcpProfileId) || icpProfiles[0])
+      : null;
+    const effectiveTargets = activeIcpProfile ? activeIcpProfile.targetIndustries : legacyTargets;
+    const showIcpWarning = (currentIntent === 'b2b_sales') && (!Array.isArray(effectiveTargets) || effectiveTargets.length === 0);
 
     body.innerHTML = `
       <div class="lia-purpose-picker">
