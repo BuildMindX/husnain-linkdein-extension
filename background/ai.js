@@ -55,10 +55,18 @@ function buildUserContextSection(contextMaterial) {
 // previous attempt existed at all. Passing that attempt back in and requiring a genuinely different
 // angle (not just different phrasing of the same idea) is what turns Regenerate into an actual
 // alternative rather than a re-roll of the same output.
-function buildVarietyNote(previousAttempt) {
+function buildVarietyNote(previousAttempt, strategy) {
   const trimmed = (previousAttempt || '').trim();
   if (!trimmed) return '';
-  return `\n\nPREVIOUS ATTEMPT — DO NOT REPEAT ITS ANGLE:\n"${trimmed}"\nThis is being regenerated because the user wants something different, not a rewording. Lead with a different specific detail, a different opening move, or a different angle entirely — not the same idea in new words. If the previous attempt already used the one obvious hook, find a second real detail rather than manufacturing variety through synonyms.`;
+  // When a specific strategy was explicitly chosen (not Smart Pick), "find a different angle
+  // entirely" would directly contradict the strategy instruction telling it to stay in that
+  // pattern — this scopes the variety requirement to stay inside the chosen strategy instead of
+  // offering a full angle swap as an option, which it otherwise would.
+  const scoped = strategy && strategy !== 'smart_pick';
+  const varietyOptions = scoped
+    ? 'Lead with a different specific detail or a different opening move within the same chosen strategy above — not a different strategy, and not the same idea in new words.'
+    : 'Lead with a different specific detail, a different opening move, or a different angle entirely — not the same idea in new words.';
+  return `\n\nPREVIOUS ATTEMPT — DO NOT REPEAT ITS ANGLE:\n"${trimmed}"\nThis is being regenerated because the user wants something different, not a rewording. ${varietyOptions} If the previous attempt already used the one obvious hook, find a second real detail rather than manufacturing variety through synonyms.`;
 }
 
 // Internal reasoning gate — never surfaced to the user, no trailing-line UI change (unlike the
@@ -71,6 +79,26 @@ const WHY_THEM_WHY_NOW_GATE = `BEFORE YOU WRITE — WHY THEM / WHY NOW: silently
 2. Why NOW — is there a real, current reason this outreach makes sense at this moment (their role, their company's stage, a live signal in their profile), or is the timing arbitrary? If it's arbitrary, don't manufacture urgency — write a message that doesn't lean on false timeliness.
 3. Why THIS angle — of everything you could open with, why does the specific detail or question you're about to use matter to THEM, not just to the sender's own goal?
 Let the answers decide which detail you lead with and what you ask. The message itself should read like the natural product of that thinking, not like the reasoning was skipped.`;
+
+// Shared by handleGenerateConnectionRequest and handleGenerateFirstMessage only — a user-selectable
+// structural pattern for *how* to open a pre-relationship message, same "pick a named instructional
+// block by key" shape as STAGE_TO_ANGLE below, just chosen by the user up front instead of derived
+// from tracked stage. CONNECTION_REQUEST_FRAMEWORK/FIRST_MESSAGE_FRAMEWORK still govern length/
+// no-pitch/grounding; a strategy only decides which kind of opening detail to lead with.
+const STRATEGY_PLAYBOOK = {
+  smart_pick: `STRATEGY — SMART PICK: no strategy was chosen, so you choose one. Before writing, privately judge which of the approaches below best fits what you actually know about this person: a recent post or specific activity available → lead with CURIOSITY GAP or SHARP QUESTION; a senior/time-poor title with little other signal → DIRECT & CLEAR; almost no usable signal at all → GIVE FIRST or DIRECT & CLEAR (never force a different one just to seem personalized when the data isn't there); a genuine mutual connection or shared context visible in the data → SHARED GROUND. Pick exactly one, commit to it fully, and do not mention or hint that you made this choice.`,
+  curiosity_gap: `STRATEGY — CURIOSITY GAP: open with one concrete, specific, slightly unexpected observation about this person or their recent activity — not a compliment, not a restatement of their title. The observation should create a genuine open loop (something the reader wants to know more about), not just state a fact. Close with a question that only they, specifically, could answer — never a generic one that could go to anyone.`,
+  direct_value: `STRATEGY — DIRECT & CLEAR: skip any warm-up or scene-setting. In the first sentence, state plainly why you're reaching out, tied to one real, specific thing about them — then stop. This does not mean pitching: "clear" means the reader instantly understands why you're messaging them, not what you're selling. Best suited to senior or clearly time-poor recipients; still follows every no-pitch rule elsewhere in this prompt.`,
+  problem_first: `STRATEGY — PROBLEM-FIRST: name one specific challenge or friction point that someone in their actual role, industry, or company stage plausibly deals with right now — grounded in their real profile data, not a generic industry template that could apply to anyone in that field. State it as an observation, then ask directly whether it resonates for them. Never follow it with a solution, a pitch, or any hint of what the sender offers — that conversation only happens if they reply.`,
+  shared_ground: `STRATEGY — SHARED GROUND: reference a real mutual connection, shared context, or overlap that is ACTUALLY present in the profile data below (a stated mutual-connections count, an overlapping employer in their experience history, a shared group or interest literally visible in the data) — never one you infer or assume. If nothing genuine like this exists in the data, do not force it: silently switch to the DIRECT & CLEAR approach instead and write that kind of message, without mentioning the switch.`,
+  sharp_question: `STRATEGY — SHARP QUESTION: the message IS the question — there is no separate observation before it. Ask one specific, well-researched question that references a real, concrete detail from their profile or activity, proving you actually looked. Never a generic conversation-starter question ("How's business?", "What are you working on these days?") — if the question could be sent to 1,000 other people unchanged, it is not specific enough.`,
+  give_first: `STRATEGY — GIVE FIRST: share one genuinely specific insight, observation, or useful point relevant to their actual situation — something that gives them something, not something that asks for their time. No ask at the end, or at most one extremely soft, easy-to-ignore one. Works especially well written peer-to-peer rather than vendor-to-prospect.`,
+  relevant_pattern: `STRATEGY — RELEVANT PATTERN: briefly mention a pattern or trend the SENDER has genuinely noticed, drawn only from the sender's own stated background/expertise provided below (never invented client names, counts, or testimonials) — phrase it as an honest observation ("I've noticed...", "A few people in [X]...") not a credential or a pitch. If no real sender background is available to draw from, do not invent one — fall back to DIRECT & CLEAR instead.`,
+};
+
+function buildStrategyGuidance(strategyId) {
+  return STRATEGY_PLAYBOOK[strategyId] || STRATEGY_PLAYBOOK.smart_pick;
+}
 
 // Stage values come from content/index.js's saved-contact pipeline tracking (STAGE_ORDER).
 // When a tracked stage is available it gives the model ground truth instead of asking it to
@@ -374,7 +402,7 @@ function buildProfileText(p, userNotes) {
 
 // ─── Core AI Call ─────────────────────────────────────────────────────────────
 
-async function callAI(systemPrompt, userPrompt) {
+async function callAI(systemPrompt, userPrompt, { temperature } = {}) {
   const apiKey = await getApiKey();
   const response = await fetch(OPENAI_API_URL, {
     method: 'POST',
@@ -385,6 +413,7 @@ async function callAI(systemPrompt, userPrompt) {
     body: JSON.stringify({
       model: OPENAI_MODEL,
       max_tokens: 2000,
+      ...(temperature !== undefined ? { temperature } : {}),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -425,12 +454,39 @@ function findBannedPhrase(text) {
   return BANNED_PHRASES.find(p => lower.includes(p)) || null;
 }
 
-async function callAIWithBannedPhraseGuard(systemPrompt, userPrompt) {
-  const first = await callAI(systemPrompt, userPrompt);
+// A fixed, moderate temperature (down from the provider default of ~1.0) for every message-writing
+// call — the single biggest lever behind "sometimes great, sometimes not," since the exact same
+// prompt can otherwise swing from tight and on-brief to meandering purely on sampling luck. Still
+// well above 0 so messages don't read as robotically identical across contacts.
+const MESSAGE_TEMPERATURE = 0.75;
+
+// Only one strategy has a structural signature reliable enough to check mechanically without
+// real risk of false positives: SHARP QUESTION explicitly requires the message to BE a question,
+// so "does it end in a question mark" is a fair, cheap check. The other 7 strategies don't have an
+// equally crisp, unambiguous signature (e.g. "no pitch" or "grounded in real data" can't be
+// verified by a string check) — better to leave those to the instruction + temperature control
+// than add a brittle heuristic that could false-positive on a genuinely good message.
+function violatesStrategyShape(text, strategy) {
+  if (strategy === 'sharp_question') {
+    const trimmed = (text || '').trim();
+    if (trimmed && !/[?？]\s*$/.test(trimmed)) return 'was written as the Sharp Question strategy but doesn\'t end in a question';
+  }
+  return null;
+}
+
+async function callAIWithBannedPhraseGuard(systemPrompt, userPrompt, maxChars, strategy) {
+  const first = await callAI(systemPrompt, userPrompt, { temperature: MESSAGE_TEMPERATURE });
   const hit = findBannedPhrase(first);
-  if (!hit) return first;
-  const retryPrompt = `${systemPrompt}\n\nYour previous attempt used a banned phrase: "${hit}". Rewrite from scratch avoiding it entirely — don't just delete or swap that phrase, write a genuinely different sentence in its place.`;
-  return callAI(retryPrompt, userPrompt);
+  const overLength = typeof maxChars === 'number' && first.length > maxChars;
+  const shapeViolation = violatesStrategyShape(first, strategy);
+  if (!hit && !overLength && !shapeViolation) return first;
+
+  const violations = [];
+  if (hit) violations.push(`used a banned phrase: "${hit}"`);
+  if (overLength) violations.push(`ran ${first.length} characters, over the ${maxChars}-character limit`);
+  if (shapeViolation) violations.push(shapeViolation);
+  const retryPrompt = `${systemPrompt}\n\nYour previous attempt ${violations.join(' and ')}. Rewrite from scratch fixing this — don't just trim or swap words, write a genuinely tighter version that respects every rule above.`;
+  return callAI(retryPrompt, userPrompt, { temperature: MESSAGE_TEMPERATURE });
 }
 
 // ─── Profile Analysis ─────────────────────────────────────────────────────────
@@ -711,7 +767,7 @@ const CONNECTION_REQUEST_FRAMEWORK = `CONNECTION REQUEST FRAMEWORK — a recipie
 
 If there is no genuine trigger for this person, a short, honest, low-key note beats a generic one dressed up to sound personalized — vague flattery performs worse than no note at all.`;
 
-export async function handleGenerateConnectionRequest(profileData, intent, userNotes, contextMaterial, previousAttempt) {
+export async function handleGenerateConnectionRequest(profileData, intent, userNotes, contextMaterial, previousAttempt, strategy) {
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
@@ -728,6 +784,8 @@ export async function handleGenerateConnectionRequest(profileData, intent, userN
 PRIORITY RULE: Base the message on their CURRENT role if possible. Only reference posts if they clearly relate to their current job — never reference posts from a previous employer. Never fabricate a specific detail that isn't actually in the profile data (see GROUNDING below) — if there is nothing specific enough to reference, write a warm, natural message using just their name, current title, and company. Always produce a message — never refuse, never ask for clarification, and never leave a placeholder or note saying information is missing.
 
 ${CONNECTION_REQUEST_FRAMEWORK}
+
+${buildStrategyGuidance(strategy)}
 
 Rules:
 - Hard limit: 200 characters total (count carefully)
@@ -752,6 +810,8 @@ PRIORITY RULE: Base the message on their CURRENT role, company, or recent activi
 
 ${CONNECTION_REQUEST_FRAMEWORK}
 
+${buildStrategyGuidance(strategy)}
+
 Rules:
 - Hard limit: 200 characters total (count carefully)
 - No selling, no pitching, no mention of services or offers
@@ -775,6 +835,8 @@ PRIORITY RULE: Base the message on their CURRENT role if possible. Only referenc
 
 ${CONNECTION_REQUEST_FRAMEWORK}
 
+${buildStrategyGuidance(strategy)}
+
 Rules:
 - Hard limit: 200 characters total (count carefully)
 - No corporate speak, no buzzwords
@@ -790,10 +852,10 @@ Return ONLY the connection request text. Nothing else. No quotes around it.`;
   }
 
   systemPrompt += buildUserContextSection(contextMaterial);
-  systemPrompt += buildVarietyNote(previousAttempt);
+  systemPrompt += buildVarietyNote(previousAttempt, strategy);
 
   const userPrompt = buildProfileText(profileData, userNotes);
-  return { text: await callAIWithBannedPhraseGuard(systemPrompt, userPrompt) };
+  return { text: await callAIWithBannedPhraseGuard(systemPrompt, userPrompt, 200, strategy) };
 }
 
 // ─── First Message ────────────────────────────────────────────────────────────
@@ -813,6 +875,8 @@ const FIRST_MESSAGE_FRAMEWORK = `FIRST-MESSAGE FRAMEWORK — this is the actual 
 
 LENGTH: the single most consistent finding in current outreach data. Keep the whole message to 40-70 words (tighter — 40-50 — for senior or executive recipients, who get the most outreach and scan the fastest). Every sentence past that measurably hurts reply rate rather than helping it. If a draft runs long, cut explanation before cutting personalization.
 
+FORMAT: write as 1 short paragraph, or 2 short paragraphs separated by a blank line only if there are genuinely two distinct beats (the hook, then the question) — never one dense wall of text, and never pad to a second paragraph just to have one when the whole thought is naturally a single beat.
+
 Self-check before finalizing: does the first line prove real, specific knowledge of THIS person? Does any part of the message describe the sender's company, product, or value instead of the recipient's own situation? If either check fails, rewrite before returning.`;
 
 function buildConnectionRecencyNote(stage, daysSinceLastTouch) {
@@ -820,7 +884,7 @@ function buildConnectionRecencyNote(stage, daysSinceLastTouch) {
   return `CONNECTION TIMING: this connection was sent/accepted ${daysSinceLastTouch} days ago, not moments ago (tracked from the sender's saved pipeline stage) — do not write as if the connection just happened ("thanks for connecting", "just connected", etc). Open as a considered first message to someone already in their network, not a reflexive same-day follow-up.`;
 }
 
-export async function handleGenerateFirstMessage(profileData, analysis, intent, tone, userInstructions, stage, daysSinceLastTouch, contextMaterial, previousAttempt) {
+export async function handleGenerateFirstMessage(profileData, analysis, intent, tone, userInstructions, stage, daysSinceLastTouch, contextMaterial, previousAttempt, strategy) {
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
@@ -854,6 +918,7 @@ export async function handleGenerateFirstMessage(profileData, analysis, intent, 
   };
   const toneGuide = toneInstructions[tone] || toneInstructions.warm;
   const analysisCtx = buildAnalysisContext(a, intent);
+  const maxChars = isJobSearch ? 300 : 350;
 
   let systemPrompt;
 
@@ -870,6 +935,8 @@ TONE: ${toneGuide}
 APPROACH FOR THIS CONTACT: ${approachGuide}
 
 ${FIRST_MESSAGE_FRAMEWORK}
+
+${buildStrategyGuidance(strategy)}
 
 JOB-SEARCH-SPECIFIC RULES:
 - Sound like an accomplished professional reaching out to exchange ideas — never like a job seeker asking for a favour
@@ -902,6 +969,8 @@ TONE: ${toneGuide}
 APPROACH FOR THIS PROSPECT: ${approachGuide}
 
 ${FIRST_MESSAGE_FRAMEWORK}
+
+${buildStrategyGuidance(strategy)}
 
 B2C-SPECIFIC RULES:
 - Establish peer credibility through how the message sounds, not by stating it — position the sender as someone who works in the same domain, not a vendor
@@ -944,6 +1013,8 @@ APPROACH FOR THIS PROSPECT: ${approachGuide}
 
 ${FIRST_MESSAGE_FRAMEWORK}
 
+${buildStrategyGuidance(strategy)}
+
 B2B-SPECIFIC RULES:
 - Seniority changes tightness and directness, never how much you pitch — a decision-maker gets a shorter, sharper version of the exact same no-pitch structure, not a more "business-outcome-focused" one
 - Reference at least one concrete detail from the analysis (company context, key insight, recent activity, or ICP fit signal) as the specific hook — this is what proves research, not a stated credential
@@ -968,10 +1039,10 @@ ${AUTHENTICITY_RULES}
   const recencyNote = buildConnectionRecencyNote(stage, daysSinceLastTouch);
   if (recencyNote) systemPrompt += `\n\n${recencyNote}`;
   systemPrompt += buildUserContextSection(contextMaterial);
-  systemPrompt += buildVarietyNote(previousAttempt);
+  systemPrompt += buildVarietyNote(previousAttempt, strategy);
 
   const userPrompt = buildProfileText(profileData);
-  return { text: await callAIWithBannedPhraseGuard(systemPrompt, userPrompt) };
+  return { text: await callAIWithBannedPhraseGuard(systemPrompt, userPrompt, maxChars, strategy) };
 }
 
 // ─── Refine Message ───────────────────────────────────────────────────────────
@@ -1190,7 +1261,7 @@ Hashtag rules: 5-7 tags. ${hashtagContext}`;
 // sender/recipient from a "RECIPIENT PROFILE" blob, which used to let the wrong page's scraped
 // profile (e.g. the account owner's own) leak in as if it belonged to the contact.
 
-export async function handleGenerateChatFollowup({ conversationText, isRaw, contactName, senderName, intent, userInstructions, stage, daysSinceLastTouch, analysis, contextMaterial }) {
+export async function handleGenerateChatFollowup({ conversationText, isRaw, contactName, senderName, intent, userInstructions, stage, daysSinceLastTouch, analysis, contextMaterial, strategy }) {
   const isJobSearch = intent === 'job_search';
   const isB2c = intent === 'b2c_sales';
   const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
@@ -1236,7 +1307,7 @@ ${AUTHENTICITY_RULES}
 
 ${buildFollowupAngleRules(stage, daysSinceLastTouch, recipient)}
 
-LEAD_READ LINE: after the message (and after NEED_ID if present), add one more line starting with exactly "LEAD_READ: " giving an honest, one-sentence read on how this relationship is trending — based only on real signals in the thread: whether ${recipient} has replied at all, how they replied (short/dismissive vs. detailed/curious), any questions they asked back, any timeline or urgency they mentioned, and how many unanswered touches have gone out. Do not invent a percentage, a "likelihood to close," or any numeric score — you do not have the data to support one, and a fake number is worse than no number. Say it plainly, e.g. "Warm — they've asked a specific question and haven't gone quiet" or "Cooling — three touches out with no reply, worth one higher-value message or moving on." If ${recipient} hasn't sent anything yet, base the read purely on touch count and elapsed time, and say so plainly.
+${strategy && strategy !== 'smart_pick' ? `${buildStrategyGuidance(strategy)}\nApply this only to shape WHAT the opening move draws on — the angle, need-identification, formatting, and closing rules above still govern the rest of the message; don't let the strategy override those.\n\n` : ''}LEAD_READ LINE: after the message (and after NEED_ID if present), add one more line starting with exactly "LEAD_READ: " giving an honest, one-sentence read on how this relationship is trending — based only on real signals in the thread: whether ${recipient} has replied at all, how they replied (short/dismissive vs. detailed/curious), any questions they asked back, any timeline or urgency they mentioned, and how many unanswered touches have gone out. Do not invent a percentage, a "likelihood to close," or any numeric score — you do not have the data to support one, and a fake number is worse than no number. Say it plainly, e.g. "Warm — they've asked a specific question and haven't gone quiet" or "Cooling — three touches out with no reply, worth one higher-value message or moving on." If ${recipient} hasn't sent anything yet, base the read purely on touch count and elapsed time, and say so plainly.
 
 Return ONLY the message text, followed by the NEED_ID and LEAD_READ lines described above (and TIMING_NOTE if that rule applies). No quotes around the message, no other labels, no explanation.`;
 
@@ -1247,7 +1318,7 @@ Return ONLY the message text, followed by the NEED_ID and LEAD_READ lines descri
     ? `${withContext}\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly, even if it overrides the angle guidance above):\n${userInstructions.trim()}`
     : withContext;
 
-  return { text: await callAIWithBannedPhraseGuard(finalPrompt, `CONVERSATION:\n${conversationText || '(no messages found)'}`) };
+  return { text: await callAIWithBannedPhraseGuard(finalPrompt, `CONVERSATION:\n${conversationText || '(no messages found)'}`, 300, strategy) };
 }
 
 export async function handleGeneratePostImage(prompt) {

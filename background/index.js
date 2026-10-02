@@ -19,14 +19,21 @@ async function pushSettingsToCloud(settings) {
   try {
     const authResult = await chrome.identity.getAuthToken({ interactive: false });
     const token = typeof authResult === 'string' ? authResult : authResult?.token;
-    if (!token) return { ok: false };
+    if (!token) return { ok: false, error: 'NO_AUTH_TOKEN' };
     const resp = await fetch(`${SUPABASE_URL}/functions/v1/save-settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
       body: JSON.stringify({ googleToken: token, settings }),
     });
-    return { ok: resp.ok };
-  } catch (_) { return { ok: false }; }
+    // Surface the actual failure reason instead of a bare boolean — a silent {ok:false} here
+    // previously made a real sync failure indistinguishable from "everything's fine", which is
+    // exactly what let settings silently stop reaching the cloud without anyone noticing.
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      return { ok: false, error: body.error || `HTTP_${resp.status}` };
+    }
+    return { ok: true };
+  } catch (err) { return { ok: false, error: err.message }; }
 }
 
 async function withUsageGate(eventType, fn) {
@@ -63,11 +70,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === 'GENERATE_CONNECTION_REQUEST') {
-    withUsageGate('message', () => handleGenerateConnectionRequest(msg.profileData, msg.intent, msg.userNotes, msg.contextMaterial, msg.previousAttempt)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withUsageGate('message', () => handleGenerateConnectionRequest(msg.profileData, msg.intent, msg.userNotes, msg.contextMaterial, msg.previousAttempt, msg.strategy)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'GENERATE_FIRST_MESSAGE') {
-    withUsageGate('message', () => handleGenerateFirstMessage(msg.profileData, msg.analysis, msg.intent, msg.tone, msg.userInstructions, msg.stage, msg.daysSinceLastTouch, msg.contextMaterial, msg.previousAttempt)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
+    withUsageGate('message', () => handleGenerateFirstMessage(msg.profileData, msg.analysis, msg.intent, msg.tone, msg.userInstructions, msg.stage, msg.daysSinceLastTouch, msg.contextMaterial, msg.previousAttempt, msg.strategy)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'GENERATE_CHAT_FOLLOWUP') {

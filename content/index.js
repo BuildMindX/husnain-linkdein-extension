@@ -39,6 +39,22 @@
   // bookmark icon inside the analysis panel header (that one requires running Analyze first).
   let dockSaveBtn = null;
 
+  // ─── Message Strategies ─────────────────────────────────────────────────────────
+  // Shared by the Message tab and the Connection tab's regenerate control — defined once here
+  // rather than duplicated in each render branch, since both need the exact same option set.
+  // Mirrors background/ai.js's STRATEGY_PLAYBOOK keys exactly; an unrecognized/omitted value
+  // falls back to Smart Pick server-side.
+  const STRATEGIES = [
+    { val: 'smart_pick',      label: 'Smart Pick',      desc: 'Let AI choose the best fit' },
+    { val: 'curiosity_gap',   label: 'Curiosity Gap',   desc: 'Open with an unexpected detail' },
+    { val: 'direct_value',    label: 'Direct & Clear',  desc: 'Plain, no warm-up' },
+    { val: 'problem_first',   label: 'Problem-First',   desc: 'Name a challenge, ask if it fits' },
+    { val: 'shared_ground',   label: 'Shared Ground',   desc: 'Reference real mutual context' },
+    { val: 'sharp_question',  label: 'Sharp Question',  desc: 'Lead with one specific question' },
+    { val: 'give_first',      label: 'Give First',      desc: 'Offer insight, no ask' },
+    { val: 'relevant_pattern',label: 'Relevant Pattern',desc: 'Share an honest observation' },
+  ];
+
   // ─── IndexedDB ────────────────────────────────────────────────────────────────
   const DB_NAME = 'lia-db';
   const DB_VERSION = 1;
@@ -2166,6 +2182,7 @@
   async function renderFollowupForm(intent) {
     const body = document.getElementById('lia-body');
     if (!body) return;
+    let followupSelectedStrategy = 'smart_pick';
     const tabs = panel.querySelector('.lia-tabs');
     if (tabs) tabs.style.display = 'none';
 
@@ -2231,6 +2248,16 @@
         <textarea class="lia-notes-input" id="lia-followup-convo" rows="6" placeholder="Conversation will appear here — or paste it manually..." style="min-height:110px"></textarea>
       </div>
       <div class="lia-section">
+        <div class="lia-refine-label" style="margin-bottom:7px">Strategy <span class="lia-optional">(optional — shapes the opening move)</span></div>
+        <div class="lia-strategy-grid" id="lia-followup-strategy">
+          ${STRATEGIES.map(s => `
+            <button class="lia-strategy-btn${s.val === 'smart_pick' ? ' active' : ''}" data-strategy="${s.val}">
+              <span class="lia-strategy-name">${s.label}</span>
+              <span class="lia-strategy-desc">${s.desc}</span>
+            </button>`).join('')}
+        </div>
+      </div>
+      <div class="lia-section">
         <div class="lia-refine-label" style="margin-bottom:6px">Instructions <span class="lia-optional">(optional)</span></div>
         <textarea class="lia-notes-input" id="lia-followup-instructions" rows="2" placeholder="e.g. Be more direct, focus on AI automation, ask for a call this week..."></textarea>
       </div>
@@ -2282,6 +2309,13 @@
       renderPurposePicker();
     });
 
+    body.querySelectorAll('#lia-followup-strategy .lia-strategy-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        followupSelectedStrategy = btn.dataset.strategy;
+        body.querySelectorAll('#lia-followup-strategy .lia-strategy-btn').forEach(b => b.classList.toggle('active', b.dataset.strategy === followupSelectedStrategy));
+      });
+    });
+
     body.querySelector('#lia-followup-gen-btn').addEventListener('click', async () => {
       const btn = body.querySelector('#lia-followup-gen-btn');
       const resultDiv = body.querySelector('#lia-followup-result');
@@ -2327,7 +2361,7 @@
         // "recipient profile" with no cross-check that it really was the contact being messaged.
         const result = await sendMessage('GENERATE_CHAT_FOLLOWUP', null, {
           conversationText: convoText, isRaw: currentIsRaw, contactName, senderName: myName,
-          intent, userInstructions, contextMaterial,
+          intent, userInstructions, contextMaterial, strategy: followupSelectedStrategy,
           stage: selectedStage, daysSinceLastTouch, analysis: cachedAnalysis,
         });
         if (result.error) throw new Error(result.error);
@@ -3499,6 +3533,7 @@
       ];
       let msgCurrentText = '';
       let msgSelectedTone = 'warm';
+      let msgSelectedStrategy = 'smart_pick';
 
       // Build analysis insights block
       let insightRows = '';
@@ -3553,6 +3588,16 @@
         ${insightsSection}
         <div id="lia-msgtab-result" style="display:none;margin-bottom:16px"></div>
         <div class="lia-section" style="margin-top:0">
+          <div class="lia-refine-label" style="margin-bottom:7px">Strategy</div>
+          <div class="lia-strategy-grid" id="lia-msgtab-strategy">
+            ${STRATEGIES.map(s => `
+              <button class="lia-strategy-btn${s.val === msgSelectedStrategy ? ' active' : ''}" data-strategy="${s.val}">
+                <span class="lia-strategy-name">${s.label}</span>
+                <span class="lia-strategy-desc">${s.desc}</span>
+              </button>`).join('')}
+          </div>
+        </div>
+        <div class="lia-section">
           <div class="lia-refine-label" style="margin-bottom:7px">Tone</div>
           <div class="lia-tone-grid" id="lia-msgtab-tone">
             ${TONES.map(t => `
@@ -3579,6 +3624,13 @@
         btn.addEventListener('click', () => {
           msgSelectedTone = btn.dataset.tone;
           body.querySelectorAll('#lia-msgtab-tone .lia-tone-btn').forEach(b => b.classList.toggle('active', b.dataset.tone === msgSelectedTone));
+        });
+      });
+
+      body.querySelectorAll('.lia-strategy-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          msgSelectedStrategy = btn.dataset.strategy;
+          body.querySelectorAll('#lia-msgtab-strategy .lia-strategy-btn').forEach(b => b.classList.toggle('active', b.dataset.strategy === msgSelectedStrategy));
         });
       });
 
@@ -3666,7 +3718,7 @@
           const daysSinceLastTouch = (entry && entry.stage && entry.stage !== 'new')
             ? Math.floor((Date.now() - (entry.stageUpdatedAt || entry.savedAt || Date.now())) / 86400000)
             : null;
-          const result = await sendMessage('GENERATE_FIRST_MESSAGE', extractProfile(), { intent, analysis, tone: msgSelectedTone, userInstructions, contextMaterial, stage, daysSinceLastTouch, previousAttempt: msgCurrentText || undefined });
+          const result = await sendMessage('GENERATE_FIRST_MESSAGE', extractProfile(), { intent, analysis, tone: msgSelectedTone, strategy: msgSelectedStrategy, userInstructions, contextMaterial, stage, daysSinceLastTouch, previousAttempt: msgCurrentText || undefined });
           if (result.error) throw new Error(result.error);
           renderMsgTabResult(result.text || '');
           genBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Regenerate`;
@@ -3685,6 +3737,7 @@
       });
 
     } else if (tab === 'connection') {
+      let connSelectedStrategy = 'smart_pick';
       if (!connectionRequest) {
         body.innerHTML = `
           <div class="lia-section">
@@ -3728,7 +3781,15 @@
           <button class="lia-btn-primary lia-copy-btn" id="lia-copy-btn">Copy to Clipboard</button>
         </div>
         <div class="lia-section lia-regen-section">
-          <div class="lia-label">Your findings <span class="lia-optional">(optional — guides the rewrite)</span></div>
+          <div class="lia-label">Strategy <span class="lia-optional">(optional — guides the rewrite)</span></div>
+          <div class="lia-strategy-grid" id="lia-conn-strategy">
+            ${STRATEGIES.map(s => `
+              <button class="lia-strategy-btn${s.val === connSelectedStrategy ? ' active' : ''}" data-strategy="${s.val}">
+                <span class="lia-strategy-name">${s.label}</span>
+                <span class="lia-strategy-desc">${s.desc}</span>
+              </button>`).join('')}
+          </div>
+          <div class="lia-label" style="margin-top:12px">Your findings <span class="lia-optional">(optional — guides the rewrite)</span></div>
           <textarea class="lia-notes-input" id="lia-conn-notes" placeholder="e.g. They just posted about hiring, recently changed roles, mentioned a budget review..." rows="3"></textarea>
           <button class="lia-btn-secondary lia-regen-btn" id="lia-regen-btn">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -3752,6 +3813,13 @@
         logOutreachAction('connection');
       });
 
+      body.querySelectorAll('#lia-conn-strategy .lia-strategy-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          connSelectedStrategy = btn.dataset.strategy;
+          body.querySelectorAll('#lia-conn-strategy .lia-strategy-btn').forEach(b => b.classList.toggle('active', b.dataset.strategy === connSelectedStrategy));
+        });
+      });
+
       body.querySelector('#lia-regen-btn').addEventListener('click', async () => {
         const btn = body.querySelector('#lia-regen-btn');
         const errEl = body.querySelector('#lia-regen-error');
@@ -3761,7 +3829,7 @@
         if (errEl) errEl.style.display = 'none';
         try {
           const profileData = extractProfile();
-          const result = await sendMessage('GENERATE_CONNECTION_REQUEST', profileData, { intent, userNotes: notes || undefined, previousAttempt: connectionRequest || undefined });
+          const result = await sendMessage('GENERATE_CONNECTION_REQUEST', profileData, { intent, userNotes: notes || undefined, strategy: connSelectedStrategy, previousAttempt: connectionRequest || undefined });
           if (result.error) throw new Error(result.error);
           body._rendered.connectionRequest = result.text;
           if (!notes) {

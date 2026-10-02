@@ -2112,20 +2112,23 @@
   letter-spacing: 0.05em;
 }
 
-/* Tone grid */
-.lia-tone-grid {
+/* Tone grid / Strategy grid — identical component, two independent pickers */
+.lia-tone-grid,
+.lia-strategy-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
 }
 
 /* Odd option count (5 tones) — rather than let the last one wrap onto a half-empty
-   row by accident, give it the full row on purpose. */
+   row by accident, give it the full row on purpose. The 8-option strategy grid is even, so this
+   rule is a no-op there (harmless — :last-child still resolves, just already sits in column 2). */
 .lia-tone-btn:last-child {
   grid-column: 1 / -1;
 }
 
-.lia-tone-btn {
+.lia-tone-btn,
+.lia-strategy-btn {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -2138,30 +2141,36 @@
   min-width: 0;
 }
 
-.lia-tone-btn:hover { border-color: #93c5fd; background: #f0f9ff; }
+.lia-tone-btn:hover,
+.lia-strategy-btn:hover { border-color: #93c5fd; background: #f0f9ff; }
 
-.lia-tone-btn.active {
+.lia-tone-btn.active,
+.lia-strategy-btn.active {
   border-color: #0A66C2;
   background: #eff6ff;
 }
 
-.lia-tone-name {
+.lia-tone-name,
+.lia-strategy-name {
   font-size: 12px;
   font-weight: 700;
   color: #1e293b;
   line-height: 1.2;
 }
 
-.lia-tone-btn.active .lia-tone-name { color: #0A66C2; }
+.lia-tone-btn.active .lia-tone-name,
+.lia-strategy-btn.active .lia-strategy-name { color: #0A66C2; }
 
-.lia-tone-desc {
+.lia-tone-desc,
+.lia-strategy-desc {
   font-size: 10.5px;
   color: #94a3b8;
   line-height: 1.3;
   margin-top: 1px;
 }
 
-.lia-tone-btn.active .lia-tone-desc { color: #3b82f6; }
+.lia-tone-btn.active .lia-tone-desc,
+.lia-strategy-btn.active .lia-strategy-desc { color: #3b82f6; }
 
 /* ── Sidebar dock — single fixed container prevents button overlap ───────────── */
 #lia-sidebar-dock {
@@ -2451,6 +2460,7 @@
 .lia-char-count,
 .lia-insight-key,
 .lia-tone-desc,
+.lia-strategy-desc,
 .lia-refine-label {
   color: rgba(196,181,253,0.7) !important;
 }
@@ -2744,26 +2754,33 @@
   background: #12123a !important;
 }
 
-/* ── Tone buttons ─────────────────────────────────────────────────────────── */
-.lia-tone-btn {
+/* ── Tone buttons / Strategy buttons ─────────────────────────────────────── */
+.lia-tone-btn,
+.lia-strategy-btn {
   background: rgba(255,255,255,0.05) !important;
   border-color: rgba(255,255,255,0.12) !important;
 }
 
-.lia-tone-btn:hover {
+.lia-tone-btn:hover,
+.lia-strategy-btn:hover {
   background: rgba(124,58,237,0.08) !important;
   border-color: rgba(124,58,237,0.35) !important;
 }
 
-.lia-tone-btn.active {
+.lia-tone-btn.active,
+.lia-strategy-btn.active {
   background: rgba(124,58,237,0.15) !important;
   border-color: #7c3aed !important;
 }
 
-.lia-tone-name { color: #ffffff !important; }
-.lia-tone-btn.active .lia-tone-name { color: #c4b5fd !important; }
-.lia-tone-desc { color: rgba(148,163,184,0.6) !important; }
-.lia-tone-btn.active .lia-tone-desc { color: rgba(196,181,253,0.7) !important; }
+.lia-tone-name,
+.lia-strategy-name { color: #ffffff !important; }
+.lia-tone-btn.active .lia-tone-name,
+.lia-strategy-btn.active .lia-strategy-name { color: #c4b5fd !important; }
+.lia-tone-desc,
+.lia-strategy-desc { color: rgba(148,163,184,0.6) !important; }
+.lia-tone-btn.active .lia-tone-desc,
+.lia-strategy-btn.active .lia-strategy-desc { color: rgba(196,181,253,0.7) !important; }
 
 /* ── ICP warning ─────────────────────────────────────────────────────────── */
 .lia-icp-warning {
