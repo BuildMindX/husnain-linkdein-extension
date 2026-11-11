@@ -173,6 +173,7 @@
   };
 
   const BLANK_PROOFS = () => ['', '', ''];
+  const optLabelOf = (list, id) => (list.find(o => o.id === id) || {}).label || '';
 
   function emptyIcp() {
     return {
@@ -353,6 +354,32 @@
     };
     const m1 = fixPresets(r.messagePresets); if (m1) set.messagePresets = m1;
     const m2 = fixPresets(r.b2cMessagePresets, r.jobMessagePresets); if (m2) set.b2cMessagePresets = m2;
+
+    // 2026-11-11 field audit: fields that didn't change targeting or message wording enough to earn
+    // a place on the setup screen were removed. Their text moves into Notes, which still reaches
+    // the prompts, so nothing the user typed is lost.
+    const foldNotes = (notes, label, value) => (value && !String(notes || '').includes(value) ? `${notes ? `${notes}\n` : ''}${label}: ${value}` : notes || '');
+    const b2cList = set.b2cProfiles || r.b2cProfiles;
+    if (Array.isArray(b2cList) && b2cList.some(p => p?.pitch?.uniqueAngle || p?.seeking?.availability || (p?.seeking?.workplace || []).length)) {
+      set.b2cProfiles = b2cList.map(p => {
+        if (!p?.pitch) return p;
+        const k = p.seeking || {};
+        let notes = foldNotes(p.pitch.notes, 'What makes me different', p.pitch.uniqueAngle);
+        notes = foldNotes(notes, 'Availability', optLabelOf(OPTIONS.availability, k.availability));
+        notes = foldNotes(notes, 'Workplace', (k.workplace || []).map(id => optLabelOf(OPTIONS.workplace, id)).filter(Boolean).join(', '));
+        return { ...p, pitch: { ...p.pitch, uniqueAngle: '', notes }, seeking: { ...k, availability: '', workplace: [] } };
+      });
+    }
+    const b2bList = set.icpProfiles || (Array.isArray(r.icpProfiles) ? r.icpProfiles : null);
+    if (Array.isArray(b2bList) && b2bList.some(p => p?.businessProfile?.valueProp || p?.businessProfile?.offerType || p?.businessProfile?.outcome)) {
+      set.icpProfiles = b2bList.map(p => {
+        const bp = p?.businessProfile; if (!bp) return p;
+        let notes = foldNotes(bp.notes, 'What makes us different', bp.valueProp);
+        notes = foldNotes(notes, 'What we sell', optLabelOf(OPTIONS.offerTypes, bp.offerType));
+        notes = foldNotes(notes, 'Main outcome we deliver', optLabelOf(OPTIONS.outcomes, bp.outcome));
+        return { ...p, businessProfile: { ...bp, valueProp: '', offerType: '', outcome: '', notes } };
+      });
+    }
 
     if (Object.keys(set).length) await chrome.storage.local.set(set);
     return Object.keys(set);
