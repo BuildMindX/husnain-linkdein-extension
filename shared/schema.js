@@ -131,6 +131,35 @@
       { id: 'casual', label: 'Casual' },
       { id: 'professional', label: 'Professional' },
     ],
+    // Post Creator. Pillars keep topics varied but on-brand (3–5 is common practice).
+    postPillars: {
+      personal: [
+        { id: 'lessons', label: 'Lessons from my work' },
+        { id: 'howto', label: 'How-to and playbooks' },
+        { id: 'deep_dive', label: 'Skill deep-dives' },
+        { id: 'showcase', label: 'Work showcases' },
+        { id: 'opinions', label: 'Opinions and hot takes' },
+        { id: 'industry', label: 'Industry commentary' },
+        { id: 'journey', label: 'Career journey' },
+        { id: 'building', label: 'Building in public' },
+      ],
+      company: [
+        { id: 'trends', label: 'Industry trends' },
+        { id: 'playbooks', label: 'How-to and playbooks' },
+        { id: 'results', label: 'Client results' },
+        { id: 'behind_scenes', label: 'Behind the scenes' },
+        { id: 'opinions', label: 'Opinions and hot takes' },
+        { id: 'explainers', label: 'Explaining what we do' },
+        { id: 'team', label: 'Team and hiring' },
+        { id: 'announcements', label: 'Announcements' },
+      ],
+    },
+    postEndings: [
+      { id: 'question', label: 'A question for comments (recommended)' },
+      { id: 'dm', label: 'Invite people to message me' },
+      { id: 'follow', label: 'Ask people to follow for more' },
+      { id: 'none', label: 'No call to action' },
+    ],
     excludeCompanyTypes: [
       { id: 'staffing_agencies', label: 'Staffing & recruiting agencies' },
       { id: 'outsourcing_firms', label: 'Outsourcing / offshoring firms' },

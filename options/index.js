@@ -225,8 +225,75 @@ if (creatorDomainInput) {
   });
 }
 
+// ── Post settings shared by personal and company: pillars (chips), ending, voice sample ──
+const postFields = {
+  personal: { pillars: 'creator-pillars', ending: 'creator-ending', voice: 'creator-voice' },
+  company: { pillars: 'co-pillars', ending: 'co-ending', voice: 'co-voice' },
+};
+const pillarState = { personal: [], company: [] };
+function renderPillars(kind) {
+  const el = document.getElementById(postFields[kind].pillars);
+  if (!el) return;
+  const max = 5;
+  const sel = pillarState[kind];
+  el.innerHTML = LP_SCHEMA.OPTIONS.postPillars[kind].map(o => {
+    const on = sel.includes(o.id);
+    return `<button type="button" class="choice" aria-pressed="${on}" data-id="${o.id}"${!on && sel.length >= max ? ' disabled' : ''}>${escapeHtml(o.label)}</button>`;
+  }).join('');
+}
+['personal', 'company'].forEach(kind => {
+  document.getElementById(postFields[kind].pillars)?.addEventListener('click', e => {
+    const b = e.target.closest('.choice'); if (!b || b.disabled) return;
+    const list = pillarState[kind];
+    const i = list.indexOf(b.dataset.id);
+    if (i >= 0) list.splice(i, 1); else list.push(b.dataset.id);
+    renderPillars(kind);
+  });
+  const ending = document.getElementById(postFields[kind].ending);
+  if (ending) ending.innerHTML = LP_SCHEMA.OPTIONS.postEndings.map(o => `<option value="${o.id}">${escapeHtml(o.label)}</option>`).join('');
+});
+function loadPostFields(kind, p) {
+  pillarState[kind] = Array.isArray(p.pillars) ? p.pillars.slice(0, 5) : [];
+  renderPillars(kind);
+  const f = postFields[kind];
+  const ending = document.getElementById(f.ending); if (ending) ending.value = p.postEnding || 'question';
+  const voice = document.getElementById(f.voice); if (voice) voice.value = p.voiceSample || '';
+}
+function readPostFields(kind) {
+  const f = postFields[kind];
+  return {
+    pillars: pillarState[kind].length ? [...pillarState[kind]] : undefined,
+    postEnding: document.getElementById(f.ending)?.value || undefined,
+    voiceSample: (document.getElementById(f.voice)?.value || '').trim().slice(0, 3000) || undefined,
+  };
+}
+
+// ── Your posts (captured from the user's own activity page by the content script) ──
+function renderOwnPosts(list) {
+  const el = document.getElementById('own-posts-list');
+  if (!el) return;
+  const posts = Array.isArray(list) ? list : [];
+  el.innerHTML = posts.length
+    ? `<p class="own-posts-count">${posts.length} saved</p><ol class="own-posts">${posts.slice(0, 5).map(p => `<li>${escapeHtml(p.text.replace(/\s+/g, ' ').slice(0, 180))}${p.text.length > 180 ? '…' : ''}</li>`).join('')}</ol>${posts.length > 5 ? `<p class="hint">and ${posts.length - 5} more</p>` : ''}`
+    : '<p class="own-posts-empty">None saved yet. Add your profile URL above, then use “Read my posts” in Post Creator on LinkedIn.</p>';
+  document.getElementById('own-posts-clear')?.toggleAttribute('disabled', !posts.length);
+}
+chrome.storage.local.get('ownPosts', r => renderOwnPosts(r.ownPosts));
+chrome.storage.onChanged.addListener((changes, area) => { if (area === 'local' && 'ownPosts' in changes) renderOwnPosts(changes.ownPosts.newValue); });
+document.getElementById('own-posts-clear')?.addEventListener('click', () => {
+  if (!confirm('Clear all saved posts? Drafts will stop matching your voice until you read them again.')) return;
+  chrome.storage.local.remove('ownPosts', () => { renderOwnPosts([]); showStatus(document.getElementById('own-posts-status'), 'Saved posts cleared.', 'info'); });
+});
+document.getElementById('own-posts-open')?.addEventListener('click', () => {
+  const url = (document.getElementById('creator-linkedin-url')?.value || '').trim();
+  const m = url.match(/linkedin\.com\/in\/([^/?#]+)/i);
+  if (!m) { showStatus(document.getElementById('own-posts-status'), 'Add your LinkedIn profile URL above first.', 'error'); return; }
+  chrome.tabs.create({ url: `https://www.linkedin.com/in/${m[1]}/recent-activity/shares/` });
+});
+
 chrome.storage.local.get('creatorProfile', r => {
   const p = r.creatorProfile || {};
+  loadPostFields('personal', p);
   const setVal = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
   setVal('creator-name', p.name);
   setVal('creator-linkedin-url', p.linkedinUrl);
@@ -275,7 +342,12 @@ document.getElementById('creator-save-btn')?.addEventListener('click', () => {
     goal: document.getElementById('creator-goal')?.value,
     postStyle: document.getElementById('creator-style')?.value,
     domains: creatorDomainTagState.domains.length ? creatorDomainTagState.domains : undefined,
+    ...readPostFields('personal'),
   };
+  if (raw.linkedinUrl && !/linkedin\.com\/in\/[^/?#]+/i.test(raw.linkedinUrl)) {
+    showStatus(document.getElementById('creator-status'), 'Use your profile link, like https://www.linkedin.com/in/your-name/', 'error');
+    return;
+  }
   const creatorProfile = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined && v !== ''));
   chrome.storage.local.set({ creatorProfile }, () => showStatus(document.getElementById('creator-status'), 'Creator profile saved.', 'success'));
 });
@@ -283,6 +355,7 @@ document.getElementById('creator-save-btn')?.addEventListener('click', () => {
 // ── Company Profile ───────────────────────────────────────────────────────────
 chrome.storage.local.get('companyProfile', r => {
   const p = r.companyProfile || {};
+  loadPostFields('company', p);
   const setVal = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
   setVal('co-name', p.name); setVal('co-industry', p.industry); setVal('co-about', p.about);
   setVal('co-products', p.products); setVal('co-icp', p.icp); setVal('co-goal', p.goal); setVal('co-style', p.postStyle);
@@ -304,7 +377,7 @@ document.getElementById('co-prefill-btn')?.addEventListener('click', async () =>
 });
 
 document.getElementById('co-save-btn')?.addEventListener('click', () => {
-  const raw = { name: document.getElementById('co-name')?.value.trim(), industry: document.getElementById('co-industry')?.value.trim(), about: document.getElementById('co-about')?.value.trim(), products: document.getElementById('co-products')?.value.trim(), icp: document.getElementById('co-icp')?.value.trim(), goal: document.getElementById('co-goal')?.value, postStyle: document.getElementById('co-style')?.value };
+  const raw = { name: document.getElementById('co-name')?.value.trim(), industry: document.getElementById('co-industry')?.value.trim(), about: document.getElementById('co-about')?.value.trim(), products: document.getElementById('co-products')?.value.trim(), icp: document.getElementById('co-icp')?.value.trim(), goal: document.getElementById('co-goal')?.value, postStyle: document.getElementById('co-style')?.value, ...readPostFields('company') };
   const companyProfile = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined && v !== ''));
   chrome.storage.local.set({ companyProfile }, () => showStatus(document.getElementById('co-status'), 'Company profile saved.', 'success'));
 });
@@ -335,6 +408,8 @@ function loadAllSettings() {
     svc('creator-audience', cp.audience); svc('creator-goal', cp.goal); svc('creator-style', cp.postStyle);
     creatorDomainTagState.domains = Array.isArray(cp.domains) ? cp.domains : [];
     renderCreatorDomainTags();
+    loadPostFields('personal', cp);
+    loadPostFields('company', r.companyProfile || {});
 
     // Company profile
     const co = r.companyProfile || {};
@@ -524,7 +599,10 @@ function fromBase64Utf8(b64) {
 const TEAM_KEYS = ['icpProfiles', 'activeIcpProfileId', 'messagePresets', 'b2cProfiles', 'activeB2cProfileId', 'b2cMessagePresets', 'companyProfile'];
 const companyFields = obj => {
   const out = {};
-  ['name', 'industry', 'about', 'products', 'icp', 'goal', 'postStyle'].forEach(k => { if (typeof obj?.[k] === 'string' && obj[k].trim()) out[k] = obj[k].slice(0, 2000); });
+  ['name', 'industry', 'about', 'products', 'icp', 'goal', 'postStyle', 'voiceSample'].forEach(k => { if (typeof obj?.[k] === 'string' && obj[k].trim()) out[k] = obj[k].slice(0, 3000); });
+  const pillarIds = new Set(LP_SCHEMA.OPTIONS.postPillars.company.map(o => o.id));
+  if (Array.isArray(obj?.pillars)) out.pillars = obj.pillars.filter(id => pillarIds.has(id)).slice(0, 5);
+  if (LP_SCHEMA.OPTIONS.postEndings.some(o => o.id === obj?.postEnding)) out.postEnding = obj.postEnding;
   return out;
 };
 

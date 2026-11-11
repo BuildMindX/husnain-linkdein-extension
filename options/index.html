@@ -257,7 +257,7 @@
       <div class="stab-panel hidden" id="panel-postcreator">
         <div class="panel-header">
           <h1>Post Creator</h1>
-          <p class="panel-sub">Configure the AI post generator that appears on your LinkedIn profile. Switch between your personal brand and your company brand.</p>
+          <p class="panel-sub">Post Creator writes LinkedIn posts as you or as your company, from your outreach profile, in your own voice, without repeating what you’ve already posted.</p>
         </div>
 
         <!-- Personal / Company toggle -->
@@ -281,7 +281,7 @@
           <div class="card">
             <div class="card-mode-badge badge-creator">Personal brand</div>
             <h3>Your creator profile</h3>
-            <p class="card-desc">The AI uses this to generate posts that sound like you — specific to your domain, audience, and goals. Add your LinkedIn URL to activate the Post Creator button on your own profile page.</p>
+            <p class="card-desc">LinkPilot writes posts as you, drawing on your active outreach profile for your background and proof. These settings shape topics, audience and voice.</p>
             <div class="form-row">
               <div class="form-group">
                 <label for="creator-name">Your first name <span class="optional">(optional)</span></label>
@@ -300,7 +300,7 @@
               </div>
             </div>
             <div class="form-group">
-              <label for="creator-linkedin-url">Your LinkedIn profile URL <span class="label-hint">— activates the Post button on your own profile</span></label>
+              <label for="creator-linkedin-url">Your LinkedIn profile URL <span class="label-hint">— lets LinkPilot find and learn from your own posts</span></label>
               <input type="url" id="creator-linkedin-url" placeholder="https://www.linkedin.com/in/your-username/" autocomplete="off" />
             </div>
             <div class="form-group">
@@ -321,12 +321,35 @@
                 <option value="tips">Quick Tips — practical, actionable list</option>
               </select>
             </div>
+            <div class="form-group">
+              <span class="field-label" id="creator-pillars-label">Content pillars <span class="label-hint">— pick 3 to 5; topics are spread across them</span></span>
+              <div class="choice-group" id="creator-pillars" role="group" aria-labelledby="creator-pillars-label"></div>
+            </div>
+            <div class="form-group">
+              <label for="creator-ending">How posts should end</label>
+              <select id="creator-ending" class="form-select"></select>
+            </div>
+            <div class="form-group">
+              <label for="creator-voice">Voice sample <span class="optional">(optional)</span></label>
+              <textarea id="creator-voice" rows="4" placeholder="Paste a post you wrote that sounds like you. If this is empty, your saved posts are used."></textarea>
+            </div>
             <div id="creator-status" class="status-msg" aria-live="polite"></div>
             <div class="actions">
               <button type="button" id="creator-save-btn" class="btn-primary">Save creator profile</button>
               <button type="button" id="creator-prefill-btn" class="btn-secondary" title="Fill in blank fields from your Business Profile in Outreach settings">Prefill from business profile</button>
             </div>
           </div>
+
+        <div class="card" id="own-posts-card">
+          <div class="card-title-row"><h3>Your posts</h3></div>
+          <p class="card-desc">Posts you’ve published, saved from your own LinkedIn activity page when you tap “Read my posts” in Post Creator. LinkPilot uses them to match your voice and to avoid repeating a topic. They stay in this browser.</p>
+          <div id="own-posts-list" class="own-posts-list"></div>
+          <div class="actions">
+            <button type="button" id="own-posts-open" class="btn-secondary">Open my posts on LinkedIn</button>
+            <button type="button" id="own-posts-clear" class="btn-danger">Clear saved posts</button>
+          </div>
+          <div id="own-posts-status" class="status-msg" aria-live="polite"></div>
+        </div>
         </div>
 
         <!-- Company Profile -->
@@ -379,6 +402,18 @@
                   <option value="product_spotlight">Product Spotlight</option>
                 </select>
               </div>
+            </div>
+            <div class="form-group">
+              <span class="field-label" id="co-pillars-label">Content pillars <span class="label-hint">— pick 3 to 5; topics are spread across them</span></span>
+              <div class="choice-group" id="co-pillars" role="group" aria-labelledby="co-pillars-label"></div>
+            </div>
+            <div class="form-group">
+              <label for="co-ending">How posts should end</label>
+              <select id="co-ending" class="form-select"></select>
+            </div>
+            <div class="form-group">
+              <label for="co-voice">Voice sample <span class="optional">(optional)</span></label>
+              <textarea id="co-voice" rows="4" placeholder="Paste a company post that sounds right."></textarea>
             </div>
             <div id="co-status" class="status-msg" aria-live="polite"></div>
             <div class="actions">

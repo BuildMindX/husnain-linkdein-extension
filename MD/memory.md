@@ -7,7 +7,7 @@ project back up. Update it as work progresses — this file is only useful if ke
 
 ## Where development stopped
 
-**Latest (2026-11-11): Phase 7b two-mode restructure, step 1 done, uncommitted.** See phases.md Phase 7b. Modes are B2C (default) and B2B; Job Search is gone and migrates into B2C. ICP is structured (shared/taxonomy.js + shared/schema.js). Step 2 (posting in both modes, real previous posts) is next. Before that, the user's Phase 7 UI redesign was also done and verified, uncommitted (see `phases.md` Phase 7 and `design.md`, which is now the shipped spec). Must-keep rules:
+**Latest (2026-11-11): Phase 7b two-mode restructure, step 1 done, uncommitted.** See phases.md Phase 7b. Modes are B2C (default) and B2B; Job Search is gone and migrates into B2C. ICP is structured (shared/taxonomy.js + shared/schema.js). Step 2 (posting in both modes, real previous posts) is also done and verified with a mock; live-LinkedIn selector check and real-API quality check still pending. Before that, the user's Phase 7 UI redesign was also done and verified, uncommitted (see `phases.md` Phase 7 and `design.md`, which is now the shipped spec). Must-keep rules:
 - Every in-page CSS rule stays scoped under our root ids.
 - Stage and score colors are `tone-*` classes, never inline hex.
 - No emoji or glyph icons.

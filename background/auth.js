@@ -110,6 +110,8 @@ export async function handleGoogleSignOut() {
     const tokenResult = typeof authResult === 'string' ? authResult : authResult?.token;
     if (tokenResult) await chrome.identity.removeCachedAuthToken({ token: tokenResult });
   } catch (_) { /* token may already be expired */ }
-  await chrome.storage.local.remove(['googleUser', 'userPlan', 'supabaseUserId', 'savedContacts', 'settingsFieldTimestamps', ...SETTINGS_KEYS]);
+  // ownPosts / postHistory are the user's own writing (local only, never synced) — cleared too so the
+  // next person on a shared browser doesn't inherit them.
+  await chrome.storage.local.remove(['googleUser', 'userPlan', 'supabaseUserId', 'savedContacts', 'settingsFieldTimestamps', 'ownPosts', 'postHistory', ...SETTINGS_KEYS]);
   return { success: true };
 }

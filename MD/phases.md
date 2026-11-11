@@ -204,9 +204,19 @@ mode confirmed or ruled out.
 **Not verified**:
 - Message and scoring *quality* of the rewritten B2C prompts against the real API. This needs a fresh key to run the benchmark.
 
-**Step 2 (next)**:
-- Post Creator in both modes, driven by the active profile: content pillars and post goal.
-- Read the user's real recent posts from their own activity page, plus generated history, to avoid repeats and match their voice.
+**Step 2 ✅ DONE (2026-11-11, uncommitted)**: Post Creator works in both modes.
+- **Opening mode.** It opens on Company for B2B users who have a company profile, and on Personal otherwise.
+- **Personal posts** are written as the user from the active profile of their current mode (B2C pitch, or B2B background). **Company posts** use the active B2B offer plus the company profile.
+- **New settings:** content pillars (topics are spread across them), how posts end, and a voice sample.
+- **Real posts.** "Read my posts" captures the user's own published posts from their own activity page. It always runs on a user click and is never automated. Reposts are filtered out. Posts are stored locally in `ownPosts` (max 30), are not synced, and are cleared on sign-out.
+- **How posts are used.** Real posts are the voice reference; real posts plus generated history form the never-repeat list.
+- **Prompt changes.**
+  - The old "grounded in real current developments" line invited invented news; it is replaced by an honesty rule.
+  - The hardcoded "AI, machine learning" defaults and AI hashtag bias are removed.
+- **Verification.** A 33-check test (light and dark, 0 failures) asserts the exact prompts sent, through a stubbed worker `fetch`, not just that they run.
+- **Not yet verified:**
+  - The activity-page selectors against **live** linkedin.com DOM. Only a mock was used.
+  - Post quality with the real API.
 
 ---
 

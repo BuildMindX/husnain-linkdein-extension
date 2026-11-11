@@ -57,6 +57,7 @@
   let pcStyle = 'educational';
   let pcResult = null;       // { post, hashtags }
   let pcMode = 'personal';   // 'personal' | 'company'
+  let pcModeInitialized = false; // set from the outreach mode the first time the panel renders
 
   // Time / world clock state
   let timeBtn = null;
@@ -202,6 +203,7 @@
 
   async function init() {
     await ensureDockButtons();
+    maybeFinishOwnPostCapture();
     if (isProfilePage()) {
       currentProfileUrl = location.href.split('?')[0];
       syncSaveButtons();
@@ -1226,22 +1228,69 @@
     ensureDock().appendChild(postBtn);
   }
 
-  function extractOwnPosts() {
-    const texts = new Set();
-    const selectors = [
-      '.feed-shared-update-v2 .break-words span[dir]',
-      '.update-components-text .break-words span[dir]',
-      '.feed-shared-text span[dir]',
-      '[data-test-id="main-feed-activity-card__commentary"] span[dir]',
-      '.update-components-text span.break-words',
-    ];
-    for (const sel of selectors) {
-      document.querySelectorAll(sel).forEach(el => {
-        const t = el.textContent.trim();
-        if (t.length > 60) texts.add(t.slice(0, 250));
-      });
-    }
-    return [...texts].slice(0, 8);
+  // ── The user's own published posts ───────────────────────────────────────────
+  // Read only from the user's own activity page, and only when they ask (the "Read my posts"
+  // button, or arriving there via that button) — never automated scraping. Stored locally as the
+  // voice reference and "don't repeat" list for Post Creator.
+  function ownProfileBase(linkedinUrl) {
+    const m = String(linkedinUrl || '').match(/linkedin\.com\/in\/([^/?#]+)/i);
+    return m ? { slug: decodeURIComponent(m[1]).toLowerCase(), url: `https://www.linkedin.com/in/${m[1]}/` } : null;
+  }
+  function isOwnActivityPage(linkedinUrl) {
+    const base = ownProfileBase(linkedinUrl);
+    if (!base) return false;
+    const parts = location.pathname.toLowerCase().split('/').filter(Boolean); // in, slug, recent-activity, …
+    return parts[0] === 'in' && decodeURIComponent(parts[1] || '') === base.slug && parts[2] === 'recent-activity';
+  }
+  function scrapeOwnPosts() {
+    const out = [];
+    document.querySelectorAll('.feed-shared-update-v2, [data-urn^="urn:li:activity"]').forEach(card => {
+      const header = card.querySelector('.update-components-header, .feed-shared-header')?.textContent || '';
+      if (/\b(reposted|commented|likes?|celebrates|loves|supports|finds)\b/i.test(header)) return; // not authored
+      const textEl = card.querySelector('.update-components-text, .feed-shared-update-v2__description, .feed-shared-text');
+      const text = (textEl?.innerText || textEl?.textContent || '').replace(/…\s*(see )?more\s*$/i, '').trim();
+      if (text.length > 60 && !out.some(t => t.slice(0, 120) === text.slice(0, 120))) out.push(text.slice(0, 1500));
+    });
+    return out;
+  }
+  async function saveOwnPosts(texts) {
+    const { ownPosts } = await chrome.storage.local.get('ownPosts');
+    const existing = Array.isArray(ownPosts) ? ownPosts : [];
+    const key = t => t.slice(0, 120);
+    const known = new Set(existing.map(p => key(p.text)));
+    const fresh = texts.filter(t => !known.has(key(t))).map(text => ({ text, capturedAt: Date.now() }));
+    const merged = [...fresh, ...existing].slice(0, 30);
+    await chrome.storage.local.set({ ownPosts: merged });
+    return { added: fresh.length, total: merged.length };
+  }
+  async function captureOwnPostsWhenReady(timeoutMs = 8000) {
+    const start = Date.now();
+    let posts = scrapeOwnPosts();
+    while (!posts.length && Date.now() - start < timeoutMs) { await new Promise(r => setTimeout(r, 500)); posts = scrapeOwnPosts(); }
+    return posts.length ? saveOwnPosts(posts) : { added: 0, total: ((await chrome.storage.local.get('ownPosts')).ownPosts || []).length, none: true };
+  }
+
+  // Arrived here from "Read my posts": capture once, then reopen Post Creator with the result.
+  async function maybeFinishOwnPostCapture() {
+    const flag = Number(sessionStorage.getItem('lpCaptureOwnPosts') || 0);
+    if (!flag) return;
+    const { creatorProfile } = await chrome.storage.local.get('creatorProfile');
+    if (!isOwnActivityPage(creatorProfile?.linkedinUrl)) return; // still navigating
+    sessionStorage.removeItem('lpCaptureOwnPosts');
+    if (Date.now() - flag > 120000) return;
+    const r = await captureOwnPostsWhenReady();
+    if (!postPanel || !postPanel.classList.contains('lia-pc-open')) openPostCreator();
+    else await renderPcLanding();
+    setTimeout(() => showPcToast(r.none ? 'No posts showed up on this page. Scroll to load some, then tap “Save posts on this page”.' : `${r.added} new post${r.added === 1 ? '' : 's'} saved (${r.total} total). Drafts will now match your voice.`), 400);
+  }
+
+  function showPcToast(text) {
+    const body = document.getElementById('lia-pc-body');
+    if (!body) return;
+    const t = document.createElement('p');
+    t.className = 'lia-pc-toast'; t.setAttribute('role', 'status'); t.textContent = text;
+    body.prepend(t);
+    setTimeout(() => t.remove(), 6000);
   }
 
   function openPostCreator() {
@@ -1254,6 +1303,7 @@
     closeOtherFloatingPanels('post');
     postPanel = document.createElement('div');
     postPanel.id = 'lia-post-panel';
+    pcModeInitialized = false;
     postPanel.innerHTML = `
       <div class="lia-pc-header">
         <div class="lia-pc-title">
@@ -1293,41 +1343,54 @@
     if (!body) return;
     const hasKey = await checkApiKey();
     if (!hasKey) { renderPcNoApiKey(); return; }
-    const stored = await chrome.storage.local.get(['creatorProfile', 'companyProfile']).catch(() => ({}));
+    const stored = await chrome.storage.local.get(['creatorProfile', 'companyProfile', 'ownPosts', 'postHistory']).catch(() => ({}));
     const cp = stored.creatorProfile || {};
     const co = stored.companyProfile || {};
 
+    // First render: B2B users with a company profile start on Company, everyone else on Personal.
+    if (!pcModeInitialized) {
+      pcModeInitialized = true;
+      const intent = await getIntent();
+      pcMode = intent === 'b2b_sales' && co.name ? 'company' : 'personal';
+      postPanel?.querySelectorAll('.lia-pc-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === pcMode));
+    }
     const isCompany = pcMode === 'company';
-    const hasSetup = isCompany ? !!co.name : (Array.isArray(cp.domains) && cp.domains.length);
+    const hasSetup = isCompany ? !!co.name : true;
 
     let infoHtml = '';
     if (isCompany) {
-      if (co.name) {
-        infoHtml = `<div class="lia-pc-company-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01"/></svg><span>${escHtml(co.name)}${co.industry ? ` &middot; ${escHtml(co.industry)}` : ''}</span></div>`;
-      } else {
-        infoHtml = `<p class="lia-pc-notice">No company profile found. Go to <strong>Settings → Post Creator</strong> and fill in your Company Profile first.</p>`;
-      }
-    } else {
-      const hasDomains = Array.isArray(cp.domains) && cp.domains.length;
-      infoHtml = hasDomains
-        ? `<div class="lia-pc-domains">${cp.domains.map(d => `<span class="lia-pc-domain-chip">${escHtml(d)}</span>`).join('')}</div>`
-        : `<p class="lia-pc-notice">Tip: add your domains in Settings → Post Creator for more relevant topics.</p>`;
+      infoHtml = co.name
+        ? `<div class="lia-pc-company-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01"/></svg><span>${escHtml(co.name)}${co.industry ? ` &middot; ${escHtml(co.industry)}` : ''}</span></div>`
+        : `<p class="lia-pc-notice">Add your company in <strong>Settings → Post Creator</strong> to write company posts.</p>`;
+    } else if (Array.isArray(cp.domains) && cp.domains.length) {
+      infoHtml = `<div class="lia-pc-domains">${cp.domains.map(d => `<span class="lia-pc-domain-chip">${escHtml(d)}</span>`).join('')}</div>`;
     }
 
-    const recentPosts = extractOwnPosts();
-    const postCountNote = recentPosts.length
-      ? `<p class="lia-pc-posts-found">${recentPosts.length} recent post${recentPosts.length > 1 ? 's' : ''} found on this page. New topics will avoid repeating them.</p>`
-      : '';
+    // What the AI knows about the user's past posts — shown so the user can trust "won't repeat".
+    const ownCount = (stored.ownPosts || []).length;
+    const genCount = (stored.postHistory || []).filter(h => (h.mode || 'personal') === pcMode).length;
+    const onOwnActivity = isOwnActivityPage(cp.linkedinUrl);
+    const base = ownProfileBase(cp.linkedinUrl);
+    const postsCard = isCompany ? (genCount ? `<p class="lia-pc-notice">${genCount} earlier company draft${genCount > 1 ? 's' : ''} will be avoided.</p>` : '') : `
+      <div class="lia-pc-memory">
+        <div class="lia-pc-memory-text">
+          <span class="lia-pc-memory-title">${ownCount ? `${ownCount} of your posts saved` : 'Your posts aren’t saved yet'}</span>
+          <span class="lia-pc-memory-sub">${ownCount ? 'Used to match your voice and avoid repeating yourself' : 'Save them so drafts sound like you and never repeat a topic'}${genCount ? ` · ${genCount} earlier draft${genCount > 1 ? 's' : ''} avoided too` : ''}</span>
+        </div>
+        ${base ? `<button class="lia-btn-secondary lia-pc-memory-btn" id="lia-pc-read-posts">${onOwnActivity ? 'Save posts on this page' : 'Read my posts'}</button>`
+               : `<button class="lia-btn-secondary lia-pc-memory-btn" id="lia-pc-open-settings-url">Add profile URL</button>`}
+      </div>`;
+    const recentPosts = [];
 
     body.innerHTML = `
       <div class="lia-pc-section">
         <p class="lia-pc-intro">${isCompany ? 'Generate a professional B2B post for your company.' : `Generate a post tailored to your niche${cp.name ? `, <strong>${escHtml(cp.name)}</strong>` : ''}.`}</p>
         ${infoHtml}
-        ${postCountNote}
+        ${postsCard}
       </div>
       <div class="lia-pc-section">
         <button class="lia-btn-primary lia-pc-full-btn" id="lia-pc-suggest-btn"${!hasSetup && isCompany ? ' disabled' : ''}>
-          Suggest trending topics
+          Suggest topics for me
         </button>
         <div class="lia-pc-or">or write about something specific</div>
         <div class="lia-pc-custom-row">
@@ -1336,6 +1399,19 @@
         </div>
       </div>
     `;
+    body.querySelector('#lia-pc-read-posts')?.addEventListener('click', async e => {
+      if (isOwnActivityPage(cp.linkedinUrl)) {
+        e.currentTarget.disabled = true; e.currentTarget.textContent = 'Reading…';
+        const r = await captureOwnPostsWhenReady(3000);
+        await renderPcLanding();
+        showPcToast(r.none ? 'No posts found on this page yet. Scroll to load some, then try again.' : `${r.added} new post${r.added === 1 ? '' : 's'} saved (${r.total} total).`);
+      } else {
+        // Go to the user's own posts; the content script finishes the capture there.
+        sessionStorage.setItem('lpCaptureOwnPosts', String(Date.now()));
+        location.href = `${ownProfileBase(cp.linkedinUrl).url}recent-activity/shares/`;
+      }
+    });
+    body.querySelector('#lia-pc-open-settings-url')?.addEventListener('click', () => chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' }));
     body.querySelector('#lia-pc-suggest-btn').addEventListener('click', () => {
       if (!hasSetup && isCompany) return;
       loadTopics(cp, co, recentPosts);
@@ -1359,8 +1435,7 @@
     body.innerHTML = `
       <div class="lia-pc-loading">
         <div class="lia-spinner"></div>
-        <p>${isCompany ? 'Generating B2B topic ideas for your company...' : 'Generating topic ideas for your niche...'}</p>
-        ${recentPosts.length ? '<p class="lia-pc-notice">Checking your recent posts to avoid repetition…</p>' : ''}
+        <p>${isCompany ? 'Finding topics for your company…' : 'Finding topics only you can write…'}</p>
       </div>
     `;
     const result = await new Promise(resolve => {
@@ -1399,7 +1474,10 @@
     pcTopics.forEach(t => {
       const card = document.createElement('div');
       card.className = 'lia-pc-topic-card';
+      card.tabIndex = 0; card.setAttribute('role', 'button');
+      card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.click(); } });
       card.innerHTML = `
+        ${t.pillar && t.pillar !== 'Other' ? `<div class="lia-pc-topic-pillar">${escHtml(t.pillar)}</div>` : ''}
         <div class="lia-pc-topic-title">${escHtml(t.title)}</div>
         <div class="lia-pc-topic-angle">${escHtml(t.angle)}</div>
         <div class="lia-pc-topic-why">${escHtml(t.whyNow)}</div>

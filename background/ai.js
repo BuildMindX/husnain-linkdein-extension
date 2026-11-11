@@ -1005,65 +1005,119 @@ ${analysis ? `ANALYSIS CONTEXT:\n${buildAnalysisContext(analysis, intent)}` : ''
 
 // ─── Post Creator ─────────────────────────────────────────────────────────────
 
-export async function handleSuggestPostTopics(creatorProfile, recentPosts = [], mode = 'personal', companyProfile = null) {
-  let context, styleDesc, topicTypes;
+// ─── Posts ────────────────────────────────────────────────────────────────────
+// Posts work in both modes. Personal posts are written as the user, from the active profile of
+// their current mode (B2C pitch or B2B background); company posts from the active B2B profile plus
+// the company profile. The user's own real posts (captured from their activity page, see content
+// script) are the voice reference; real + generated history is the "don't repeat" list.
 
-  if (mode === 'company' && companyProfile) {
-    const co = companyProfile;
-    const styleMap = {
-      thought_leadership: 'thought leadership, authoritative industry perspective',
-      industry_insight: 'data-driven industry insights and trends',
-      case_study: 'client success stories and case studies',
-      culture: 'company culture and employer brand storytelling',
-      product_spotlight: 'product/service value and problem-solving',
-    };
-    styleDesc = styleMap[co.postStyle] || styleMap.thought_leadership;
-    context = `Company: ${co.name || 'a B2B company'}
-Industry: ${co.industry || 'technology'}
-About: ${co.about || ''}
-Products/Services: ${co.products || ''}
-ICP (target clients): ${co.icp || 'business decision makers'}
-Company goal: ${co.goal || 'attract clients and build brand awareness'}`;
-    topicTypes = 'industry trends, client pain points your product solves, thought leadership, success signals, employer brand, market predictions';
+const POST_ENDING_RULES = {
+  question: 'End with one specific question the audience can answer from their own experience — never a lazy "Thoughts?" or "Agree?".',
+  dm: 'End with one low-key line inviting people working on this problem to message the author. No hard sell, no link.',
+  follow: 'End with one line saying what the author will cover next and inviting people to follow. No begging.',
+  none: 'No call to action — end on the strongest final line.',
+};
+
+async function getPostContext(mode, creatorProfile, companyProfile) {
+  const isCompany = mode === 'company';
+  const { analysisIntent, ownPosts, postHistory } = await chrome.storage.local.get(['analysisIntent', 'ownPosts', 'postHistory']);
+  const ctx = await getModeContext(isCompany ? 'b2b_sales' : analysisIntent);
+  const settings = (isCompany ? companyProfile : creatorProfile) || {};
+  const s = ctx.sender; const icp = ctx.icp;
+
+  const facts = [];
+  if (ctx.isB2b) {
+    if (s.companyName) facts.push(`Company: ${s.companyName}`);
+    if (s.offer) facts.push(`What the business does: ${s.offer}`);
+    const probs = [...optLabels(S.OPTIONS.problems, s.problems), s.problem].filter(Boolean);
+    if (probs.length) facts.push(`Problems it solves: ${probs.join('; ')}`);
+    if (s.valueProp) facts.push(`What makes it different: ${s.valueProp}`);
+    if (!isCompany && s.expertise) facts.push(`Author's own background: ${s.expertise}`);
   } else {
-    const cp = creatorProfile || {};
-    const domains = (Array.isArray(cp.domains) && cp.domains.length) ? cp.domains.join(', ') : 'AI, machine learning, technology';
-    const audience = cp.audience || 'tech professionals and business leaders';
-    const styleMap = { educational: 'educational, insight-driven', story: 'personal story or journey-based', hottake: 'contrarian, bold hot takes', tips: 'practical, actionable tips' };
-    styleDesc = styleMap[cp.postStyle] || styleMap.educational;
-    context = `Expert in: ${domains}\nTarget audience: ${audience}\nGoal: ${cp.goal || 'build personal brand'}`;
-    topicTypes = 'industry trend, personal experience angle, contrarian take, practical insight, prediction';
+    if (s.currentTitle) facts.push(`Author's title: ${s.currentTitle}`);
+    if (s.oneLiner) facts.push(`Author in one line: ${s.oneLiner}`);
+    if ((s.skills || []).length) facts.push(`Skills: ${s.skills.join(', ')}`);
+    if (s.services) facts.push(`What the author does for teams and clients: ${s.services}`);
+    if (s.uniqueAngle) facts.push(`What makes the author different: ${s.uniqueAngle}`);
+    if (s.background) facts.push(`Background: ${s.background}`);
+  }
+  if (isCompany) {
+    const co = companyProfile || {};
+    if (co.name) facts.push(`Company name: ${co.name}`);
+    if (co.industry) facts.push(`Industry: ${co.industry}`);
+    if (co.about) facts.push(`About the company: ${co.about}`);
+    if (co.products) facts.push(`Products / services: ${co.products}`);
+  } else if (Array.isArray(settings.domains) && settings.domains.length) {
+    facts.push(`Topics the author posts about: ${settings.domains.join(', ')}`);
+  }
+  const proofs = (s.proofPoints || []).filter(Boolean);
+
+  // Audience: what the user typed, else derived from who they're targeting in this mode.
+  let audience = isCompany ? (companyProfile?.icp || '') : (settings.audience || '');
+  if (!audience) {
+    const parts = [];
+    if (!ctx.isB2b && icp.hirerTypes.length) parts.push(optLabels(S.OPTIONS.hirerTypes, icp.hirerTypes).join(', '));
+    if (ctx.isB2b && icp.seniority.length) parts.push(`${optLabels(TX.seniority, icp.seniority).join(', ')}-level people`);
+    if (icp.titles.length) parts.push(icp.titles.join(', '));
+    const inds = icp.industries.map(k => S.industryLabel(k)).filter(Boolean);
+    if (inds.length) parts.push(`in ${inds.join(', ')}`);
+    if (icp.idealCustomer) parts.push(`(${icp.idealCustomer})`);
+    audience = parts.join(' ');
   }
 
-  const avoidSection = recentPosts.length
-    ? `\n\nCRITICAL — these topics were already posted recently. Do NOT suggest anything similar or overlapping:\n${recentPosts.map((p, i) => `${i + 1}. "${p.slice(0, 200)}"`).join('\n')}`
-    : '';
+  const kind = isCompany ? 'company' : 'personal';
+  const pillars = optLabels(S.OPTIONS.postPillars[kind], settings.pillars);
+  const ending = POST_ENDING_RULES[settings.postEnding] || POST_ENDING_RULES.question;
+  const goal = settings.goal || (isCompany ? 'attract clients and build authority' : (ctx.isB2b ? 'build authority with potential clients' : 'get noticed by people who could hire me'));
+  const realPosts = isCompany ? [] : (Array.isArray(ownPosts) ? ownPosts : []).map(p => p.text).filter(Boolean);
+  const generated = (Array.isArray(postHistory) ? postHistory : []).filter(h => (h.mode || 'personal') === kind);
+  const voiceSample = (settings.voiceSample || '').trim();
+  const name = isCompany ? (companyProfile?.name || s.companyName || '') : (settings.name || ctx.senderName || '');
+  return { isCompany, ctx, facts, proofs, audience, pillars, ending, goal, realPosts, generated, voiceSample, name };
+}
 
-  const systemPrompt = `You are a LinkedIn content strategist${mode === 'company' ? ' specializing in B2B company thought leadership' : ' for tech thought leaders'}.
+function previousPostsBlock(pc, { forTopics }) {
+  const lines = [];
+  if (pc.realPosts.length) lines.push(`The author's own published posts (most recent first):\n${pc.realPosts.slice(0, 15).map((t, i) => `${i + 1}. ${t.replace(/\s+/g, ' ').slice(0, forTopics ? 220 : 160)}`).join('\n')}`);
+  if (pc.generated.length) lines.push(`Posts already drafted with this tool:\n${pc.generated.slice(0, 15).map((h, i) => `${i + 1}. ${h.topic || ''} — ${(h.post || '').replace(/\s+/g, ' ').slice(0, 120)}`).join('\n')}`);
+  return lines.length ? `--- PREVIOUS POSTS (never repeat or closely overlap their subject, angle or hook) ---\n${lines.join('\n\n')}` : '';
+}
 
-Suggest 5 fresh, high-performing LinkedIn post topics for the person/company described below.
+export async function handleSuggestPostTopics(creatorProfile, recentPosts = [], mode = 'personal', companyProfile = null) {
+  const pc = await getPostContext(mode, creatorProfile, companyProfile);
+  // Posts visible on the page the user is looking at count too (e.g. their feed), deduped.
+  const pagePosts = (recentPosts || []).filter(p => !pc.realPosts.some(r => r.slice(0, 80) === p.slice(0, 80)));
+  if (pagePosts.length) pc.realPosts = [...pagePosts, ...pc.realPosts];
+
+  const systemPrompt = `You are a LinkedIn content strategist for ${pc.isCompany ? 'a company page' : 'one professional writing as themselves'}. Suggest 5 post topics this author can write credibly and that serve their goal.
 
 Respond ONLY with valid JSON — no markdown, no explanation:
 {
   "topics": [
     {
-      "title": "Catchy topic title (max 8 words)",
-      "angle": "The specific angle or unique take on this topic",
-      "hook": "The opening 1-2 sentences — must stop the scroll",
-      "whyNow": "Why this resonates right now (1 sentence)"
+      "title": "Topic title (max 8 words)",
+      "pillar": "Which content pillar it belongs to (from the list below, or 'Other')",
+      "angle": "The specific take — what the author argues or shows",
+      "hook": "Opening 1-2 sentences, concrete and specific",
+      "whyNow": "Why this audience cares about it now (1 sentence)"
     }
   ]
 }
 
 Requirements:
-- Each topic must be clearly distinct from the others
-- Grounded in real current developments — no generic advice
-- Phrased to appeal to the stated audience`;
+- Every topic must be something THIS author can write from first-hand knowledge in the AUTHOR FACTS — a practitioner's angle, not generic commentary anyone could post.
+- ${pc.pillars.length ? `Spread topics across these content pillars: ${pc.pillars.join(', ')}. Don't use the same pillar twice unless there are fewer than 5 pillars.` : 'Mix topic types: a lesson, a how-to, an opinion, a showcase of real work, and commentary on the field.'}
+- Serve the goal: ${pc.goal}.
+- Never repeat or closely overlap a previous post listed below — not the same subject, angle, or hook pattern.
+- Hooks must be concrete. No stock templates: then-vs-now ("Six months ago… now…"), "Most people think…", "Unpopular opinion:", one-line dramatic reveals.
+- whyNow must be honest: never invent news, statistics, launches or dates. If you're not sure something is current, tie it to a durable problem this audience has instead.`;
 
-  const userPrompt = `${context}
-Preferred style: ${styleDesc}
-
-Mix of topic types: ${topicTypes}.${avoidSection}`;
+  const userPrompt = [
+    `--- AUTHOR FACTS ---\n${pc.facts.join('\n') || '(none provided — keep topics broad but practical)'}`,
+    pc.proofs.length ? `Real results the author can draw on:\n${pc.proofs.map(p => `- ${p}`).join('\n')}` : '',
+    `Audience: ${pc.audience || 'professionals in the author\'s field'}`,
+    previousPostsBlock(pc, { forTopics: true }),
+  ].filter(Boolean).join('\n\n');
 
   const raw = await callAI(systemPrompt, userPrompt);
   const parsed = parseJsonObject(raw);
@@ -1071,72 +1125,52 @@ Mix of topic types: ${topicTypes}.${avoidSection}`;
 }
 
 export async function handleGeneratePost({ topic, angle, hook, style, creatorProfile, mode, companyProfile }) {
-  let systemContext, authorCtx, styleGuide, hashtagContext;
+  const pc = await getPostContext(mode, creatorProfile, companyProfile);
+  let systemContext, styleGuide;
 
-  // Posts previously saw only a topic list and an audience, so they had no first-hand proof to draw
-  // on — a strict review called them credible-sounding but generic. The sender's real background
-  // (already saved in their outreach profiles) is the only allowed source of proof points.
-  // Company posts draw on the active B2B profile, personal posts on the active B2C pitch.
-  const pctx = await getModeContext(mode === 'company' ? 'b2b_sales' : 'b2c_sales');
-  const ps = pctx.sender;
-  const proof = (mode === 'company'
-    ? [ps.offer, ps.valueProp, ...(ps.proofPoints || [])]
-    : [ps.oneLiner, ps.background, ps.uniqueAngle, ...(ps.proofPoints || [])]).filter(Boolean).join(' ');
-
-  if (mode === 'company' && companyProfile) {
-    const co = companyProfile;
+  if (pc.isCompany) {
     const coStyleGuides = {
-      thought_leadership: 'Thought Leadership: Open with a sharp industry observation, unpack it with clear reasoning (and evidence only if it is real — see credibility rules), position the company as a forward-thinking authority, close with an invitation to discuss',
-      industry_insight: 'Industry Insight: Lead with a trend (cite a statistic only if it is widely known and verifiable — never a made-up figure), explain what it means for the industry, share the company\'s perspective, end with a question for the audience',
-      case_study: 'Case Study/Success: Open with the client\'s challenge (no names needed), describe the approach and solution, state the result — with numbers only if they come from the real background provided, otherwise qualitatively — close with the lesson or takeaway',
-      culture: 'Company Culture: Open with a specific authentic moment or milestone, tell the human story behind it, tie it to company values, end with a culture-forward message',
-      product_spotlight: 'Product Spotlight: Open with the pain point your product solves (not the product itself), introduce the solution naturally, show the outcome, soft CTA',
+      thought_leadership: 'Thought Leadership: Open with a sharp industry observation, unpack it with clear reasoning (and evidence only if it is real — see credibility rules), close by inviting discussion',
+      industry_insight: 'Industry Insight: Lead with a trend (cite a statistic only if it is widely known and verifiable — never a made-up figure), explain what it means for the industry, share the company\'s perspective',
+      case_study: 'Case Study/Success: Open with the client\'s challenge (no names needed), describe the approach and solution, state the result — with numbers only if they come from the real results provided, otherwise qualitatively — close with the lesson',
+      culture: 'Company Culture: Open with a specific authentic moment or milestone, tell the human story behind it, tie it to how the company works',
+      product_spotlight: 'Product Spotlight: Open with the pain point the product solves (not the product itself), introduce the solution naturally, show the outcome',
     };
     styleGuide = coStyleGuides[style] || coStyleGuides.thought_leadership;
-    systemContext = `You are a professional LinkedIn content writer for ${co.name || 'a B2B company'}, a ${co.industry || 'technology'} company. Write in a polished, authoritative company voice — confident and insightful, not salesy.`;
-    authorCtx = `Company: ${co.name || ''}
-Industry: ${co.industry || ''}
-About: ${co.about || ''}
-Products/Services: ${co.products || ''}
-ICP: ${co.icp || 'business decision makers'}
-Goal: ${co.goal || 'attract clients, build brand awareness'}`;
-    hashtagContext = `Hashtags specific to the post's topic and the company's field (e.g. the technology or problem discussed). No generic engagement tags like #B2B, #BusinessGrowth, #Innovation, or #LinkedIn.`;
+    systemContext = `You write LinkedIn posts for ${pc.name || 'a company'}'s company page. Write in a confident, insightful company voice — specific, never salesy or corporate.`;
   } else {
-    const cp = creatorProfile || {};
-    const domains = (Array.isArray(cp.domains) && cp.domains.length) ? cp.domains.join(', ') : 'AI, machine learning, technology';
     const personalStyleGuides = {
-      educational: 'Educational/Insight: Open with a sharp, true claim, explain the concept in plain terms, give a concrete example or analogy, close with a key takeaway and question',
-      story: 'Personal Story: Open with a vivid specific moment (not "I"), build the narrative arc, share the lesson learned, make it universally relatable',
-      hottake: 'Hot Take: Open with a bold counter-intuitive claim, dismantle the common view with evidence, offer your alternative framework, invite respectful debate',
-      tips: 'Quick Tips: Lead with the value proposition ("Here\'s how to…" or "X things I wish I knew"), 3-5 numbered points, each crisp and actionable, close with a "save this" or follow CTA',
+      educational: 'Educational/Insight: Open with a sharp, true claim, explain the concept in plain terms, give a concrete example or analogy, close with the key takeaway',
+      story: 'Personal Story: Open with a vivid specific moment (not "I"), build the narrative, share the lesson, make it relatable',
+      hottake: 'Hot Take: Open with a bold but defensible claim, dismantle the common view with reasoning, offer the author\'s alternative',
+      tips: 'Quick Tips: Lead with what the reader will be able to do, 3-5 numbered points, each crisp and actionable',
     };
     styleGuide = personalStyleGuides[style] || personalStyleGuides.educational;
-    systemContext = `You are an expert LinkedIn ghostwriter for tech thought leaders. Write in a direct, confident, and human voice — never corporate or generic.`;
-    authorCtx = `Author expertise: ${domains}${cp.name ? ` (written as ${cp.name})` : ''}
-Target audience: ${cp.audience || 'tech professionals and business leaders'}
-Goal: ${cp.goal || 'build personal brand'}`;
-    hashtagContext = `Mix of niche (#MachineLearning) and broad (#AI #Tech). No #LinkedIn, no generic tags like #Motivation.`;
+    systemContext = `You are a LinkedIn ghostwriter writing as ${pc.name || 'the author'}, in the first person. Direct, confident, human — never corporate or generic.`;
   }
 
-  const wordCount = mode === 'company' ? '200-320 words' : '150-280 words';
+  const wordCount = pc.isCompany ? '200-320 words' : '150-280 words';
+  const voiceRef = pc.voiceSample || pc.realPosts.slice(0, 3).map(t => t.slice(0, 700)).join('\n---\n');
 
   const systemPrompt = `${systemContext}
 
 LinkedIn format rules:
-- First line = scroll-stopper hook. No opener starting with "I" or "We". No emojis at the very start.
-- Short paragraphs: 1-3 lines max. White space is your friend.
-- Line breaks between every thought.
-- Emojis: 0-2 max, only where genuinely impactful — never decorative.
-- No hashtags in body.
-- End with one sharp engagement question OR a compelling CTA.
+- First line = a concrete hook. Don't open with "I" or "We". No emojis at the very start.
+- Short paragraphs: 1-3 lines max, with a line break between every thought.
+- Emojis: 0-2 max, only where genuinely useful — never decorative.
+- No hashtags in the body.
+- ${pc.ending}
 - Word count: ${wordCount}.
+- Serve the goal: ${pc.goal}. Audience: ${pc.audience || 'professionals in the author\'s field'}.
 
 Credibility rules:
-- Write from real experience. Where it strengthens the post, use ONE concrete proof point from the REAL BACKGROUND provided (a real project, number, or lesson). Never invent stories, clients, metrics, or "I once saw a team that..." anecdotes that aren't in that background. If no background is provided, make the argument on its merits instead of faking experience.
-- Avoid the stock AI-written LinkedIn template: one-line dramatic reveals ("The model was never the problem.", "That's where most roadmaps quietly die."), then-vs-now hooks of any timeframe ("Six months ago... Now...", "Two years ago... Today..."), "→" arrow bullet lists, "winners won't be X, they'll be Y" closers, symmetrical aphorisms, and drama words like "quietly", "silently", "obsolete". Lead with the sharpest concrete claim and write like a practitioner explaining something to a peer.
-- If you use a proof point, make clear it is the author's own work (e.g. "a voice platform I built"), not a vague "teams I know".
-- Never invent incidents, numbers, or quotes ("an agent looped 47 times", "a client cut costs 60%"). A scenario that isn't from the real background must be framed as hypothetical ("picture an agent that...").
-- Every technical claim must be precisely true. Don't say a technique "solves", "fixes", or gives something "for free" unless it actually does — a CTO audience will catch an overclaim and stop trusting the rest.
+- Write from real experience. Where it strengthens the post, use ONE concrete proof point from the REAL RESULTS or AUTHOR FACTS provided. Never invent stories, clients, metrics, or "I once saw a team that..." anecdotes. If nothing real fits, make the argument on its merits instead of faking experience.
+- If you use a proof point, make clear it is the author's own work, not a vague "teams I know".
+- Never invent incidents, numbers, or quotes. A scenario that isn't from the real facts must be framed as hypothetical ("picture a team that...").
+- Every technical claim must be precisely true — no "solves", "fixes", or "for free" unless it actually does.
+- Avoid the stock AI-written LinkedIn template: one-line dramatic reveals, then-vs-now hooks of any timeframe, "→" arrow bullet lists, "winners won't be X, they'll be Y" closers, symmetrical aphorisms, and drama words like "quietly", "silently", "obsolete".
+${voiceRef ? `
+VOICE: the VOICE REFERENCE below is how the author actually writes. Match its sentence length, formatting habits (line breaks, lists, emoji use), vocabulary level and tone. Never copy its phrases, claims, stories or topics.` : ''}
 
 Return ONLY valid JSON:
 {
@@ -1144,17 +1178,15 @@ Return ONLY valid JSON:
   "hashtags": ["hashtag1", "hashtag2", "hashtag3", "hashtag4", "hashtag5"]
 }
 
-Hashtag rules: 5-7 tags.`;
+Hashtag rules: 3-5 tags specific to this post's subject and the author's field. No generic tags like #LinkedIn, #Motivation, #Innovation, #B2B, #BusinessGrowth.`;
 
-  const userPrompt = `Write a LinkedIn post on:
-Topic: ${topic}
-Angle: ${angle || 'your best angle'}
-Opening hook to build from: ${hook || 'craft the best hook'}
-Style guide: ${styleGuide}
-${authorCtx}
-${proof ? `\nREAL BACKGROUND (the only allowed source of proof points):\n${proof}` : ''}
-
-${hashtagContext}`;
+  const userPrompt = [
+    `Write a LinkedIn post on:\nTopic: ${topic}\nAngle: ${angle || 'your best angle'}\nOpening hook to build from: ${hook || 'craft the best hook'}\nStyle guide: ${styleGuide}`,
+    `--- AUTHOR FACTS ---\n${pc.facts.join('\n') || '(none provided)'}`,
+    pc.proofs.length ? `REAL RESULTS (the only allowed source of numbers and outcomes):\n${pc.proofs.map(p => `- ${p}`).join('\n')}` : '',
+    voiceRef ? `--- VOICE REFERENCE ---\n${voiceRef}` : '',
+    previousPostsBlock(pc, { forTopics: false }),
+  ].filter(Boolean).join('\n\n');
 
   const raw = await callAI(systemPrompt, userPrompt);
   const parsed = parseJsonObject(raw);

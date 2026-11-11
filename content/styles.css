@@ -614,6 +614,19 @@ body:has(#lia-panel.lia-open, #lia-post-panel.lia-pc-open, #lia-time-panel.lia-p
 #lia-post-panel .lia-pc-custom-row { display: flex; gap: 8px; }
 #lia-post-panel .lia-pc-custom-row .lia-btn-secondary { flex-shrink: 0; }
 #lia-post-panel .lia-pc-topic-list { display: flex; flex-direction: column; gap: 8px; }
+#lia-post-panel .lia-pc-topic-pillar { font-size: 12px; font-weight: 600; color: var(--lp-accent); }
+#lia-post-panel .lia-pc-memory {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  border-radius: var(--lp-r-lg); background: var(--lp-surface); border: 1px solid var(--lp-border);
+}
+#lia-post-panel .lia-pc-memory-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+#lia-post-panel .lia-pc-memory-title { font-size: 13.5px; font-weight: 600; color: var(--lp-text); }
+#lia-post-panel .lia-pc-memory-sub { font-size: 12.5px; color: var(--lp-muted); line-height: 1.45; }
+#lia-post-panel .lia-pc-memory-btn { flex-shrink: 0; min-height: 34px; padding: 0 12px; font-size: 13px; }
+#lia-post-panel .lia-pc-toast {
+  padding: 9px 12px; border-radius: var(--lp-r); font-size: 13px; line-height: 1.45;
+  background: var(--lp-good-bg); color: var(--lp-good); border: 1px solid var(--lp-good-line);
+}
 #lia-post-panel .lia-pc-topic-card {
   display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; cursor: pointer;
   border-radius: var(--lp-r-lg); border: 1px solid var(--lp-border); background: var(--lp-bg);
