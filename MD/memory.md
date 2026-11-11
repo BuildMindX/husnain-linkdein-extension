@@ -7,7 +7,7 @@ project back up. Update it as work progresses — this file is only useful if ke
 
 ## Where development stopped
 
-**Latest: Phase 7 UI redesign is done and verified, uncommitted** (see `phases.md` Phase 7 and `design.md`, which is now the shipped spec). Must-keep rules:
+**Latest (2026-11-11): Phase 7b two-mode restructure, step 1 done, uncommitted.** See phases.md Phase 7b. Modes are B2C (default) and B2B; Job Search is gone and migrates into B2C. ICP is structured (shared/taxonomy.js + shared/schema.js). Step 2 (posting in both modes, real previous posts) is next. Before that, the user's Phase 7 UI redesign was also done and verified, uncommitted (see `phases.md` Phase 7 and `design.md`, which is now the shipped spec). Must-keep rules:
 - Every in-page CSS rule stays scoped under our root ids.
 - Stage and score colors are `tone-*` classes, never inline hex.
 - No emoji or glyph icons.
@@ -147,6 +147,9 @@ Root causes of the BD team's complaints, and the fixes:
   happens** to add the missing selector variant — can't be fixed blind.
 
 ## Known temporary/cleanup items
+
+- **Open privacy contradiction (pre-existing, needs the user's decision):** `SETTINGS_KEYS` includes `anthropicApiKey` and `hubspotApiKey`, so both keys are pushed to the Supabase settings backup. The Account tab and the privacy page say keys are "never transmitted to us". Either stop syncing keys or change the copy.
+- `seed_husnain_profile.js` still writes old-shape keys; migration converts them, but delete it once confirmed.
 
 - `assets/fonts/Sora-Bold.woff2`: unreferenced since the Phase 7 redesign. Safe to delete.
 - The Satyron logo PNG is dark-only. Ask Satyron for a reversed (white) variant to drop the light tile behind it in dark mode.

@@ -1,20 +1,17 @@
+// Two modes (B2C default, B2B) — same ids as shared/schema.js; anything else is treated as B2C.
 const MODE_META = {
-  b2b_sales: {
-    label: 'B2B Sales',
-    sub: 'Score prospects against your ICP',
-    icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>`,
-  },
   b2c_sales: {
-    label: 'Freelance / Consulting',
-    sub: 'Find clients for your services',
+    label: 'B2C',
+    sub: 'You, finding jobs, projects and teams',
     icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
   },
-  job_search: {
-    label: 'Job Search',
-    sub: 'Spot recruiters and hiring signals',
-    icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
+  b2b_sales: {
+    label: 'B2B',
+    sub: 'Your company, finding clients',
+    icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>`,
   },
 };
+const normIntent = i => (i === 'b2b_sales' ? 'b2b_sales' : 'b2c_sales');
 
 function showSignInGate() {
   document.getElementById('sign-in-gate').style.display = 'flex';
@@ -112,21 +109,7 @@ function renderMainContent(result) {
   }
 
   // ── Active Mode ──
-  const intent = result.analysisIntent || 'b2b_sales';
-  const meta = MODE_META[intent] || MODE_META.b2b_sales;
-
-  document.getElementById('mode-card').innerHTML = `
-    <div class="mode-card-icon-wrap">${meta.icon}</div>
-    <div class="mode-card-body">
-      <div class="mode-card-label">${meta.label}</div>
-      <div class="mode-card-sub">${meta.sub}</div>
-    </div>
-    <button class="mode-card-change" id="change-mode-btn">Change</button>`;
-
-  document.getElementById('change-mode-btn').addEventListener('click', () => {
-    chrome.runtime.openOptionsPage();
-    window.close();
-  });
+  renderModeCard(normIntent(result.analysisIntent));
 
   // ── Post mode ──
   const co = result.companyProfile;
@@ -139,6 +122,24 @@ function renderMainContent(result) {
   document.getElementById('post-mode-row').innerHTML = `
     <span class="post-mode-label">Posts as</span>
     <span class="post-mode-badge">${postModeIcon} ${postModeLabel}</span>`;
+}
+
+function renderModeCard(intent) {
+  const meta = MODE_META[intent];
+  document.getElementById('mode-card').innerHTML = `
+    <div class="mode-card-icon-wrap">${meta.icon}</div>
+    <div class="mode-card-body">
+      <div class="mode-card-label">${meta.label}</div>
+      <div class="mode-card-sub">${meta.sub}</div>
+    </div>
+    <div class="mode-switch" role="group" aria-label="Outreach mode">
+      <button type="button" data-intent="b2c_sales" aria-pressed="${intent === 'b2c_sales'}">B2C</button>
+      <button type="button" data-intent="b2b_sales" aria-pressed="${intent === 'b2b_sales'}">B2B</button>
+    </div>`;
+  document.querySelectorAll('#mode-card .mode-switch button').forEach(btn => btn.addEventListener('click', () => {
+    if (btn.getAttribute('aria-pressed') === 'true') return;
+    chrome.storage.local.set({ analysisIntent: btn.dataset.intent }, () => renderModeCard(btn.dataset.intent));
+  }));
 }
 
 function renderUsageWarning(plan, usageStats) {
@@ -239,12 +240,7 @@ const STAGE_META = {
   closed:          { label: 'Closed',          tone: 'muted' },
 };
 const STAGE_ORDER = Object.keys(STAGE_META);
-// "Booked"/"Closed" are sales-deal language that don't map onto a job seeker's mental model —
-// swap in interview/hired framing for job_search contacts. Same override, duplicated in
-// content/index.js and options/index.js alongside their own STAGE_META copies.
-const JOB_STAGE_LABELS = { booked: 'Interview', closed: 'Hired' };
-function stageLabel(stage, intent) {
-  if (intent === 'job_search' && JOB_STAGE_LABELS[stage]) return JOB_STAGE_LABELS[stage];
+function stageLabel(stage) {
   return STAGE_META[stage]?.label || 'New';
 }
 

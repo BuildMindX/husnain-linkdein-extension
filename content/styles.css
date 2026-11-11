@@ -380,10 +380,17 @@ body:has(#lia-panel.lia-open, #lia-post-panel.lia-pc-open, #lia-time-panel.lia-p
 
 /* ── Purpose picker (first screen) ──────────────────────────────────────────── */
 #lia-panel .lia-purpose-picker { display: flex; flex-direction: column; gap: 10px; }
-#lia-panel .lia-mode-indicator {
-  align-self: flex-start; display: inline-flex; align-items: center; height: 24px; padding: 0 9px;
-  border-radius: var(--lp-r-sm); background: var(--lp-accent-soft); color: var(--lp-accent);
-  font-size: 12px; font-weight: 600;
+#lia-panel .lia-mode-switch {
+  align-self: flex-start; display: inline-flex; gap: 2px; padding: 3px;
+  border-radius: var(--lp-r); background: var(--lp-surface); border: 1px solid var(--lp-border);
+}
+#lia-panel .lia-mode-switch button {
+  height: 28px; min-width: 52px; padding: 0 12px; border-radius: var(--lp-r-sm);
+  font-size: 12.5px; font-weight: 600; color: var(--lp-muted); transition: background 0.15s, color 0.15s;
+}
+#lia-panel .lia-mode-switch button:hover { color: var(--lp-text); }
+#lia-panel .lia-mode-switch button[aria-pressed="true"] {
+  background: var(--lp-bg); color: var(--lp-accent); box-shadow: 0 0 0 1px var(--lp-border), 0 1px 2px rgba(33, 21, 47, 0.08);
 }
 #lia-panel .lia-purpose-intro {
   font-family: var(--lp-font-display); font-size: 18px; font-weight: 600; letter-spacing: -0.015em;

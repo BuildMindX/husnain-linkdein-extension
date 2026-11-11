@@ -6,12 +6,11 @@ A Chrome extension that brings AI-powered intelligence to LinkedIn profiles — 
 
 ## Features
 
-### Three Modes
+### Two Modes
 | Mode | What it does |
 |---|---|
-| **💼 B2B Sales** | Score prospects against your ICP, get decision-maker signals, industry fit, and personalized outreach |
-| **🧑‍💻 Freelance / Consulting** | Identify client potential, hiring-freelancer signals, pain points, and approach angles |
-| **🎯 Job Search** | Detect hiring signals, check if the person is a recruiter, and get actionable networking insights |
+| **B2C** (default) | You, finding work: jobs, freelance projects or a place on a team. Scores whether a person can hire you, refer you or bring you in, and writes peer-to-peer outreach that never reads like an application |
+| **B2B** | Your company, finding clients. Scores prospects against your ICP (industries, sub-segments, locations, size, seniority) and writes outreach that doesn't pitch |
 
 ### Core Capabilities
 - **Profile Analysis** — AI scores every LinkedIn profile against your configured goals
@@ -36,12 +35,12 @@ A Chrome extension that brings AI-powered intelligence to LinkedIn profiles — 
 ## Setup
 
 ### Step 1 — Choose Your Mode
-Pick **B2B Sales**, **Freelance**, or **Job Search** in Settings. Each mode changes what gets analyzed and how outreach is written.
+Pick **B2C** (default) or **B2B** in Settings, the popup, or the panel. Each mode keeps its own setup, saved profiles and message style.
 
 ### Step 2 — Fill In Your Profile
-- **B2B Sales:** Set your ICP industries, exclusions, business description, and message tone
-- **Freelance:** Add your name, service, niche, and selling points
-- **Job Search:** Add your name, target roles, target industries, background, and years of experience
+- **B2C:** What you're looking for (work type, roles, level), your pitch (one-liner, skills, proof points), and who can hire you (people to reach, industries, locations, company size)
+- **B2B:** What you offer (offer, problems you solve, proof points), who you target (industries and sub-segments, locations, headcount, seniority, titles), and why-now signals
+- **Both:** what to skip (industries, company types, roles, companies) and message style (tone, how messages end). Industries come from a 24-group / 208-segment list aligned with LinkedIn's own industry names.
 
 ### Step 3 — Add API Keys
 - **Anthropic API key** (required) — powers all AI analysis and message generation

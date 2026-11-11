@@ -1,4 +1,9 @@
 import { ANTHROPIC_API_URL, ANTHROPIC_VERSION, ANTHROPIC_MODEL } from './config.js';
+import '../shared/taxonomy.js';
+import '../shared/schema.js';
+
+const TX = globalThis.LP_TAXONOMY;
+const S = globalThis.LP_SCHEMA;
 
 // ─── Storage Helpers ──────────────────────────────────────────────────────────
 
@@ -7,8 +12,6 @@ async function getApiKey() {
   if (!result.anthropicApiKey) throw new Error('NO_API_KEY');
   return result.anthropicApiKey;
 }
-
-const DEFAULT_EXCLUDES = ['Tech service providers', 'IT outsourcing / staffing', 'Digital / marketing agencies'];
 
 // ─── Shared Authenticity Rules ─────────────────────────────────────────────────
 // Applied to every message-writing prompt so a fix here fixes all of them at once. Users have
@@ -163,196 +166,190 @@ End with exactly one CTA, placed as the final sentence.`;
   return sections.join('\n\n');
 }
 
-// B2C gets its own target/exclude industries (b2cTargetIndustries/b2cExcludeIndustries), not
-// B2B's — previously B2C scoring silently reused whatever was configured for B2B mode with no
-// way to see or change it from the B2C settings. No B2B-style default exclude list here either:
-// those defaults ("Tech service providers", "IT outsourcing", etc.) are a B2B assumption that
-// doesn't obviously carry over to a freelancer's own client-fit judgment.
-async function getB2cIcpConfig() {
-  const r = await chrome.storage.local.get(['b2cTargetIndustries', 'b2cExcludeIndustries']);
-  return {
-    targets: Array.isArray(r.b2cTargetIndustries) ? r.b2cTargetIndustries : [],
-    excludes: Array.isArray(r.b2cExcludeIndustries) ? r.b2cExcludeIndustries : [],
-    business: {},
-  };
+// ─── Outreach profiles (structured ICP) ───────────────────────────────────────
+// Two modes: B2C (an individual finding work — jobs, projects, teams) and B2B (a company finding
+// clients). Each mode has its own list of saved profiles with one active, plus its own message
+// style. Shapes, option lists and the migration from the old free-text three-mode setup live in
+// shared/schema.js so Settings, the panel and this file can never disagree about them.
+
+let migrationOnce = null;
+export function ensureMigrated() {
+  if (!migrationOnce) migrationOnce = S.migrate().catch(e => { migrationOnce = null; console.warn('[LinkPilot] migration failed', e); });
+  return migrationOnce;
+}
+// Cloud restore can bring back old-shaped settings after this worker already migrated once.
+export function resetMigration() { migrationOnce = null; }
+
+async function getModeContext(intent) {
+  await ensureMigrated();
+  const mode = S.normalizeIntent(intent);
+  if (mode === 'b2b_sales') {
+    const r = await chrome.storage.local.get(['icpProfiles', 'activeIcpProfileId', 'messagePresets']);
+    const list = Array.isArray(r.icpProfiles) ? r.icpProfiles : [];
+    const profile = list.find(p => p.id === r.activeIcpProfileId) || list[0] || S.emptyB2bProfile();
+    return finishContext(mode, profile, r.messagePresets);
+  }
+  const r = await chrome.storage.local.get(['b2cProfiles', 'activeB2cProfileId', 'b2cMessagePresets']);
+  const list = Array.isArray(r.b2cProfiles) ? r.b2cProfiles : [];
+  const profile = list.find(p => p.id === r.activeB2cProfileId) || list[0] || S.emptyB2cProfile();
+  return finishContext(mode, profile, r.b2cMessagePresets);
 }
 
-// Multiple saved ICP/business profiles, for a user who sells to more than one kind of buyer
-// (e.g. "Healthcare clients" vs. "Logistics clients") — one is active at a time, same
-// one-config-at-a-time model as before, just switchable now instead of fixed. Message style
-// (tone/length/CTA) stays a single shared setting, not per-profile — that's about how the sender
-// writes, not who they're targeting, so splitting it added complexity without a real need.
-//
-// Migrates the old flat targetIndustries/excludeIndustries/businessProfile keys into a single
-// "Default" profile on first read after this shipped, exactly once (icpProfiles.length is the
-// migration marker) — the legacy keys are left in place afterward, unused but harmless, rather
-// than deleted, since nothing reads them again once icpProfiles exists.
-async function ensureIcpProfilesMigrated() {
-  const { icpProfiles } = await chrome.storage.local.get('icpProfiles');
-  if (Array.isArray(icpProfiles) && icpProfiles.length) return icpProfiles;
-
-  const legacy = await chrome.storage.local.get(['targetIndustries', 'excludeIndustries', 'businessProfile']);
-  const defaultProfile = {
-    id: `icp-${Date.now()}`,
-    name: 'Default',
-    targetIndustries: Array.isArray(legacy.targetIndustries) ? legacy.targetIndustries : [],
-    excludeIndustries: Array.isArray(legacy.excludeIndustries) ? legacy.excludeIndustries : DEFAULT_EXCLUDES,
-    businessProfile: legacy.businessProfile || {},
-  };
-  await chrome.storage.local.set({ icpProfiles: [defaultProfile], activeIcpProfileId: defaultProfile.id });
-  return [defaultProfile];
+function finishContext(mode, profile, presets) {
+  const icp = { ...S.emptyIcp(), ...(profile.icp || {}) };
+  const isB2b = mode === 'b2b_sales';
+  const sender = isB2b ? (profile.businessProfile || {}) : (profile.pitch || {});
+  const hasIndustries = !!(icp.industries.length || icp.customIndustries.length);
+  // B2C fit can be judged from who hires (founders, hiring managers…) even without industries.
+  const hasTargets = isB2b ? hasIndustries : (hasIndustries || icp.hirerTypes.length > 0);
+  const hasSender = isB2b
+    ? !!(sender.offer || sender.expertise || (sender.proofPoints || []).some(Boolean))
+    : !!(sender.oneLiner || sender.services || sender.background || sender.currentTitle || (sender.skills || []).length);
+  return { mode, isB2b, profile, icp, sender, seeking: profile.seeking || {}, presets: S.sanitizePresets(presets, mode), hasTargets, hasSender, senderName: sender.senderName || '' };
 }
 
-async function getActiveIcpProfile() {
-  const profiles = await ensureIcpProfilesMigrated();
-  const { activeIcpProfileId } = await chrome.storage.local.get('activeIcpProfileId');
-  return profiles.find(p => p.id === activeIcpProfileId) || profiles[0] || null;
+const optLabel = (list, id) => (list.find(o => o.id === id) || {}).label || '';
+const optLabels = (list, ids) => (ids || []).map(id => optLabel(list, id)).filter(Boolean);
+
+// Renders one industry key ("fintech" or "fintech/payments") with the official LinkedIn industry
+// names it covers, so the model can match what a profile or company page actually displays.
+function describeIndustry(key) {
+  const [gid, sid] = key.split('/');
+  const g = TX.industries.find(x => x.id === gid);
+  if (!g) return null;
+  if (!sid) return `${g.label} (any segment) — LinkedIn industries: ${g.li.slice(0, 8).join('; ')}`;
+  const sub = g.sub.find(x => x.id === sid);
+  if (!sub) return null;
+  return `${g.label} › ${sub.label}${sub.li.length ? ` — LinkedIn industries: ${sub.li.slice(0, 6).join('; ')}` : ''}`;
 }
 
-async function getSalesConfig() {
-  const [active, r] = await Promise.all([
-    getActiveIcpProfile(),
-    chrome.storage.local.get('messagePresets'),
-  ]);
-  return {
-    targets: Array.isArray(active?.targetIndustries) ? active.targetIndustries : [],
-    excludes: Array.isArray(active?.excludeIndustries) ? active.excludeIndustries : DEFAULT_EXCLUDES,
-    business: active?.businessProfile || {},
-    presets: r.messagePresets || {},
-  };
-}
-
-async function getB2cProfile() {
-  const r = await chrome.storage.local.get('b2cProfile');
-  return r.b2cProfile || {};
-}
-
-async function getJobProfile() {
-  const r = await chrome.storage.local.get('jobProfile');
-  return r.jobProfile || {};
-}
-
-// B2C and Job Search each get their own tone/length/CTA presets — deliberately separate storage
-// keys from B2B's messagePresets, not a shared one, so switching modes doesn't silently carry
-// one mode's style preference into another the way ICP targeting used to.
-async function getB2cMessagePresets() {
-  const r = await chrome.storage.local.get('b2cMessagePresets');
-  return r.b2cMessagePresets || {};
-}
-
-async function getJobMessagePresets() {
-  const r = await chrome.storage.local.get('jobMessagePresets');
-  return r.jobMessagePresets || {};
-}
-
-// ─── Context Builders ─────────────────────────────────────────────────────────
-
-function buildIcpContext(cfg, mode = 'b2b') {
-  const lines = ['--- YOUR IDEAL CUSTOMER PROFILE (use this to judge fit) ---'];
-  const fallback = mode === 'b2c'
-    ? 'TARGET INDUSTRIES: not specified — judge fit on general freelance opportunity signals (founder/owner at SMB/startup preferred).'
-    : 'TARGET INDUSTRIES: not specified — judge fit on general B2B buying potential.';
-  lines.push(cfg.targets.length
-    ? `TARGET INDUSTRIES (strong fit): ${cfg.targets.join(', ')}`
-    : fallback);
-  lines.push(cfg.excludes.length
-    ? `EXCLUDED INDUSTRIES (poor fit — set "excluded": true and level "Poor" if their company matches any of these): ${cfg.excludes.join(', ')}`
-    : 'EXCLUDED INDUSTRIES: none.');
-  const b = cfg.business || {};
-  const biz = [];
-  if (b.offer) biz.push(`What we offer: ${b.offer}`);
-  if (b.idealCustomer) biz.push(`Our ideal customer: ${b.idealCustomer}`);
-  if (b.problem) biz.push(`Problem we solve: ${b.problem}`);
-  if (b.valueProp) biz.push(`Value prop: ${b.valueProp}`);
-  if (biz.length) { lines.push('\nOUR BUSINESS:'); lines.push(biz.join('\n')); }
-  return lines.join('\n');
-}
-
-function buildMessageStyle(cfg) {
-  const p = cfg.presets || {};
-  const b = cfg.business || {};
-  const tone = p.tone || 'warm';
-  const length = p.length || 'standard';
-  const lines = [`Tone: ${tone}.`];
-  lines.push(`Length: ${length === 'short' ? 'very short — one or two lines.' : 'concise but complete.'}`);
-  if (p.includeCta && (p.ctaText || '').trim()) {
-    lines.push(`End with a soft, natural call-to-action along the lines of: "${p.ctaText.trim()}". Keep it casual, never salesy.`);
+function buildIcpContext(ctx) {
+  const { icp, isB2b } = ctx;
+  const L = ['--- YOUR TARGETING (ICP) — use this to judge fit ---'];
+  const targets = [...icp.industries.map(describeIndustry).filter(Boolean), ...icp.customIndustries.map(c => `${c} (user's own words)`)];
+  if (targets.length) {
+    L.push(`TARGET INDUSTRIES (strong fit):\n${targets.map(t => `- ${t}`).join('\n')}`);
+    L.push(`INDUSTRY MATCHING: judge the industry by what their company actually does — headline, About, company description, role descriptions — not only by the LinkedIn industry label. Many startups list "Software Development" or "IT Services and IT Consulting" whatever market they serve, so a HealthTech or FinTech startup can show a generic software label and still be a strong match.`);
   } else {
-    lines.push('Do not include a hard call-to-action.');
+    L.push(isB2b ? 'TARGET INDUSTRIES: not specified.' : 'TARGET INDUSTRIES: not specified — judge mainly on whether they can hire or bring in someone with the sender\'s skills.');
   }
-  const who = [];
-  if (b.expertise) who.push(`Sender expertise: ${b.expertise}`);
-  if (b.offer) who.push(`We offer: ${b.offer}`);
-  if (b.valueProp) who.push(`Value prop: ${b.valueProp}`);
-  if (b.senderName) who.push(`Sender name: ${b.senderName}`);
-  if (b.companyName) who.push(`Sender company: ${b.companyName}`);
-  if (who.length) {
-    lines.push('\nABOUT THE SENDER (weave in subtly ONLY if it strengthens the message — never pitch hard, never list features):');
-    lines.push(who.join('\n'));
+  if (icp.regions.length || icp.countries.length) {
+    const regions = icp.regions.map(id => (TX.regions.find(r => r.id === id) || {}).label).filter(Boolean);
+    L.push(`TARGET LOCATIONS: ${[...regions, ...icp.countries].join(', ')} (judge by the person's or company's location; an unknown location is not a mismatch)`);
   }
-  return lines.join('\n');
+  if (icp.headcount.length) L.push(`TARGET COMPANY SIZE (employees): ${optLabels(TX.headcount, icp.headcount).join(', ')}`);
+  if (icp.seniority.length) L.push(`TARGET SENIORITY: ${optLabels(TX.seniority, icp.seniority).join(', ')}`);
+  if (icp.functions.length) L.push(`TARGET FUNCTIONS: ${optLabels(TX.functions, icp.functions).join(', ')}`);
+  if (icp.titles.length) L.push(`EXAMPLE TARGET TITLES: ${icp.titles.join(', ')}`);
+  if (!isB2b && icp.hirerTypes.length) L.push(`PEOPLE WHO CAN HIRE THE SENDER (who to reach): ${optLabels(S.OPTIONS.hirerTypes, icp.hirerTypes).join(', ')}`);
+  if (icp.signals.length) L.push(`TIMING SIGNALS TO PRIORITISE (count only if visible in the data): ${optLabels(isB2b ? S.OPTIONS.b2bSignals : S.OPTIONS.b2cSignals, icp.signals).join(', ')}`);
+  if (icp.idealCustomer) L.push(`${isB2b ? 'IDEAL CUSTOMER' : 'WHO THE SENDER WANTS TO REACH'} (user's own words — the most specific description): ${icp.idealCustomer}`);
+
+  const ex = [];
+  const exInd = [...icp.excludeIndustries.map(k => S.industryLabel(k)).filter(Boolean), ...icp.customExcludes];
+  if (exInd.length) ex.push(`industries: ${exInd.join(', ')}`);
+  if (icp.excludeCompanyTypes.length) ex.push(`company types: ${optLabels(S.OPTIONS.excludeCompanyTypes, icp.excludeCompanyTypes).join(', ')}`);
+  if (icp.excludeRoles.length) ex.push(`roles: ${icp.excludeRoles.join(', ')}`);
+  if (icp.excludeCompanies.length) ex.push(`specific companies: ${icp.excludeCompanies.join(', ')}`);
+  L.push(ex.length ? `EXCLUDED (set "excluded": true and fit "Poor" if they clearly match any of these): ${ex.join(' | ')}` : 'EXCLUDED: none.');
+  return L.join('\n');
 }
 
-// Just the tone/length/CTA portion of buildMessageStyle, shared by B2C and Job Search — they
-// already get their own sender-bio context from buildB2cContext/buildJobContext, so they don't
-// need buildMessageStyle's "ABOUT THE SENDER" section (that's B2B-specific field names anyway).
-function buildStylePresetRules(presets) {
-  const p = presets || {};
-  const tone = p.tone || 'warm';
-  const length = p.length || 'standard';
-  const lines = [`Tone: ${tone}.`];
-  lines.push(`Length: ${length === 'short' ? 'very short — one or two lines.' : 'concise but complete.'}`);
-  if (p.includeCta && (p.ctaText || '').trim()) {
-    lines.push(`End with a soft, natural call-to-action along the lines of: "${p.ctaText.trim()}". Keep it casual, never salesy.`);
+// What the sender does and why they're credible — the only allowed source for any "relevance
+// bridge" or proof in messages and posts (the grounding rules forbid inventing it).
+function buildSenderContext(ctx) {
+  const s = ctx.sender; const L = [];
+  if (ctx.isB2b) {
+    L.push('--- ABOUT THE SENDER (a business) ---');
+    if (s.senderName) L.push(`Sender name: ${s.senderName}`);
+    if (s.companyName) L.push(`Company: ${s.companyName}`);
+    if (s.offerType) L.push(`What they sell: ${optLabel(S.OPTIONS.offerTypes, s.offerType)}`);
+    if (s.offer) L.push(`Offer in one line: ${s.offer}`);
+    const probs = [...optLabels(S.OPTIONS.problems, s.problems), s.problem].filter(Boolean);
+    if (probs.length) L.push(`Problems they solve: ${probs.join('; ')}`);
+    if (s.outcome) L.push(`Main outcome delivered: ${optLabel(S.OPTIONS.outcomes, s.outcome)}`);
+    if (s.valueProp) L.push(`What makes them different: ${s.valueProp}`);
+    if (s.expertise) L.push(`Sender's own background: ${s.expertise}`);
+    const proofs = (s.proofPoints || []).filter(Boolean);
+    if (proofs.length) L.push(`Proof points (real results — use at most one, lightly, never as a brag):\n${proofs.map(p => `  - ${p}`).join('\n')}`);
+    if (s.notes) L.push(`Other notes from the sender: ${s.notes}`);
   } else {
-    lines.push('Do not include a hard call-to-action.');
+    const k = ctx.seeking || {};
+    L.push('--- ABOUT THE SENDER (an individual professional looking for work) ---');
+    if (s.senderName) L.push(`Name: ${s.senderName}`);
+    if (s.currentTitle) L.push(`Current / target title: ${s.currentTitle}`);
+    if (s.oneLiner) L.push(`In one line: ${s.oneLiner}`);
+    if ((k.workTypes || []).length) L.push(`Open to: ${optLabels(S.OPTIONS.workTypes, k.workTypes).join(', ')}`);
+    if ((k.roles || []).length) L.push(`Target roles: ${k.roles.join(', ')}`);
+    if (k.level) L.push(`Experience level: ${optLabel(S.OPTIONS.experience, k.level)}`);
+    if ((k.workplace || []).length) L.push(`Workplace: ${optLabels(S.OPTIONS.workplace, k.workplace).join(', ')}`);
+    if (k.availability) L.push(`Availability: ${optLabel(S.OPTIONS.availability, k.availability)}`);
+    if ((s.skills || []).length) L.push(`Top skills: ${s.skills.join(', ')}`);
+    if (s.services) L.push(`What they can do for a team or client: ${s.services}`);
+    if (s.uniqueAngle) L.push(`What makes them different: ${s.uniqueAngle}`);
+    if (s.background) L.push(`Background: ${s.background}`);
+    const proofs = (s.proofPoints || []).filter(Boolean);
+    if (proofs.length) L.push(`Proof points (real results — use at most one, lightly, never as a brag):\n${proofs.map(p => `  - ${p}`).join('\n')}`);
+    if (s.portfolio) L.push(`Portfolio link (only ever share in a follow-up when they show interest — never in a first touch): ${s.portfolio}`);
+    if (s.notes) L.push(`Other notes from the sender: ${s.notes}`);
   }
-  return lines.join('\n');
+  return L.length > 1 ? L.join('\n') : '';
 }
 
-function buildB2cContext(p) {
-  const lines = ['--- YOUR PERSONAL PROFILE (use this to personalise analysis and messaging) ---'];
-  if (p.expertise) lines.push(`Your expertise / domain: ${p.expertise}`);
-  if (p.services) lines.push(`Services you offer: ${p.services}`);
-  if (p.targetClient) lines.push(`Your target clients: ${p.targetClient}`);
-  if (p.problem) lines.push(`Problem you solve: ${p.problem}`);
-  if (p.valueProp) lines.push(`Your unique angle / USP: ${p.valueProp}`);
-  if (p.senderName) lines.push(`Your name: ${p.senderName}`);
-  return lines.join('\n');
-}
-
-function buildJobContext(p) {
-  if (!p || !Object.keys(p).length) return '';
-  const lines = ['--- YOUR JOB SEARCH PROFILE (personalize messaging based on this — calibrate tone and references to the sender\'s background) ---'];
-  if (p.senderName) lines.push(`Your name: ${p.senderName}`);
-  if (p.currentTitle) lines.push(`Your current or target role: ${p.currentTitle}`);
-  if (p.background) lines.push(`Your professional background: ${p.background}`);
-  if (Array.isArray(p.targetRoles) && p.targetRoles.length) lines.push(`Roles you are looking for: ${p.targetRoles.join(', ')}`);
-  if (Array.isArray(p.targetIndustries) && p.targetIndustries.length) lines.push(`Industries you are targeting: ${p.targetIndustries.join(', ')}`);
-  if (p.yearsExp) lines.push(`Years of experience: ${p.yearsExp}`);
-  return lines.join('\n');
+// LinkedIn's own InMail data: under 400 characters gets 22% more replies, over 1,200 gets 11% fewer
+// — so length is no longer a setting. Gong's 304k cold-email study: an interest question beats a
+// meeting ask on a first touch, which is why "ask if it's relevant" is the default ending.
+const ENDING_RULES = {
+  b2b_sales: {
+    ask_relevant: 'End with one low-friction interest question — whether this is a priority or relevant for them right now. Never ask for a call or meeting.',
+    offer_value: 'End by offering one small, specific, useful thing (an idea, an example, a short teardown) they can accept with a one-word reply — phrased as a question.',
+    ask_right_person: 'End by asking, as a question, who the right person to talk to about this would be.',
+    suggest_call: 'End with a light suggestion of a short call, phrased as an easy-to-decline question.',
+    no_ask: 'No ask at all — end on a genuine question about their work.',
+  },
+  b2c_sales: {
+    ask_relevant: 'End with one low-friction question about whether they are building or hiring in this area, or could use help with it. Never ask for a job outright and never sound like an application.',
+    offer_value: 'End by offering one small, specific, useful thing (a quick idea, a sample, a short teardown of something they posted) they can accept with a one-word reply — phrased as a question.',
+    ask_right_person: 'End by asking, as a question, who the right person on their team would be to talk to about this kind of work.',
+    suggest_call: 'End with a light suggestion of a short call, phrased as an easy-to-decline question.',
+    no_ask: 'No ask at all — end on a genuine question about their work.',
+  },
+};
+const TONE_RULES = {
+  warm: 'Warm, genuine, like a peer talking to a peer.',
+  direct: 'Straight to the point. Clear and confident, no pleasantries.',
+  casual: 'Conversational and relaxed, like a message to a colleague you respect.',
+  professional: 'Polished and credible. Precise, zero filler.',
+  bold: 'Confident and distinctive. Takes a clear position.',
+};
+function buildStyleRules(ctx, { connection = false } = {}) {
+  const p = ctx.presets;
+  const L = [`Tone: ${TONE_RULES[p.tone] || TONE_RULES.warm}`, 'Length: short. Every sentence must earn its place.'];
+  if (!connection) L.push(`Ending: ${ENDING_RULES[ctx.mode][p.ending] || ENDING_RULES[ctx.mode].ask_relevant}`);
+  return L.join('\n');
 }
 
 function buildAnalysisContext(analysis, intent) {
   const lines = ['--- PROFILE ANALYSIS (use these insights to craft a personalized message) ---'];
-  if (intent === 'b2b_sales') {
+  if (S.normalizeIntent(intent) === 'b2b_sales') {
     if (analysis.potentialClient?.score) lines.push(`Prospect Score: ${analysis.potentialClient.score}`);
     if (analysis.potentialClient?.reasoning) lines.push(`Score reasoning: ${analysis.potentialClient.reasoning}`);
     if (analysis.decisionMaker) lines.push(`Decision Maker: ${analysis.decisionMaker}`);
-    if (analysis.industryFit?.level) lines.push(`Industry Fit: ${analysis.industryFit.level} — ${analysis.industryFit.reasoning || ''}`);
     if (analysis.companySize) lines.push(`Company Size: ${analysis.companySize}`);
-  } else if (intent === 'b2c_sales') {
-    if (analysis.clientPotential?.score) lines.push(`Client Potential: ${analysis.clientPotential.score}`);
-    if (analysis.clientPotential?.reasoning) lines.push(`Reasoning: ${analysis.clientPotential.reasoning}`);
-    if (analysis.decisionMaker) lines.push(`Decision Maker: ${analysis.decisionMaker}`);
-    if ((analysis.painPoints || []).length) lines.push(`Pain Points:\n${analysis.painPoints.map(p => `  - ${p}`).join('\n')}`);
+  } else {
+    // Legacy job-search analyses (hiringSignal) still render through here after migration.
+    const score = analysis.clientPotential?.score || analysis.hiringSignal?.score;
+    const why = analysis.clientPotential?.reasoning || analysis.hiringSignal?.reasoning;
+    if (score) lines.push(`Opportunity Score: ${score}`);
+    if (why) lines.push(`Reasoning: ${why}`);
+    if (analysis.hirerType) lines.push(`Who they are to the sender: ${analysis.hirerType}`);
+    if (analysis.opportunityType) lines.push(`Likely opportunity: ${analysis.opportunityType}`);
+    if (analysis.decisionMaker) lines.push(`Can hire / buy: ${analysis.decisionMaker}`);
+    if ((analysis.hiringSignals || []).length) lines.push(`Visible hiring / need signals:\n${analysis.hiringSignals.map(p => `  - ${p}`).join('\n')}`);
+    if ((analysis.painPoints || []).length) lines.push(`Needs the sender could help with:\n${analysis.painPoints.map(p => `  - ${p}`).join('\n')}`);
     if (analysis.approachAngle) lines.push(`Recommended Approach: ${analysis.approachAngle}`);
-  } else if (intent === 'job_search') {
-    if (analysis.hiringSignal?.score) lines.push(`Hiring Signal: ${analysis.hiringSignal.score}`);
-    if (analysis.hiringSignal?.reasoning) lines.push(`Hiring reasoning: ${analysis.hiringSignal.reasoning}`);
-    if (analysis.isRecruiter) lines.push(`Is Recruiter: ${analysis.isRecruiter}`);
-    if (analysis.companyName) lines.push(`Company: ${analysis.companyName}`);
   }
+  if (analysis.industryFit?.level) lines.push(`Industry Fit: ${analysis.industryFit.level} — ${analysis.industryFit.reasoning || ''}`);
   if (analysis.industry) lines.push(`Industry: ${analysis.industry}`);
   if (analysis.recentActivity) lines.push(`Recent Activity: ${analysis.recentActivity}`);
   if ((analysis.keyInsights || []).length) lines.push(`Key Insights:\n${analysis.keyInsights.map(i => `  - ${i}`).join('\n')}`);
@@ -537,68 +534,29 @@ async function callAIWithBannedPhraseGuard(systemPrompt, userPrompt, maxChars, s
 
 // ─── Profile Analysis ─────────────────────────────────────────────────────────
 
-export async function handleAnalyzeProfile(profileData, intent) {
-  const isJobSearch = intent === 'job_search';
-  const isB2c = intent === 'b2c_sales';
-  const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
-  const b2cIcpCfg = isB2c ? await getB2cIcpConfig() : null;
-  const b2cProfile = isB2c ? await getB2cProfile() : null;
-
-  let systemPrompt;
-
-  if (isJobSearch) {
-    systemPrompt = `You are a job search intelligence assistant. Analyze LinkedIn profiles from the perspective of a job seeker evaluating contacts.
-
-Respond ONLY with valid JSON. No markdown, no explanation, no extra text — just the raw JSON object.
-IMPORTANT: Always return the full JSON structure. Never add an "error" field. Use "Unknown" for anything you cannot determine.
-
-Return exactly this structure:
-{
-  "hiringSignal": {
-    "score": "Strong | Possible | Unlikely",
-    "reasoning": "One sentence max explaining the score"
-  },
-  "isRecruiter": "Yes | Likely | No",
-  "companyName": "Current employer name, or Unknown",
-  "companySize": "Startup | SMB | Mid-market | Enterprise | Unknown",
-  "engagementRate": "Daily | Weekly | Occasional | Rarely",
-  "industry": "Short industry label (e.g. Construction, SaaS, Finance)",
-  "summaryPoints": [
-    "Short chip-sized fact about their background (max 8 words)",
-    "Second fact",
-    "Third fact",
-    "Fourth fact"
-  ],
-  "recentActivity": "One sentence on what they post about or engage with. If none visible, say No recent posts visible.",
-  "keyInsights": [
-    "Actionable job-search insight #1 — concise, specific",
-    "Actionable job-search insight #2",
-    "Actionable job-search insight #3"
-  ],
-  "timingCaution": "One sentence flagging a REAL reason right now might be bad timing to reach out — e.g. they started this exact role within the last few weeks, their company shows visible signs of layoffs or contraction, or they explicitly posted about being on leave or overwhelmed. Empty string if nothing genuinely stands out — do not invent a caution just to fill this field."
-}
-
-hiringSignal guide:
-- Strong: Recruiter, HR, Talent Acquisition, or posts about hiring/open roles
-- Possible: Hiring manager, team lead, or growing company with budget signals
-- Unlikely: IC with no hiring signals, or company appears to be contracting
-
-isRecruiter guide:
-- Yes: Title contains Recruiter, Talent, HR, People Ops, Staffing
-- Likely: HR Manager, People Partner, or posts frequently about hiring
-- No: No HR/recruiting signals
-
-companySize guide:
+const COMMON_ANALYSIS_TAIL = `companySize guide:
 - Startup: <50 employees or early-stage signals
 - SMB: 50-500 employees
 - Mid-market: 500-5000 employees
 - Enterprise: 5000+ employees or well-known large corp
 
-keyInsights should be actionable for a job seeker — e.g. what to mention, how to approach them, what roles they hire for, growth signals.
-engagementRate: infer from follower count, post frequency, and activity signals`;
+engagementRate: infer from follower count, post frequency, and activity signals.`;
 
-  } else if (isB2c) {
-    systemPrompt = `You are a B2C freelance sales intelligence assistant. Analyze LinkedIn profiles from the perspective of an individual freelancer or consultant evaluating whether this person could become a client.
+// Applies to both modes: structured targeting beyond industry (location, size, seniority, function,
+// exclusions) is the user's explicit filter, so it gates the top score rather than being a hint.
+const FIT_GUIDE = `industryFit guide (judge against the TARGET INDUSTRIES and the user's own-words description below — the description is the more specific of the two):
+- Strong: their company is in a target industry or sub-segment (or clearly does that kind of work even under a generic LinkedIn label) and nothing contradicts the description.
+- Partial: not a listed target, but clearly the KIND of company the description names. "Could in theory need something" is not Partial.
+- Poor: clearly irrelevant, or matches an EXCLUDED item. Set "excluded": true ONLY when they clearly match an EXCLUDED industry, company type, role or company; irrelevant-but-not-listed is "Poor" with "excluded": false.
+- If no target industries are set, judge fit from the rest of the targeting and set level "Partial" unless something is clearly wrong.
+Other targeting (locations, company size, seniority, functions, titles): when set, someone clearly outside them can never score High; clearly outside on two or more is Low. Unknown data is not a mismatch.`;
+
+export async function handleAnalyzeProfile(profileData, intent) {
+  const ctx = await getModeContext(intent);
+  let systemPrompt;
+
+  if (!ctx.isB2b) {
+    systemPrompt = `You are an opportunity-intelligence assistant for an individual professional who uses their own LinkedIn to find work: a job, freelance or contract projects, or a place on a team. Analyze this LinkedIn profile from the sender's side: could this person hire the sender, give them a project, refer them, or bring them onto their team — and what is the best way to approach them?
 
 Respond ONLY with valid JSON. No markdown, no explanation, no extra text — just the raw JSON object.
 IMPORTANT: Always return the full JSON structure. Never add an "error" field. Use "Unknown" for anything you cannot determine.
@@ -607,68 +565,54 @@ Return exactly this structure:
 {
   "clientPotential": {
     "score": "High | Medium | Low",
-    "reasoning": "One sentence max explaining the score"
+    "reasoning": "One sentence max explaining the opportunity score"
   },
-  "freelancerSignal": {
-    "signal": "Strong | Possible | Unlikely",
-    "reasoning": "One sentence on how likely they are to work with individual freelancers or consultants"
-  },
+  "hirerType": "Founder / CEO | Hiring manager | Engineering / tech leader | Department head | Recruiter | Agency owner | Peer / possible referral | Unlikely to hire",
   "decisionMaker": "Yes | Likely | No",
+  "opportunityType": "Job | Freelance / contract | Team / co-founder | Referral | Unclear",
+  "industryFit": {
+    "level": "Strong | Partial | Poor",
+    "reasoning": "One sentence on how well their company matches the sender's targeting",
+    "excluded": false
+  },
+  "hiringSignals": ["Concrete, visible signal that they are hiring or need help (an open role, a post asking for help, team growth) — empty array if none is visible"],
+  "isRecruiter": "Yes | Likely | No",
   "company": {
     "name": "Current employer name, or Unknown",
     "size": "Startup | SMB | Mid-market | Enterprise | Unknown",
     "stage": "Early-stage | Growth | Established | Unknown"
   },
+  "companySize": "Startup | SMB | Mid-market | Enterprise | Unknown",
   "engagementRate": "Daily | Weekly | Occasional | Rarely",
   "industry": "Short industry label (e.g. SaaS, E-commerce, Healthcare)",
-  "summaryPoints": [
-    "Short chip-sized fact about their background (max 8 words)",
-    "Second fact",
-    "Third fact",
-    "Fourth fact"
-  ],
+  "summaryPoints": ["Short chip-sized fact about their background (max 8 words)", "Second fact", "Third fact", "Fourth fact"],
   "recentActivity": "One sentence on what they post about or engage with. If none visible, say No recent posts visible.",
-  "painPoints": [
-    "Visible pain, challenge, or gap a freelancer in your domain could address",
-    "Second pain point or opportunity"
-  ],
-  "keyInsights": [
-    "Actionable B2C insight #1 — specific to pitching your personal expertise",
-    "Actionable insight #2",
-    "Actionable insight #3"
-  ],
-  "approachAngle": "The most compelling angle to reach out as an individual expert — specific to their situation, not generic",
-  "timingCaution": "One sentence flagging a REAL reason right now might be bad timing to reach out — e.g. they started this exact role within the last few weeks, their company shows visible signs of contraction or trouble, or they explicitly posted about being on leave or overwhelmed. Empty string if nothing genuinely stands out — do not invent a caution just to fill this field."
+  "painPoints": ["A visible need, gap or project the sender's skills could address", "Second one"],
+  "keyInsights": ["Actionable insight #1 for approaching this person — specific", "Insight #2", "Insight #3"],
+  "approachAngle": "The most compelling honest angle for the sender to reach out — specific to this person, never generic",
+  "timingCaution": "One sentence flagging a REAL reason right now might be bad timing — e.g. they started this exact role within the last few weeks, visible layoffs or contraction, or they posted about being on leave or overwhelmed. Empty string if nothing genuinely stands out — never invent one."
 }
 
-clientPotential scoring guide:
-- High: decision-maker at a startup/SMB with visible skill gaps, budget signals, or history working with freelancers/agencies
-- Medium: manager-level, growing team, relevant industry but less direct signal
-- Low: large-enterprise IC with no procurement authority, or no freelance alignment
+decisionMaker means "can this person hire the sender or approve paying for their work":
+- Yes: founder, owner, CEO/CTO, head of the team the sender would join, agency owner, a recruiter hiring for the sender's kind of role
+- Likely: manager or team lead in the sender's field, director at an SMB
+- No: individual contributor outside the sender's field, junior, or no hiring influence
 
-freelancerSignal guide:
-- Strong: founder, co-founder, solo operator, small team with obvious gaps, or history with contractors
-- Possible: manager with some autonomy, project-based work signals, growing team
-- Unlikely: large enterprise, siloed role, no budget/decision signals
+Opportunity scoring guide (clientPotential.score):
+- High: can hire or buy (decisionMaker Yes/Likely) AND industryFit Strong AND a visible reason now (a hiring signal, growth, or a post about a need the sender's skills meet)
+- Medium: can influence hiring with Partial fit, OR Strong fit but no visible need yet, OR a recruiter or peer in an adjacent field who could refer
+- Low: no hiring influence and no referral value, Poor or excluded fit, an unrelated field, or not enough data to judge — a title alone never earns Medium
+Never invent hiring signals: a "#hiring" headline, an open-role post, or a stated need must actually be in the data.
 
-decisionMaker guide:
-- Yes: Founder, Owner, CEO, CTO, Head of X at a small company
-- Likely: Manager, Team Lead, Director at an SMB
-- No: IC, junior, large-enterprise employee with no budget authority
+${FIT_GUIDE}
 
-companySize guide:
-- Startup: <50 employees or early-stage
-- SMB: 50-500 employees
-- Mid-market: 500-5000 employees
-- Enterprise: 5000+ or well-known large corp
+${COMMON_ANALYSIS_TAIL}
 
-engagementRate: infer from follower count, post frequency, and activity signals
-
-${buildIcpContext(b2cIcpCfg, 'b2c')}
-${b2cProfile && Object.keys(b2cProfile).length ? '\n' + buildB2cContext(b2cProfile) : ''}`;
+${buildIcpContext(ctx)}
+${ctx.hasSender ? '\n' + buildSenderContext(ctx) : ''}`;
 
   } else {
-    systemPrompt = `You are a B2B SaaS sales intelligence assistant. Analyze LinkedIn profiles and return structured data for a sales dashboard.
+    systemPrompt = `You are a B2B sales intelligence assistant. Analyze LinkedIn profiles as prospects for the sender's business and return structured data for a sales dashboard.
 
 Respond ONLY with valid JSON. No markdown, no explanation, no extra text — just the raw JSON object.
 IMPORTANT: Always return the full JSON structure. Never add an "error" field. Use "Unknown" for anything you cannot determine.
@@ -681,7 +625,7 @@ Return exactly this structure:
   },
   "industryFit": {
     "level": "Strong | Partial | Poor",
-    "reasoning": "One sentence on how well their company's industry matches the target ICP below",
+    "reasoning": "One sentence on how well their company matches the targeting below",
     "excluded": false
   },
   "decisionMaker": "Yes | Likely | No",
@@ -694,29 +638,17 @@ Return exactly this structure:
   "companySize": "Startup | SMB | Mid-market | Enterprise | Unknown",
   "engagementRate": "Daily | Weekly | Occasional | Rarely",
   "industry": "Short industry label (e.g. Construction, SaaS, Finance)",
-  "summaryPoints": [
-    "Short chip-sized fact about their background (max 8 words)",
-    "Second fact",
-    "Third fact",
-    "Fourth fact"
-  ],
+  "summaryPoints": ["Short chip-sized fact about their background (max 8 words)", "Second fact", "Third fact", "Fourth fact"],
   "recentActivity": "One sentence on what they post about or engage with. If none visible, say No recent posts visible.",
-  "keyInsights": [
-    "Actionable sales insight #1 — concise, specific",
-    "Actionable sales insight #2",
-    "Actionable sales insight #3"
-  ],
-  "timingCaution": "One sentence flagging a REAL reason right now might be bad timing to reach out — e.g. they started this exact role within the last few weeks, their company shows visible signs of layoffs or contraction, or they explicitly posted about being on leave or overwhelmed. Empty string if nothing genuinely stands out — do not invent a caution just to fill this field."
+  "keyInsights": ["Actionable sales insight #1 — concise, specific", "Insight #2", "Insight #3"],
+  "timingCaution": "One sentence flagging a REAL reason right now might be bad timing to reach out — e.g. they started this exact role within the last few weeks, visible layoffs or contraction, or they posted about being on leave or overwhelmed. Empty string if nothing genuinely stands out — never invent one."
 }
 
-industryFit guide (judge against BOTH the target industries AND the "Our ideal customer" description below — the description is the more specific of the two):
-- Strong: their company is in a TARGET INDUSTRY (or closely adjacent) and does not contradict the ideal-customer description.
-- Partial: not in a listed target industry, but clearly the KIND of company the ideal-customer description names (same type of business, same problem). "Could in theory buy something" is not Partial.
-- Poor: their company is in an EXCLUDED industry or clearly irrelevant. Set "excluded": true ONLY when it matches one of the listed EXCLUDED INDUSTRIES; clearly irrelevant but not listed is "Poor" with "excluded": false.
+${FIT_GUIDE}
 - industryFit MUST influence potentialClient.score: Poor/excluded fit is always Low; Partial fit can never score High.
 
-Scoring guide (combine seniority AND industry fit):
-- High: decision-maker (Director/VP/C-level/Owner) AND Strong fit
+Scoring guide (combine seniority AND fit):
+- High: decision-maker (Director/VP/C-level/Owner, or the target seniority if set) AND Strong fit
 - Medium: decision-maker with Partial fit, OR a manager/influencer with Strong fit
 - Low: individual contributor, OR Poor/excluded fit, OR irrelevant, OR not enough data to judge fit at all (no company, no industry, no description) — a title alone never earns Medium
 
@@ -725,37 +657,27 @@ decisionMaker guide:
 - Likely: Manager, Team Lead, Senior with procurement mentions
 - No: IC, student, junior role
 
-companySize guide:
-- Startup: <50 employees or early-stage signals
-- SMB: 50-500 employees
-- Mid-market: 500-5000 employees
-- Enterprise: 5000+ employees or well-known large corp
+${COMMON_ANALYSIS_TAIL}
 
-engagementRate: infer from follower count, post frequency, and activity signals
-
-${buildIcpContext(cfg)}`;
+${buildIcpContext(ctx)}
+${ctx.hasSender ? '\n' + buildSenderContext(ctx) : ''}`;
   }
 
-  const userPrompt = buildProfileText(profileData);
-  const raw = await callAI(systemPrompt, userPrompt);
+  const raw = await callAI(systemPrompt, buildProfileText(profileData));
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('TRUNCATED_RESPONSE');
   let result;
-  try {
-    result = JSON.parse(jsonMatch[0]);
-  } catch {
-    throw new Error('TRUNCATED_RESPONSE');
-  }
+  try { result = JSON.parse(jsonMatch[0]); } catch { throw new Error('TRUNCATED_RESPONSE'); }
 
-  // With no target industries configured, the rubric collapses to seniority alone — measured: a VP
-  // at a concrete-paving company scored "High" for an AI-infrastructure seller. A rep can't tell
-  // that apart from a real ICP match, so it's capped here in code (not just asked of the model) and
-  // flagged for the panel to say plainly that the score wasn't checked against any ICP.
-  if (cfg && !cfg.targets.length) {
+  // With no targeting configured the rubric collapses to seniority alone — measured: a VP at a
+  // concrete-paving company scored "High" for an AI-infrastructure seller. Capped here in code (not
+  // just asked of the model) and flagged so the panel can say the score wasn't checked against an ICP.
+  if (!ctx.hasTargets) {
     result.icpMissing = true;
-    if (result.potentialClient?.score === 'High') {
-      result.potentialClient.score = 'Medium';
-      result.potentialClient.reasoning = `${result.potentialClient.reasoning || ''} (Capped at Medium: no target industries are set, so ICP fit is unverified.)`.trim();
+    const key = ctx.isB2b ? 'potentialClient' : 'clientPotential';
+    if (result[key]?.score === 'High') {
+      result[key].score = 'Medium';
+      result[key].reasoning = `${result[key].reasoning || ''} (Capped at Medium: no targeting is set, so fit is unverified.)`.trim();
     }
   }
   return result;
@@ -764,34 +686,20 @@ ${buildIcpContext(cfg)}`;
 // ─── Bulk Search-Results Scoring ───────────────────────────────────────────────
 // Lighter-weight sibling of handleAnalyzeProfile — search result cards only expose
 // name/title/company (no experience, education, posts), so this trades analysis depth
-// for being able to score a whole page of results in one ICP-aware batched call instead
-// of the blind title-keyword heuristic it replaces.
+// for being able to score a whole page of results in one ICP-aware batched call.
 export async function handleBulkScoreProfiles(profiles, intent) {
-  const isJobSearch = intent === 'job_search';
-  const isB2c = intent === 'b2c_sales';
-  const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
-  const b2cIcpCfg = isB2c ? await getB2cIcpConfig() : null;
-  const b2cProfile = isB2c ? await getB2cProfile() : null;
+  const ctx = await getModeContext(intent);
+  const perspective = ctx.isB2b
+    ? 'a B2B sales rep judging each contact\'s fit as a sales prospect for the sender\'s business'
+    : 'an individual professional judging whether each person could hire them, give them a project, or bring them onto a team';
+  const context = buildIcpContext(ctx) + (ctx.hasSender ? '\n\n' + buildSenderContext(ctx) : '');
 
-  const scoreLabels = isJobSearch ? 'Strong | Possible | Unlikely' : 'High | Medium | Low';
-  const perspective = isJobSearch
-    ? 'a job seeker judging how useful each contact could be as a hiring signal or relevant network connection'
-    : isB2c
-    ? 'an individual freelancer or consultant judging each contact\'s potential as a client'
-    : 'a B2B sales rep judging each contact\'s fit as a sales prospect';
-
-  const context = isJobSearch
-    ? ''
-    : isB2c
-    ? buildIcpContext(b2cIcpCfg, 'b2c') + (b2cProfile && Object.keys(b2cProfile).length ? '\n\n' + buildB2cContext(b2cProfile) : '')
-    : buildIcpContext(cfg);
-
-  const systemPrompt = `You are scoring a batch of LinkedIn search results from the perspective of ${perspective}. You only have each person's name, title, and company — no full profile, no experience history, no posts. Judge primarily on seniority/title, and on fit against the context below when relevant.
+  const systemPrompt = `You are scoring a batch of LinkedIn search results from the perspective of ${perspective}. You only have each person's name, title, and company — no full profile, no experience history, no posts. Judge primarily on title, seniority and company, and on fit against the targeting below. Anyone clearly matching an EXCLUDED item scores Low.
 
 ${context}
 
 Respond ONLY with valid JSON, no markdown, no explanation:
-{"scores": [{"id": "<the id given for this person>", "score": "${scoreLabels}", "reasoning": "max 8 words"}]}
+{"scores": [{"id": "<the id given for this person>", "score": "High | Medium | Low", "reasoning": "max 8 words"}]}
 
 One entry per input person, in the same order, using the exact same "id" value given for each — never invent or alter an id.`;
 
@@ -805,8 +713,7 @@ One entry per input person, in the same order, using the exact same "id" value g
   try {
     const parsed = JSON.parse(jsonMatch[0]);
     const scores = Array.isArray(parsed.scores) ? parsed.scores : [];
-    // Same seniority-only collapse as handleAnalyzeProfile when no B2B ICP is set — same cap.
-    if (cfg && !cfg.targets.length) {
+    if (!ctx.hasTargets) {
       scores.forEach(s => { if (s.score === 'High') s.score = 'Medium'; });
       return { scores, icpMissing: true };
     }
@@ -818,13 +725,13 @@ One entry per input person, in the same order, using the exact same "id" value g
 
 // ─── Connection Request ───────────────────────────────────────────────────────
 
-// Job Search used to forbid any mention of the sender, even to a recruiter who had just posted the
-// sender's exact role — measured: the model either broke the rule or wrote a "just networking" note
-// that a strict reviewer read as a disguised application. Honest interest beats a disguise when the
-// role is public; pure networking stays sender-free.
-const JOB_HIRING_CONTEXT_RULE = `HIRING-CONTEXT RULE — first decide which situation this is, from their profile data only:
-(a) They are visibly hiring for a role that matches the sender's target roles (a recruiter or hiring manager whose headline, role description, or posts mention an open role in that area). Be honest about the interest: a note that pretends to be "just networking" to someone who publicly posted the role reads as a disguised application. In one short clause name the role, give ONE concrete reason the sender fits (only from the sender's real background below), then ask one specific question about the role or the team. No résumé dump, nothing desperate ("any opportunity", "please consider me"), and never "open to work".
-(b) Anyone else: pure peer networking. Keep it entirely about their work, with no sender background and no job-seeking.`;
+// B2C (finding work) used to be split into Job Search and Freelance. Job Search forbade any mention
+// of the sender, even to someone who had just posted the sender's exact role — measured: the model
+// either broke the rule or wrote a "just networking" note a strict reviewer read as a disguised
+// application. Honest interest beats a disguise when the need is public; otherwise stay peer-to-peer.
+const B2C_OPPORTUNITY_RULE = `OPPORTUNITY RULE — first decide which situation this is, from their profile data only:
+(a) They visibly need what the sender does: hiring for a matching role, a post asking for help, a project or problem in the sender's area (a recruiter or hiring manager whose headline, role description or posts mention it). Be honest about the interest — pretending to "just network" with someone who publicly posted the need reads as a disguised application. In one short clause name the role or need, give ONE concrete reason the sender fits (only from the sender's real background below), then ask one specific question about it. No résumé dump, nothing desperate ("any opportunity", "please consider me"), never "open to work" or "hire me".
+(b) Anyone else: pure peer conversation about their work, with no job-seeking and no pitch. The sender is a fellow professional in the same field, not a candidate or a vendor.`;
 
 // Grounded in 2026 LinkedIn acceptance-rate research (Leadriver's 50,000+ request benchmark,
 // Belkins' 20M+ outreach study, Closely's connection-request psychology data): acceptance barely
@@ -844,45 +751,14 @@ If there is no genuine trigger for this person, a short, honest, low-key note be
 4. IT IS AN INVITATION, NOT A MESSAGE: they have not accepted yet. Never write as if they have ("glad to have you in my network", "thanks for connecting", "great to be connected"). Never sign off with your name — LinkedIn already shows who sent it, and a sign-off wastes characters.`;
 
 export async function handleGenerateConnectionRequest(profileData, intent, userNotes, contextMaterial, previousAttempt, strategy) {
-  const isJobSearch = intent === 'job_search';
-  const isB2c = intent === 'b2c_sales';
-  const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
-  const b2cProfile = isB2c ? await getB2cProfile() : null;
-  const jobProfile = isJobSearch ? await getJobProfile() : null;
-  const b2cPresets = isB2c ? await getB2cMessagePresets() : null;
-  const jobPresets = isJobSearch ? await getJobMessagePresets() : null;
-
+  const ctx = await getModeContext(intent);
+  const senderCtx = buildSenderContext(ctx);
   let systemPrompt;
 
-  if (isJobSearch) {
-    systemPrompt = `You write LinkedIn connection requests for a job seeker. Write like a real person, not a cover letter.
+  if (!ctx.isB2b) {
+    systemPrompt = `You write LinkedIn connection requests for an individual professional who is finding work — a job, freelance or contract projects, or a place on a team — by connecting with people who could hire them, refer them, or bring them in. Write like a real person in the same field, never like a cover letter or a vendor.
 
-PRIORITY RULE: Base the message on their CURRENT role if possible. Only reference posts if they clearly relate to their current job — never reference posts from a previous employer. Never fabricate a specific detail that isn't actually in the profile data (see GROUNDING below) — if there is nothing specific enough to reference, write a warm, natural message using just their name, current title, and company. Always produce a message — never refuse, never ask for clarification, and never leave a placeholder or note saying information is missing.
-
-${CONNECTION_REQUEST_FRAMEWORK}
-
-${buildStrategyGuidance(strategy)}
-
-Rules:
-- Hard limit: 200 characters total (count carefully)
-- No corporate speak, no buzzwords
-- Show genuine interest in their company or work — not desperation
-- Never say "looking for opportunities" or "open to work"
-${JOB_HIRING_CONTEXT_RULE}
-${PRECONVERSATION_GROUNDING}
-
-${WHY_THEM_WHY_NOW_GATE}
-${AUTHENTICITY_RULES}
-
-Return ONLY the connection request text. Nothing else. No quotes around it.`;
-    const jobCtx = buildJobContext(jobProfile);
-    if (jobCtx) systemPrompt += `\n\n${jobCtx}`;
-    systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStylePresetRules(jobPresets)}`;
-
-  } else if (isB2c) {
-    systemPrompt = `You write LinkedIn connection requests for an individual freelancer or consultant reaching out to a potential client. You are positioning the sender as a peer and fellow professional, not as a vendor.
-
-PRIORITY RULE: Base the message on their CURRENT role, company, or recent activity. Never reference posts from a previous employer. Never fabricate a specific detail that isn't actually in the profile data (see GROUNDING below) — if nothing specific is available, write a warm human message using their current title and company. Always produce a message — never refuse, never ask for clarification, and never leave a placeholder or note saying information is missing.
+PRIORITY RULE: Base the message on their CURRENT role, company, or recent activity. Never reference posts from a previous employer. Never fabricate a specific detail that isn't actually in the profile data (see GROUNDING below) — if nothing specific is available, write a warm, natural message using their current title and company. Always produce a message — never refuse, never ask for clarification, and never leave a placeholder or note saying information is missing.
 
 ${CONNECTION_REQUEST_FRAMEWORK}
 
@@ -890,20 +766,15 @@ ${buildStrategyGuidance(strategy)}
 
 Rules:
 - Hard limit: 200 characters total (count carefully)
-- No selling, no pitching, no mention of services or offers
-- Sound like one professional reaching out to another — collegial, not promotional
+- No corporate speak, no buzzwords, no links
+- Never say "looking for opportunities", "open to work", "hire me", or describe services
+${B2C_OPPORTUNITY_RULE}
 ${PRECONVERSATION_GROUNDING}
 
 ${WHY_THEM_WHY_NOW_GATE}
 ${AUTHENTICITY_RULES}
-- Never mention "freelance", "hire me", or any engagement offer
 
 Return ONLY the connection request text. Nothing else. No quotes around it.`;
-    if (b2cProfile && Object.keys(b2cProfile).length) {
-      systemPrompt += `\n\n--- YOUR PROFILE (sender context, for tone calibration only) ---\n${buildB2cContext(b2cProfile)}`;
-    }
-    systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStylePresetRules(b2cPresets)}`;
-
   } else {
     systemPrompt = `You write LinkedIn connection requests. Write like a real person, not a marketer.
 
@@ -915,7 +786,7 @@ ${buildStrategyGuidance(strategy)}
 
 Rules:
 - Hard limit: 200 characters total (count carefully)
-- No corporate speak, no buzzwords
+- No corporate speak, no buzzwords, no links
 - No selling, no pitching, no mention of your own work
 - Sound like a genuine human reaching out
 ${PRECONVERSATION_GROUNDING}
@@ -924,16 +795,14 @@ ${WHY_THEM_WHY_NOW_GATE}
 ${AUTHENTICITY_RULES}
 
 Return ONLY the connection request text. Nothing else. No quotes around it.`;
-    if (cfg) systemPrompt += `\n\n--- MESSAGE STYLE & SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
   }
-
+  systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStyleRules(ctx, { connection: true })}`;
+  if (senderCtx) systemPrompt += `\n\n${senderCtx}\n(Sender context is for calibration and, in B2C case (a) only, one honest fit reason — never pitch it in a connection note.)`;
   systemPrompt += buildUserContextSection(contextMaterial);
   systemPrompt += buildVarietyNote(previousAttempt, strategy);
 
-  const userPrompt = buildProfileText(profileData, userNotes);
-  const text = await callAIWithBannedPhraseGuard(systemPrompt, userPrompt, 200, strategy);
-  const senderName = cfg?.business?.senderName || b2cProfile?.senderName || jobProfile?.senderName;
-  return { text: stripSignOff(text, senderName) };
+  const text = await callAIWithBannedPhraseGuard(systemPrompt, buildProfileText(profileData, userNotes), 200, strategy);
+  return { text: stripSignOff(text, ctx.senderName) };
 }
 
 // Connection requests and first messages both still signed off with the sender's name in testing ("…shakes
@@ -969,7 +838,7 @@ function buildFirstMessageFramework(allowBridge) {
 
 1. SPECIFIC HOOK (first line): open on one real, individual detail — something true of THIS person that couldn't be copy-pasted to the next 1,000 profiles unchanged. If nothing specific enough exists, say so honestly (a warm, generic opener beats a faked-specific one) — never invent one.
 ${situation}
-3. ONE LOW-FRICTION QUESTION: end with a single question that's easy and low-stakes to answer — never a request for a call, a meeting, a demo, pricing, or any other real commitment. It should feel genuinely optional — the recipient should be able to ignore it without feeling rude.
+3. ONE LOW-FRICTION QUESTION: end with a single question that's easy and low-stakes to answer — never a request for a meeting, a demo, pricing, or any other real commitment (a light, easy-to-decline call suggestion only if the MESSAGE STYLE ending below explicitly asks for one). It should feel genuinely optional — the recipient should be able to ignore it without feeling rude.
 
 LENGTH: the single most consistent finding in current outreach data. Keep the whole message to 40-70 words (tighter — 40-50 — for senior or executive recipients, who get the most outreach and scan the fastest). Every sentence past that measurably hurts reply rate rather than helping it. If a draft runs long, cut explanation before cutting personalization.
 
@@ -984,70 +853,52 @@ function buildConnectionRecencyNote(stage, daysSinceLastTouch) {
 }
 
 export async function handleGenerateFirstMessage(profileData, analysis, intent, tone, userInstructions, stage, daysSinceLastTouch, contextMaterial, previousAttempt, strategy) {
-  const isJobSearch = intent === 'job_search';
-  const isB2c = intent === 'b2c_sales';
-  const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
-  const b2cProfile = isB2c ? await getB2cProfile() : null;
-  const jobProfile = isJobSearch ? await getJobProfile() : null;
-  const b2cPresets = isB2c ? await getB2cMessagePresets() : null;
-  const jobPresets = isJobSearch ? await getJobMessagePresets() : null;
+  const ctx = await getModeContext(intent);
+  // The panel's per-message tone picker overrides the saved default for this one message.
+  if (tone && TONE_RULES[tone]) ctx.presets = { ...ctx.presets, tone };
   const a = analysis || {};
 
-  // The analysis schema (see the "decisionMaker" field def above) only ever produces
-  // "Yes" | "Likely" | "No" — never a title string — so a regex matching title keywords like
-  // "ceo"/"vp"/"founder" against it could never fire, silently treating every contact (including
-  // confirmed decision-makers) as a non-decision-maker.
+  // decisionMaker is only ever "Yes" | "Likely" | "No" — never a title string.
   const dm = a.decisionMaker || '';
   const isDecisionMaker = dm === 'Yes' || dm === 'Likely';
   const cs = a.companySize || a.company?.size || '';
   const hasBudgetSignals = isDecisionMaker || /enterprise|mid.market|series [bcd]|funded/i.test(cs + ' ' + (a.companyName || ''));
 
-  const scoreVal = isJobSearch ? (a.hiringSignal?.score || 'Unlikely')
-    : isB2c ? (a.clientPotential?.score || 'Low')
-    : (a.prospectScore?.score || a.potentialClient?.score || 'Low');
-  const isHighValue = scoreVal === 'High' || scoreVal === 'Strong';
-  const isMidValue  = scoreVal === 'Medium' || scoreVal === 'Possible';
-
-  const toneInstructions = {
-    warm:         'Warm, genuine, like a peer talking to a peer. Human and approachable.',
-    professional: 'Polished and credible. Confident, precise, zero filler.',
-    casual:       'Conversational and relaxed. Like a message to a colleague you respect.',
-    direct:       'Straight to the point. No pleasantries. Clear and confident.',
-    bold:         'Confident and distinctive. Takes a position. Stands out from the noise.',
-  };
-  const toneGuide = toneInstructions[tone] || toneInstructions.warm;
-  const analysisCtx = buildAnalysisContext(a, intent);
-  const maxChars = isJobSearch ? 300 : 350;
-  // The relevance bridge is only possible when there's real sender context to draw on — without it
-  // the model would have to invent what the sender does, which the grounding rules forbid.
-  const hasB2cSender = !!(b2cProfile && (b2cProfile.expertise || b2cProfile.services));
-  const hasB2bSender = !!(cfg?.business && (cfg.business.expertise || cfg.business.offer));
-
+  const scoreVal = ctx.isB2b
+    ? (a.prospectScore?.score || a.potentialClient?.score || 'Low')
+    : (a.clientPotential?.score || ({ Strong: 'High', Possible: 'Medium', Unlikely: 'Low' })[a.hiringSignal?.score] || 'Low');
+  const isHighValue = scoreVal === 'High';
+  const isMidValue = scoreVal === 'Medium';
+  const analysisCtx = buildAnalysisContext(a, ctx.mode);
+  const senderCtx = buildSenderContext(ctx);
+  const maxChars = 350;
   let systemPrompt;
 
-  if (isJobSearch) {
-    const approachGuide = scoreVal === 'Strong'
-      ? 'Strong hiring signal — they are hiring in the sender\'s area. Follow case (a) of the HIRING-CONTEXT RULE: honest interest in the specific role, one concrete fit reason, one specific question.'
-      : isMidValue
-      ? 'Possible hiring signal — be curious and exploratory. Express genuine interest in their work.'
-      : 'Weak hiring signal — keep it short and very low-commitment. Pure relationship-building, no hint of job-seeking.';
+  if (!ctx.isB2b) {
+    const visibleNeed = (a.hiringSignals || []).length > 0 || (a.painPoints || []).length > 0;
+    const approachGuide = isHighValue && visibleNeed
+      ? 'Strong opportunity with a visible need. Follow case (a) of the OPPORTUNITY RULE: honest interest in the specific role or need, one concrete fit reason, one specific question.'
+      : isHighValue || isMidValue
+      ? 'Possible opportunity, no explicit opening yet. Be curious about their work and what they are building; let the relevance bridge carry who the sender is. No job ask.'
+      : 'Weak opportunity. Keep it short and low-commitment. Pure peer conversation, no hint of job-seeking or selling.';
 
-    systemPrompt = `You are a senior career coach who has helped hundreds of executives land roles through LinkedIn. You write first messages that get replies because they feel researched, specific, and non-desperate.
+    systemPrompt = `You write first LinkedIn messages for an individual professional who is finding work — a job, freelance or contract projects, or a place on a team — through people who could hire, refer or bring them in. You have helped hundreds of people land roles and clients this way; your messages get replies because they read as researched, specific and peer-to-peer, never as an application or a pitch.
 
-TONE: ${toneGuide}
-APPROACH FOR THIS CONTACT: ${approachGuide}
+APPROACH FOR THIS PERSON: ${approachGuide}
 
-${buildFirstMessageFramework(scoreVal === 'Strong')}
+${buildFirstMessageFramework(ctx.hasSender)}
 
 ${buildStrategyGuidance(strategy)}
 
-JOB-SEARCH-SPECIFIC RULES:
-- Sound like an accomplished professional, never like someone asking for a favour
-- Never say "looking for opportunities", "open to work", or "my next role"
-${JOB_HIRING_CONTEXT_RULE}
+B2C RULES:
+- Sound like an accomplished professional in the same field, never like someone asking for a favour
+- Never say "looking for opportunities", "open to work", "my next role", "hire me", "my services include"
+- Use at most ONE proof point from the sender context, only if it directly relates to their need, and phrase it as context rather than a brag
+- Never include links in a first message
+${B2C_OPPORTUNITY_RULE}
 
 HARD RULES:
-- Max 300 characters total
+- Max 350 characters total
 - Never fabricate a specific detail that isn't actually in the profile data (see GROUNDING below) — if there is nothing specific enough to reference, write a warm, natural message using just their name/current title and company
 ${PRECONVERSATION_GROUNDING}
 
@@ -1055,73 +906,35 @@ ${WHY_THEM_WHY_NOW_GATE}
 ${AUTHENTICITY_RULES}
 - Never reference the analysis itself — weave the insights in naturally
 - Return ONLY the message. No quotes, no explanation.`;
-    const jobCtx = buildJobContext(jobProfile);
-    if (jobCtx) systemPrompt += `\n\n${jobCtx}`;
-    systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStylePresetRules(jobPresets)}`;
-
-  } else if (isB2c) {
-    const approachGuide = isHighValue
-      ? 'High-potential client. They likely work with contractors and have budget. Be specific about a pain point or challenge you spotted — stay curious about it, don\'t position yourself as the answer to it yet.'
-      : isMidValue
-      ? 'Mid-tier prospect. Be exploratory — show genuine interest in their work and ask an insightful question about their situation.'
-      : 'Low-tier prospect. Keep it warm and brief. Pure relationship-building message — no hints at services.';
-
-    systemPrompt = `You are a senior business developer writing a first LinkedIn message on behalf of a freelancer or consultant. You have 15+ years of experience winning enterprise clients through relationship-based outreach.
-
-TONE: ${toneGuide}
-APPROACH FOR THIS PROSPECT: ${approachGuide}
-
-${buildFirstMessageFramework(hasB2cSender)}
-
-${buildStrategyGuidance(strategy)}
-
-B2C-SPECIFIC RULES:
-- Establish peer credibility through how the message sounds, not by stating it — position the sender as someone who works in the same domain, not a vendor
-- Never say "I can help you with X" or "my services include Y" — beyond the single relevance clause the framework allows, phrased as context rather than an offer, the message does not describe the sender's services
-
-HARD RULES:
-- Max 350 characters total
-- Never fabricate a specific detail that isn't actually in the profile data (see GROUNDING below) — if there is nothing specific enough to reference, write a warm, natural message using just their name/current title and company
-${PRECONVERSATION_GROUNDING}
-
-${WHY_THEM_WHY_NOW_GATE}
-${AUTHENTICITY_RULES}
-- Return ONLY the message. No quotes, no explanation.`;
-    if (b2cProfile && Object.keys(b2cProfile).length) {
-      systemPrompt += `\n\n--- SENDER PROFILE ---\n${buildB2cContext(b2cProfile)}`;
-    }
-    systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStylePresetRules(b2cPresets)}`;
 
   } else {
     const dmGuide = isDecisionMaker
       ? `Decision-maker detected (${dm === 'Yes' ? 'confirmed' : 'likely'}). They get the most outreach of anyone on LinkedIn and scan the fastest — be tighter and more direct than usual (aim for the low end of the framework's word range below), never more explanatory.`
       : `Not a final decision-maker. Be more exploratory and relationship-focused — a slightly longer, more curious message reads fine here.`;
-
     const budgetGuide = hasBudgetSignals
       ? 'Budget signals: company size and role suggest budget authority. This changes nothing about whether to pitch — it never justifies mentioning value or ROI in message 1 — only that a real conversation, if it starts, has somewhere to go.'
       : 'Budget unclear. Stay in pure curiosity mode — start a conversation, not a sales process.';
-
     const approachGuide = isHighValue
       ? 'High-value prospect. Strong ICP fit and decision-making authority. Write with confidence. Reference their specific business context. End with a question that opens a conversation about their priority or challenge.'
       : isMidValue
       ? 'Mid-tier prospect. Partial fit. Be curious and helpful. Reference something specific from their profile or company. End with an open question about their current focus.'
       : 'Low-priority prospect. Short, warm, no-commitment message. Pure relationship-building — no hints at a pitch.';
 
-    systemPrompt = `You are a senior B2B Business Development Executive with 15+ years of enterprise sales experience at high-growth SaaS companies. You write the LinkedIn first messages that actually get replies — because they feel like they were written for this specific person, not pulled from a template.
+    systemPrompt = `You are a senior B2B Business Development Executive with 15+ years of enterprise sales experience. You write the LinkedIn first messages that actually get replies — because they feel like they were written for this specific person, not pulled from a template.
 
-TONE: ${toneGuide}
 DECISION-MAKER ASSESSMENT: ${dmGuide}
 BUDGET SIGNAL: ${budgetGuide}
 APPROACH FOR THIS PROSPECT: ${approachGuide}
 
-${buildFirstMessageFramework(hasB2bSender)}
+${buildFirstMessageFramework(ctx.hasSender)}
 
 ${buildStrategyGuidance(strategy)}
 
 B2B-SPECIFIC RULES:
-- Seniority changes tightness and directness, never how much you pitch — a decision-maker gets a shorter, sharper version of the exact same no-pitch structure, not a more "business-outcome-focused" one
+- Seniority changes tightness and directness, never how much you pitch — a decision-maker gets a shorter, sharper version of the exact same no-pitch structure
 - Reference at least one concrete detail from the analysis (company context, key insight, recent activity, or ICP fit signal) as the specific hook — this is what proves research, not a stated credential
-- Goal of message 1 is to start a conversation, not close a deal — the pitch, if there ever is one, is reserved for when they reply
+- Use at most ONE proof point from the sender context, only if it maps to their situation, phrased as context rather than a claim
+- Goal of message 1 is to start a conversation, not close a deal
 
 HARD RULES:
 - Max 350 characters total
@@ -1131,23 +944,22 @@ ${PRECONVERSATION_GROUNDING}
 ${WHY_THEM_WHY_NOW_GATE}
 ${AUTHENTICITY_RULES}
 - Return ONLY the message. No quotes, no explanation.`;
-    if (cfg) systemPrompt += `\n\n--- SENDER CONTEXT ---\n${buildMessageStyle(cfg)}`;
   }
 
+  systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStyleRules(ctx)}`;
+  if (senderCtx) systemPrompt += `\n\n${senderCtx}`;
   if (userInstructions?.trim()) {
     systemPrompt += `\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly):\n${userInstructions.trim()}`;
   }
   systemPrompt += `\n\n${analysisCtx}`;
-  systemPrompt += `\n\nHOW TO USE THE ANALYSIS ABOVE: "Recent Activity" and "Key Insights" are where the specific hook required by the framework should come from — they're the closest thing to a real trigger you have. Score, Decision Maker, Industry Fit, and Company Size exist purely to calibrate directness and tone (per the guidance above) — they are never something to reference, restate, or hint at in the message itself; the recipient never sees how they were scored.`;
+  systemPrompt += `\n\nHOW TO USE THE ANALYSIS ABOVE: "Recent Activity", "Key Insights" and any visible hiring or need signals are where the specific hook required by the framework should come from — they're the closest thing to a real trigger you have. Scores, decision-maker, fit and company size exist purely to calibrate directness and tone — never reference, restate, or hint at them in the message; the recipient never sees how they were scored.`;
   const recencyNote = buildConnectionRecencyNote(stage, daysSinceLastTouch);
   if (recencyNote) systemPrompt += `\n\n${recencyNote}`;
   systemPrompt += buildUserContextSection(contextMaterial);
   systemPrompt += buildVarietyNote(previousAttempt, strategy);
 
-  const userPrompt = buildProfileText(profileData);
-  const text = await callAIWithBannedPhraseGuard(systemPrompt, userPrompt, maxChars, strategy, { requireQuestion: true });
-  const senderName = cfg?.business?.senderName || b2cProfile?.senderName || jobProfile?.senderName;
-  return { text: stripSignOff(text, senderName) };
+  const text = await callAIWithBannedPhraseGuard(systemPrompt, buildProfileText(profileData), maxChars, strategy, { requireQuestion: true });
+  return { text: stripSignOff(text, ctx.senderName) };
 }
 
 // ─── Refine Message ───────────────────────────────────────────────────────────
@@ -1264,10 +1076,12 @@ export async function handleGeneratePost({ topic, angle, hook, style, creatorPro
   // Posts previously saw only a topic list and an audience, so they had no first-hand proof to draw
   // on — a strict review called them credible-sounding but generic. The sender's real background
   // (already saved in their outreach profiles) is the only allowed source of proof points.
-  const [jobProfile, b2cProfile, sales] = await Promise.all([getJobProfile(), getB2cProfile(), getSalesConfig()]);
-  const proof = mode === 'company'
-    ? [sales.business?.offer, sales.business?.valueProp].filter(Boolean).join(' ')
-    : [jobProfile.background, b2cProfile.valueProp].filter(Boolean).join(' ');
+  // Company posts draw on the active B2B profile, personal posts on the active B2C pitch.
+  const pctx = await getModeContext(mode === 'company' ? 'b2b_sales' : 'b2c_sales');
+  const ps = pctx.sender;
+  const proof = (mode === 'company'
+    ? [ps.offer, ps.valueProp, ...(ps.proofPoints || [])]
+    : [ps.oneLiner, ps.background, ps.uniqueAngle, ...(ps.proofPoints || [])]).filter(Boolean).join(' ');
 
   if (mode === 'company' && companyProfile) {
     const co = companyProfile;
@@ -1365,24 +1179,8 @@ function parseJsonObject(raw) {
 // profile (e.g. the account owner's own) leak in as if it belonged to the contact.
 
 export async function handleGenerateChatFollowup({ conversationText, isRaw, contactName, senderName, intent, userInstructions, stage, daysSinceLastTouch, analysis, contextMaterial, strategy }) {
-  const isJobSearch = intent === 'job_search';
-  const isB2c = intent === 'b2c_sales';
-  const cfg = (!isJobSearch && !isB2c) ? await getSalesConfig() : null;
-  const b2cProfile = isB2c ? await getB2cProfile() : null;
-  const jobProfile = isJobSearch ? await getJobProfile() : null;
-  const b2cPresets = isB2c ? await getB2cMessagePresets() : null;
-  const jobPresets = isJobSearch ? await getJobMessagePresets() : null;
-
-  let senderCtx = '';
-  if (isJobSearch) {
-    if (jobProfile && Object.keys(jobProfile).length) senderCtx = buildJobContext(jobProfile);
-    senderCtx += `${senderCtx ? '\n\n' : ''}${buildStylePresetRules(jobPresets)}`;
-  } else if (isB2c) {
-    if (b2cProfile && Object.keys(b2cProfile).length) senderCtx = buildB2cContext(b2cProfile);
-    senderCtx += `${senderCtx ? '\n\n' : ''}${buildStylePresetRules(b2cPresets)}`;
-  } else if (cfg) {
-    senderCtx = buildMessageStyle(cfg);
-  }
+  const ctx = await getModeContext(intent);
+  const senderCtx = [buildSenderContext(ctx), buildStyleRules(ctx)].filter(Boolean).join('\n\n');
 
   const writer = senderName || 'the user';
   const recipient = contactName || 'the contact';

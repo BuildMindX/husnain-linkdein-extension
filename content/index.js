@@ -1,6 +1,36 @@
 (() => {
   'use strict';
 
+  // ─── Modes ───────────────────────────────────────────────────────────────────
+  // Two modes (B2C default, B2B). Everything reads the stored intent through normIntent so a
+  // legacy 'job_search' value or a missing one can never route a surface to the wrong mode.
+  const LPS = globalThis.LP_SCHEMA;
+  const normIntent = i => (LPS ? LPS.normalizeIntent(i) : (i === 'b2b_sales' ? 'b2b_sales' : 'b2c_sales'));
+  const modeLabelOf = i => (normIntent(i) === 'b2b_sales' ? 'B2B' : 'B2C');
+  async function getIntent() {
+    const r = await chrome.storage.local.get('analysisIntent').catch(() => ({}));
+    return normIntent(r.analysisIntent);
+  }
+  // Legacy job-search analyses used Strong/Possible/Unlikely; everything is High/Medium/Low now.
+  const LEGACY_SCORE = { Strong: 'High', Possible: 'Medium', Unlikely: 'Low' };
+  function scoreOf(analysis, intent) {
+    if (!analysis) return null;
+    if (normIntent(intent) === 'b2b_sales') return analysis.potentialClient?.score || analysis.prospectScore?.score || 'Low';
+    return analysis.clientPotential?.score || LEGACY_SCORE[analysis.hiringSignal?.score] || 'Low';
+  }
+  // Which mode a cached analysis belongs to. Records from before modes existed have no intent;
+  // infer it from the analysis shape so a B2B result never renders as B2C or vice versa.
+  function cacheIntentOf(stored) {
+    if (!stored) return null;
+    if (stored.intent) return normIntent(stored.intent);
+    return stored.analysis?.potentialClient ? 'b2b_sales' : 'b2c_sales';
+  }
+  function reasonOf(analysis, intent) {
+    if (!analysis) return '';
+    if (normIntent(intent) === 'b2b_sales') return analysis.potentialClient?.reasoning || '';
+    return analysis.clientPotential?.reasoning || analysis.hiringSignal?.reasoning || '';
+  }
+
   // ─── State ───────────────────────────────────────────────────────────────────
   let triggerBtn = null;
   let panel = null;
@@ -358,10 +388,10 @@
     btn.textContent = 'Adding...';
 
     try {
-      const { analysisIntent: intent = 'b2b_sales' } = await chrome.storage.local.get('analysisIntent');
+      const intent = await getIntent();
       const existing = await getSavedContacts();
       const existingUrls = new Set(existing.map(c => c.url));
-      const qualifyScores = intent === 'job_search' ? ['Strong'] : ['High'];
+      const qualifyScores = ['High'];
       const now = Date.now();
       const additions = [];
 
@@ -484,7 +514,7 @@
     if (upgradeBtnReset) upgradeBtnReset.style.display = 'none';
 
     try {
-      const { analysisIntent: intent = 'b2b_sales' } = await chrome.storage.local.get('analysisIntent');
+      const intent = await getIntent();
       const result = await sendMessage('BULK_SCORE_PROFILES', null, { profiles, intent });
       if (result.error) throw new Error(result.error);
 
@@ -518,7 +548,7 @@
       _searchScored = true;
       const addAllBtn = document.getElementById('lia-search-addall-btn');
       if (addAllBtn) {
-        addAllBtn.textContent = intent === 'job_search' ? 'Add All Strong Signals to Pipeline' : 'Add All Qualified to Pipeline';
+        addAllBtn.textContent = 'Add all High scores to pipeline';
         addAllBtn.style.display = '';
       }
     } catch (err) {
@@ -1024,7 +1054,8 @@
         return;
       }
       const contactName = getContactName();
-      const { googleUser, analysisIntent: intent = 'b2b_sales' } = await chrome.storage.local.get(['googleUser', 'analysisIntent']);
+      const { googleUser, analysisIntent: rawIntent } = await chrome.storage.local.get(['googleUser', 'analysisIntent']);
+      const intent = normIntent(rawIntent);
       // This quick-action never checked sign-in before — it relied entirely on the server-side
       // usage check, which used to fail open with no Google identity to check against, letting
       // it run ungated forever for anyone who never signed in. Checking here too (the server side
@@ -1836,49 +1867,44 @@
 
     // Check if we have a cached analysis matching the current intent
     const stored = await dbGet(currentProfileUrl).catch(() => null);
-    const { analysisIntent: savedIntent } = await chrome.storage.local.get('analysisIntent').catch(() => ({}));
-    const currentIntent = savedIntent || 'b2b_sales';
-    const cacheIntentMatches = !stored?.intent || stored.intent === currentIntent;
+    const currentIntent = await getIntent();
+    const isB2bMode = currentIntent === 'b2b_sales';
+    // A cached record with no intent predates modes; treat it as matching only its own shape.
+    const cacheIntentMatches = cacheIntentOf(stored) === currentIntent;
     const hasCache = !!(stored?.analysis) && cacheIntentMatches;
     const cacheAge = hasCache && Number.isFinite(stored.timestamp) ? `· ${timeAgo(stored.timestamp)}` : '';
 
-    const modeLabel = currentIntent === 'job_search' ? 'Job Search'
-      : currentIntent === 'b2c_sales' ? 'Freelance'
-      : 'B2B Sales';
-
     const analyzeDesc = hasCache
       ? `Saved result${cacheAge ? ` — analyzed ${cacheAge.replace('· ', '')}` : ''}`
-      : currentIntent === 'job_search' ? 'Check whether this person is hiring or recruiting'
-      : currentIntent === 'b2c_sales' ? 'Score this contact as a potential client'
-      : 'Score fit, buying potential and decision-maker level';
+      : isB2bMode ? 'Score fit, buying potential and decision-maker level'
+      : 'Check whether they can hire you, give you a project, or bring you onto a team';
 
-    const connectionDesc = currentIntent === 'job_search'
-      ? 'A short note that doesn\'t read like a job application'
-      : currentIntent === 'b2c_sales'
-      ? 'A short note that opens a peer conversation'
-      : 'A short, specific note to send with your invite';
+    const connectionDesc = isB2bMode
+      ? 'A short, specific note to send with your invite'
+      : 'A short peer note that doesn\'t read like an application';
 
-    // Multiple ICP profiles can exist now (see background/ai.js's ensureIcpProfilesMigrated) —
-    // read whichever is active rather than the old flat targetIndustries key directly, falling
-    // back to that legacy key only in the narrow window before any profile migration has run yet.
-    const { icpProfiles, activeIcpProfileId, targetIndustries: legacyTargets } = await chrome.storage.local.get(['icpProfiles', 'activeIcpProfileId', 'targetIndustries']).catch(() => ({}));
-    const activeIcpProfile = Array.isArray(icpProfiles) && icpProfiles.length
-      ? (icpProfiles.find(p => p.id === activeIcpProfileId) || icpProfiles[0])
-      : null;
-    const effectiveTargets = activeIcpProfile ? activeIcpProfile.targetIndustries : legacyTargets;
-    const showIcpWarning = (currentIntent === 'b2b_sales') && (!Array.isArray(effectiveTargets) || effectiveTargets.length === 0);
+    // Warn when the active profile for this mode has nothing to score against.
+    const prof = await chrome.storage.local.get(isB2bMode ? ['icpProfiles', 'activeIcpProfileId'] : ['b2cProfiles', 'activeB2cProfileId']).catch(() => ({}));
+    const plist = (isB2bMode ? prof.icpProfiles : prof.b2cProfiles) || [];
+    const activeProf = plist.find(p => p.id === (isB2bMode ? prof.activeIcpProfileId : prof.activeB2cProfileId)) || plist[0];
+    const icp = activeProf?.icp || {};
+    const hasTargeting = (icp.industries || []).length || (icp.customIndustries || []).length || (!isB2bMode && (icp.hirerTypes || []).length);
+    const showIcpWarning = !hasTargeting;
 
     body.innerHTML = `
       <div class="lia-purpose-picker">
-        <div class="lia-mode-indicator">${modeLabel}</div>
+        <div class="lia-mode-switch" role="group" aria-label="Outreach mode">
+          <button type="button" data-intent="b2c_sales" aria-pressed="${!isB2bMode}" title="You, finding jobs, projects and teams">B2C</button>
+          <button type="button" data-intent="b2b_sales" aria-pressed="${isB2bMode}" title="Your company, finding clients">B2B</button>
+        </div>
         ${showIcpWarning ? `
         <div class="lia-icp-warning">
           <div class="lia-icp-warning-icon">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           </div>
           <div class="lia-icp-warning-body">
-            <div class="lia-icp-warning-title">No target industries set</div>
-            <div class="lia-icp-warning-text">Analysis will be generic without target industries. <button class="lia-icp-warning-link" id="lia-set-icp">Set your ICP</button></div>
+            <div class="lia-icp-warning-title">No targeting set for ${modeLabelOf(currentIntent)}</div>
+            <div class="lia-icp-warning-text">Scores will be generic until you pick who you're targeting. <button class="lia-icp-warning-link" id="lia-set-icp">Set your targeting</button></div>
           </div>
         </div>` : ''}
         <p class="lia-purpose-intro">What do you want to do with this profile?</p>
@@ -1921,7 +1947,7 @@
           </span>
           <span class="lia-purpose-content">
             <span class="lia-purpose-title">Follow-up message</span>
-            <span class="lia-purpose-desc">${currentIntent === 'job_search' ? 'Draft your next reply from the conversation so far' : 'Draft the next message from the conversation so far'}</span>
+            <span class="lia-purpose-desc">Draft the next message from the conversation so far</span>
           </span>
         </button>
         ${hasCache ? `<button class="lia-purpose-refresh" id="lia-purpose-reanalyze">
@@ -1934,6 +1960,11 @@
       </div>
     `;
 
+    body.querySelectorAll('.lia-mode-switch button').forEach(btn => btn.addEventListener('click', async () => {
+      if (btn.getAttribute('aria-pressed') === 'true') return;
+      await chrome.storage.local.set({ analysisIntent: btn.dataset.intent });
+      renderPurposePicker();
+    }));
     body.querySelector('#lia-set-icp')?.addEventListener('click', () => chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' }));
     body.querySelector('#lia-purpose-connection').addEventListener('click', () => runForPurpose('connection'));
     body.querySelector('#lia-purpose-followup').addEventListener('click', () => runForPurpose('followup'));
@@ -1953,7 +1984,7 @@
     if (!hasKey) { renderNoApiKey(); return; }
     panelNeedsRecheck = false;
 
-    const { analysisIntent: intent = 'b2b_sales' } = await chrome.storage.local.get('analysisIntent');
+    const intent = await getIntent();
 
     if (purpose === 'followup') {
       renderFollowupForm(intent);
@@ -1965,7 +1996,7 @@
       if (tabs) tabs.style.display = '';
       const stored = await dbGet(currentProfileUrl).catch(() => null);
       // Use cache only if the stored intent matches the current intent
-      if (stored && stored.analysis && (stored.intent === intent || !stored.intent)) {
+      if (stored && stored.analysis && cacheIntentOf(stored) === intent) {
         renderResults(stored.analysis, stored.connectionRequest, stored.timestamp, stored.intent || intent);
         return;
       }
@@ -1980,7 +2011,7 @@
     const stored = await dbGet(currentProfileUrl).catch(() => null);
 
     // Use cache only if no custom notes, not a forced regenerate, and intent matches
-    const intentMatches = !stored?.intent || stored.intent === intent;
+    const intentMatches = cacheIntentOf(stored) === intent;
     if (!userNotes && !forceRefresh && intentMatches) {
       if (purpose === 'connection' && stored?.connectionRequest) {
         renderSingleText('connection', stored.connectionRequest, intent);
@@ -2186,9 +2217,7 @@
           // user remembered to explicitly Save first.
           const freshContacts = await getSavedContacts();
           const score = cachedAnalysis
-            ? (intent === 'job_search' ? (cachedAnalysis.hiringSignal?.score || 'Unlikely')
-              : intent === 'b2c_sales' ? (cachedAnalysis.clientPotential?.score || 'Low')
-              : (cachedAnalysis.potentialClient?.score || 'Low'))
+            ? scoreOf(cachedAnalysis, intent)
             : null;
           const newEntry = {
             url: currentProfileUrl,
@@ -2370,7 +2399,7 @@
     setLoadingState();
     const profileData = extractProfile();
 
-    const { analysisIntent: intent = 'b2b_sales' } = await chrome.storage.local.get('analysisIntent');
+    const intent = await getIntent();
 
     try {
       // Settled (not Promise.all) on purpose: a failed connection-request generation shouldn't
@@ -2495,12 +2524,7 @@
     booked:          { label: 'Booked' },
     closed:          { label: 'Closed' },
   };
-  // "Booked"/"Closed" are sales-deal language that don't map onto a job seeker's mental model —
-  // swap in interview/hired framing for job_search contacts. Same override, duplicated in
-  // popup/index.js and options/index.js alongside their own STAGE_META copies.
-  const JOB_STAGE_LABELS = { booked: 'Interview', closed: 'Hired' };
-  function stageLabel(stage, intent) {
-    if (intent === 'job_search' && JOB_STAGE_LABELS[stage]) return JOB_STAGE_LABELS[stage];
+  function stageLabel(stage) {
     return STAGE_META[stage]?.label || 'New';
   }
 
@@ -2670,17 +2694,13 @@
     if (!currentProfileUrl) return;
     const rendered = document.getElementById('lia-body')?._rendered;
     const analysis = rendered?.analysis;
-    const intent = rendered?.intent
-      || (await chrome.storage.local.get('analysisIntent')).analysisIntent
-      || 'b2b_sales';
+    const intent = rendered?.intent ? normIntent(rendered.intent) : await getIntent();
     const profileData = extractProfile();
     const contacts = await getSavedContacts();
     const existing = contacts.find(c => c.url === currentProfileUrl);
 
     const score = analysis
-      ? (intent === 'job_search' ? (analysis.hiringSignal?.score || 'Unlikely')
-        : intent === 'b2c_sales' ? (analysis.clientPotential?.score || 'Low')
-        : (analysis.potentialClient?.score || 'Low'))
+      ? scoreOf(analysis, intent)
       : (existing?.score ?? null);
     const company = analysis?.company?.name || analysis?.companyName
       || profileData.experience?.[0]?.company || existing?.company || '';
@@ -2762,7 +2782,7 @@
     activeTab = tab;
     panel.querySelectorAll('.lia-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
     const body = panel.querySelector('#lia-body');
-    if (body._rendered) renderTabContent(body._rendered.analysis, body._rendered.connectionRequest, tab, body._rendered.intent || 'b2b_sales');
+    if (body._rendered) renderTabContent(body._rendered.analysis, body._rendered.connectionRequest, tab, normIntent(body._rendered.intent));
   }
 
   // ─── Render States ────────────────────────────────────────────────────────────
@@ -2909,15 +2929,15 @@
     });
   }
 
-  function renderResults(analysis, connectionRequest, timestamp, intent = 'b2b_sales') {
+  function renderResults(analysis, connectionRequest, timestamp, rawIntent) {
+    const intent = normIntent(rawIntent);
     const body = document.getElementById('lia-body');
     if (!body) return;
     body._rendered = { analysis, connectionRequest, timestamp, intent };
 
     const badge = panel.querySelector('#lia-header-mode-badge');
     if (badge) {
-      const modeMap = { b2b_sales: 'B2B Sales', b2c_sales: 'Freelance', job_search: 'Job Search' };
-      badge.textContent = modeMap[intent] || 'B2B Sales';
+      badge.textContent = modeLabelOf(intent);
     }
 
     refreshSaveBtn();
@@ -3079,11 +3099,10 @@
   }
 
   function lowFitBannerHtml(analysis, intent) {
-    if (!analysis || intent === 'job_search') return '';
-    const excluded = intent === 'b2b_sales' && analysis.industryFit?.excluded;
-    const score = intent === 'b2c_sales' ? analysis.clientPotential?.score : analysis.potentialClient?.score;
-    if (!excluded && score !== 'Low') return '';
-    const reason = excluded ? (analysis.industryFit?.reasoning || '') : (intent === 'b2c_sales' ? analysis.clientPotential?.reasoning : analysis.potentialClient?.reasoning) || '';
+    if (!analysis) return '';
+    const excluded = !!analysis.industryFit?.excluded;
+    if (!excluded && scoreOf(analysis, intent) !== 'Low') return '';
+    const reason = (excluded ? analysis.industryFit?.reasoning : reasonOf(analysis, intent)) || '';
     return `
         <div class="lia-icp-warning" style="margin-bottom:12px">
           <div class="lia-icp-warning-icon">
@@ -3096,7 +3115,9 @@
         </div>`;
   }
 
-  function renderTabContent(analysis, connectionRequest, tab, intent = 'b2b_sales') {
+  function renderTabContent(analysis, connectionRequest, tab, rawIntent) {
+    const intent = normIntent(rawIntent);
+    const isB2b = intent === 'b2b_sales';
     const body = document.getElementById('lia-body');
     if (!body) return;
 
@@ -3104,18 +3125,10 @@
       // ── Should I message? recommendation ─────────────────────────────────
       let reachOut = 'Maybe';
       let reachReason = '';
-      if (intent === 'job_search') {
-        const hs = analysis.hiringSignal?.score || 'Unlikely';
-        reachOut = hs === 'Strong' ? 'Yes' : hs === 'Possible' ? 'Maybe' : 'Low priority';
-        reachReason = analysis.hiringSignal?.reasoning || '';
-      } else if (intent === 'b2c_sales') {
-        const cp = analysis.clientPotential?.score || 'Low';
-        reachOut = cp === 'High' ? 'Yes' : cp === 'Medium' ? 'Maybe' : 'Low priority';
-        reachReason = analysis.clientPotential?.reasoning || '';
-      } else {
-        const ps = analysis.potentialClient?.score || 'Low';
-        reachOut = ps === 'High' ? 'Yes' : ps === 'Medium' ? 'Maybe' : 'Low priority';
-        reachReason = analysis.potentialClient?.reasoning || '';
+      {
+        const sc = scoreOf(analysis, intent);
+        reachOut = sc === 'High' ? 'Yes' : sc === 'Medium' ? 'Maybe' : 'Low priority';
+        reachReason = reasonOf(analysis, intent);
       }
       const roClass = reachOut === 'Yes' ? 'ro-yes' : reachOut === 'Maybe' ? 'ro-maybe' : 'ro-no';
       const roIcon = reachOut === 'Yes'
@@ -3124,7 +3137,7 @@
         ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>`
         : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
 
-      const reachLabel = intent === 'job_search' ? 'Reach out?' : 'Should you message?';
+      const reachLabel = 'Should you message?';
       const recommendationBlock = `
         <div class="lia-verdict ${roClass}">
           <div class="lia-verdict-head">
@@ -3141,35 +3154,30 @@
       let excludedBanner = '';
       let companyRows = [];
 
-      if (intent === 'job_search') {
-        const hs = analysis.hiringSignal?.score || 'Unlikely';
-        facts.push(['Hiring signal', badgeHtml(hs), analysis.hiringSignal?.reasoning]);
-        facts.push(['Recruiter', badgeHtml(analysis.isRecruiter || 'No')]);
-        facts.push(['Company size', escHtml(csVal)]);
-        if (analysis.companyName && analysis.companyName !== 'Unknown') companyRows = [['Company', analysis.companyName]];
-      } else if (intent === 'b2c_sales') {
-        facts.push(['Client potential', badgeHtml(analysis.clientPotential?.score || 'Low')]);
-        const fs = analysis.freelancerSignal || {};
-        facts.push(['Freelancer signal', badgeHtml(fs.signal || 'Unlikely'), fs.reasoning]);
-        facts.push(['Decision maker', badgeHtml(analysis.decisionMaker || 'No')]);
+      const fit = analysis.industryFit || {};
+      if (!isB2b) {
+        facts.push(['Opportunity', badgeHtml(scoreOf(analysis, intent))]);
+        if (analysis.hirerType && analysis.hirerType !== 'Unknown') facts.push(['Who they are', escHtml(analysis.hirerType)]);
+        facts.push(['Can hire you', badgeHtml(analysis.decisionMaker || analysis.isRecruiter || 'No')]);
+        if (analysis.opportunityType && analysis.opportunityType !== 'Unclear') facts.push(['Likely opportunity', escHtml(analysis.opportunityType)]);
+        if (fit.level) facts.push(['ICP fit', badgeHtml(fit.level, `${fit.level} fit`), fit.reasoning]);
         facts.push(['Company size', escHtml(csVal)]);
         const co = analysis.company || {};
-        companyRows = [['Company', co.name], ['Stage', co.stage]];
+        companyRows = [['Company', co.name || analysis.companyName], ['Stage', co.stage]];
       } else {
         facts.push(['Prospect score', badgeHtml(analysis.potentialClient?.score || 'Low')]);
-        const fit = analysis.industryFit || {};
         facts.push(['ICP fit', badgeHtml(fit.level || 'Partial', `${fit.level || 'Partial'} fit`), fit.reasoning]);
         facts.push(['Decision maker', badgeHtml(analysis.decisionMaker || 'No')]);
         facts.push(['Company size', escHtml(csVal)]);
-        if (fit.excluded) {
-          excludedBanner = `
-            <div class="lia-notice lia-notice--bad">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
-              <span>Excluded industry: flagged as a poor fit for your ICP.</span>
-            </div>`;
-        }
         const co = analysis.company || {};
         companyRows = [['Company', co.name], ['Headcount', co.headcount], ['Website', co.domain]];
+      }
+      if (fit.excluded) {
+        excludedBanner = `
+          <div class="lia-notice lia-notice--bad">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+            <span>Matches something on your skip list, so it's flagged as a poor fit.</span>
+          </div>`;
       }
       facts.push(['Engagement', escHtml(erVal)]);
       facts.push(['Industry', escHtml(analysis.industry || 'Unknown')]);
@@ -3217,7 +3225,7 @@
           </div>
           <div class="lia-icp-warning-body">
             <div class="lia-icp-warning-title">Scored without your ICP</div>
-            <div class="lia-icp-warning-text">No target industries are set, so this is based on seniority only and capped at Medium. <button class="lia-icp-warning-link" id="lia-set-icp-analysis">Set your ICP</button></div>
+            <div class="lia-icp-warning-text">No targeting is set for ${modeLabelOf(intent)}, so this is based on seniority only and capped at Medium. <button class="lia-icp-warning-link" id="lia-set-icp-analysis">Set your ICP</button></div>
           </div>
         </div>` : '';
 
@@ -3241,19 +3249,24 @@
           <div class="lia-label">Recent activity</div>
           <p class="lia-text">${escHtml(analysis.recentActivity || 'No recent activity detected.')}</p>
         </div>
-        ${intent === 'b2c_sales' && (analysis.painPoints || []).length ? `
+        ${!isB2b && (analysis.hiringSignals || []).length ? `
         <div class="lia-section">
-          <div class="lia-label">Pain points</div>
+          <div class="lia-label">Hiring and need signals</div>
+          ${numberedList(analysis.hiringSignals)}
+        </div>` : ''}
+        ${!isB2b && (analysis.painPoints || []).length ? `
+        <div class="lia-section">
+          <div class="lia-label">Where you could help</div>
           ${numberedList(analysis.painPoints)}
         </div>` : ''}
-        ${intent === 'b2c_sales' && analysis.approachAngle ? `
+        ${!isB2b && analysis.approachAngle ? `
         <div class="lia-section">
-          <div class="lia-label">Approach angle</div>
+          <div class="lia-label">Best angle
           <p class="lia-text">${escHtml(analysis.approachAngle)}</p>
         </div>` : ''}
         ${(analysis.keyInsights || []).length ? `
         <div class="lia-section">
-          <div class="lia-label">${intent === 'job_search' ? 'Job search insights' : intent === 'b2c_sales' ? 'Freelance insights' : 'Key insights'}</div>
+          <div class="lia-label">Key insights</div>
           ${numberedList(analysis.keyInsights)}
         </div>` : ''}
       `;
@@ -3274,28 +3287,22 @@
 
       // Build analysis insights block
       let insightRows = '';
-      if (intent === 'b2b_sales') {
+      const fitLevel = analysis.icpFit?.match || analysis.industryFit?.level || '';
+      const fitR = analysis.icpFit?.reasoning || analysis.industryFit?.reasoning || '';
+      if (isB2b) {
         const ps = analysis.prospectScore?.score || analysis.potentialClient?.score || '';
         const psR = analysis.prospectScore?.reasoning || analysis.potentialClient?.reasoning || '';
         const dm = analysis.decisionMakerLevel || analysis.decisionMaker || '';
-        const fit = analysis.icpFit?.match || analysis.industryFit?.level || '';
-        const fitR = analysis.icpFit?.reasoning || analysis.industryFit?.reasoning || '';
         if (ps) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Prospect score</span>${badgeHtml(ps)}${psR ? `<span class="lia-insight-note">${escHtml(psR)}</span>` : ''}</div>`;
         if (dm) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Decision maker</span>${badgeHtml(dm)}</div>`;
-        if (fit) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">ICP fit</span>${badgeHtml(fit, `${fit} fit`)}${fitR ? `<span class="lia-insight-note">${escHtml(fitR)}</span>` : ''}</div>`;
-      } else if (intent === 'b2c_sales') {
-        const cp = analysis.clientPotential?.score || '';
-        const cpR = analysis.clientPotential?.reasoning || '';
-        const aa = analysis.approachAngle || '';
-        if (cp) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Client potential</span>${badgeHtml(cp)}${cpR ? `<span class="lia-insight-note">${escHtml(cpR)}</span>` : ''}</div>`;
-        if (aa) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Approach angle</span><span class="lia-insight-note">${escHtml(aa)}</span></div>`;
-        (analysis.painPoints || []).slice(0, 2).forEach(pp => {
-          insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Pain point</span><span class="lia-insight-note">${escHtml(pp)}</span></div>`;
-        });
+        if (fitLevel) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">ICP fit</span>${badgeHtml(fitLevel, `${fitLevel} fit`)}${fitR ? `<span class="lia-insight-note">${escHtml(fitR)}</span>` : ''}</div>`;
       } else {
-        const hs = analysis.hiringSignal?.score || '';
-        const hsR = analysis.hiringSignal?.reasoning || '';
-        if (hs) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Hiring signal</span>${badgeHtml(hs)}${hsR ? `<span class="lia-insight-note">${escHtml(hsR)}</span>` : ''}</div>`;
+        const sc = scoreOf(analysis, intent);
+        const scR = reasonOf(analysis, intent);
+        if (sc) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Opportunity</span>${badgeHtml(sc)}${scR ? `<span class="lia-insight-note">${escHtml(scR)}</span>` : ''}</div>`;
+        if (analysis.hirerType && analysis.hirerType !== 'Unknown') insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Who they are</span><span class="lia-insight-val">${escHtml(analysis.hirerType)}</span></div>`;
+        if (fitLevel) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">ICP fit</span>${badgeHtml(fitLevel, `${fitLevel} fit`)}</div>`;
+        if (analysis.approachAngle) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Best angle</span><span class="lia-insight-note">${escHtml(analysis.approachAngle)}</span></div>`;
       }
       const ki = (analysis.keyInsights || []).slice(0, 3);
       const insightsSection = (insightRows || ki.length) ? `
@@ -3353,7 +3360,7 @@
         </div>
         <button class="lia-btn-primary" id="lia-msgtab-generate" style="width:100%;margin-bottom:4px">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          ${intent === 'job_search' ? 'Generate Outreach Message' : 'Generate First Message'}
+          Generate first message
         </button>`;
 
       body.querySelectorAll('.lia-tone-btn').forEach(btn => {
@@ -3467,7 +3474,7 @@
             renderInlineAiError(resultDiv.querySelector('#lia-msgtab-gen-error'), err.message);
           }
           resultDiv.style.display = '';
-          genBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> ${intent === 'job_search' ? 'Generate Outreach Message' : 'Generate First Message'}`;
+          genBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Generate first message`;
           genBtn.disabled = false;
         }
       });

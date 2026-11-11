@@ -24,15 +24,9 @@ function showOnboarding(googleUser) {
 
   document.getElementById('ob-welcome-next').addEventListener('click', () => goToObStep('ob-step-mode'));
 
-  // Mode choice — asks explicitly instead of silently defaulting to B2B Sales the way an empty
-  // analysisIntent used to. The click handling/persistence itself is the existing global
-  // modeCards logic further down this file (these buttons share the same .mode-card markup and
-  // data-intent attribute) — this only needs to unlock the Continue button once a real choice
-  // has been made.
+  // Mode choice — B2C is preselected (it's the default mode); clicking a card is handled by
+  // options/setup.js, which shares this markup. Continue is always available.
   const obModeNextBtn = document.getElementById('ob-mode-next');
-  overlay.querySelectorAll('#ob-mode-selector .mode-card').forEach(card => {
-    card.addEventListener('click', () => { obModeNextBtn.disabled = false; });
-  });
   obModeNextBtn.addEventListener('click', () => goToObStep('ob-step-apikey'));
 
   // Connect Anthropic — the product does nothing without this key, and previously nothing in
@@ -131,52 +125,13 @@ document.querySelectorAll('.snav-item').forEach(btn => {
 // ── Auth Gate: check on load and react to sign-in/sign-out in real time ───────
 chrome.storage.local.get('googleUser', r => setAuthState(!!r.googleUser));
 
-// Per-field last-modified timestamps for everything in SYNC_KEYS — pushed to the cloud alongside
-// the settings themselves so a sign-in restore (background/auth.js's handleGoogleSignIn) can merge
-// field-by-field (keep whichever side edited that specific field more recently) instead of the
-// cloud snapshot blindly overwriting every local field, sales-config included, just because one
-// field changed on another device. Same per-field-timestamp philosophy as mergeSavedContacts, just
-// applied to the settings blob instead of the contacts array.
-let _fieldTimestamps = {};
-chrome.storage.local.get('settingsFieldTimestamps', r => { _fieldTimestamps = r.settingsFieldTimestamps || {}; });
-
+// Field timestamps and cloud sync for settings are owned by the background worker now (see
+// background/index.js), so a change made from the panel or popup — e.g. the B2C/B2B toggle —
+// syncs the same way as one made here. This page only tracks sign-in state.
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if ('googleUser' in changes) setAuthState(!!changes.googleUser.newValue);
-  const changedKeys = SYNC_KEYS.filter(k => k in changes);
-  if (changedKeys.length) {
-    const now = Date.now();
-    changedKeys.forEach(k => { _fieldTimestamps[k] = now; });
-    chrome.storage.local.set({ settingsFieldTimestamps: _fieldTimestamps });
-  }
-  if (_signedIn && changedKeys.length) syncSettingsToCloud();
 });
-
-// Must stay identical to background/auth.js's SETTINGS_KEYS — this is what actually gets pushed
-// to the cloud (syncSettingsToCloud below), while SETTINGS_KEYS governs what a sign-in restore
-// merges back in. icpProfiles/activeIcpProfileId were added to SETTINGS_KEYS when multi-profile
-// support shipped but missed here, meaning profile data was never actually reaching the cloud at
-// all despite editing it locally — a real, silent cross-device sync gap, separate from the
-// tagState reference-aliasing bug fixed above.
-const SYNC_KEYS = [
-  'analysisIntent',
-  'targetIndustries', 'excludeIndustries', 'businessProfile',
-  'icpProfiles', 'activeIcpProfileId',
-  'messagePresets', 'b2cProfile', 'jobProfile',
-  'b2cMessagePresets', 'jobMessagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries',
-  'creatorProfile', 'companyProfile', 'reminderSettings',
-  'anthropicApiKey', 'hubspotApiKey',
-];
-
-let _syncDebounceTimer = null;
-function syncSettingsToCloud() {
-  clearTimeout(_syncDebounceTimer);
-  _syncDebounceTimer = setTimeout(() => {
-    chrome.storage.local.get([...SYNC_KEYS, 'settingsFieldTimestamps'], settings => {
-      chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings });
-    });
-  }, 1500);
-}
 
 // ── Post Creator: Personal / Company toggle ───────────────────────────────────
 document.querySelectorAll('.pc-stoggle').forEach(btn => {
@@ -188,514 +143,8 @@ document.querySelectorAll('.pc-stoggle').forEach(btn => {
   });
 });
 
-// ── Mode Info Box ─────────────────────────────────────────────────────────────
-const MODE_INFO = {
-  b2b_sales: {
-    title: 'B2B Sales mode active',
-    desc: 'The AI reads each LinkedIn profile and tells you exactly how valuable this contact is for your pipeline — in seconds. Works on standard LinkedIn profiles and search; Sales Navigator support is coming soon.',
-    items: [
-      'Prospect score (High / Medium / Low) with AI reasoning',
-      'Industry fit — does their company match your target ICP?',
-      'Decision-maker level: C-level, VP, Manager, or IC',
-      'Company details — name, industry, size, headcount',
-      'Ready-to-send personalised connection request',
-    ],
-    cta: 'Fill in your ICP and business profile below for the most accurate scoring.',
-  },
-  b2c_sales: {
-    title: 'Freelance / Consulting mode active',
-    desc: 'The AI evaluates each contact as a potential client for your individual services and tells you how to approach them.',
-    items: [
-      'Client potential score (High / Medium / Low)',
-      'Freelancer signal — do they typically work with contractors?',
-      'Decision-making authority and budget signals',
-      'Pain points you could address based on their situation',
-      'A personalised approach angle written for your specific expertise',
-    ],
-    cta: 'Fill in your personal profile below to get personalised client scoring.',
-  },
-  job_search: {
-    title: 'Job Search mode active',
-    desc: 'The AI reads each profile and tells you whether this person is a recruiter, a hiring manager, or shows signals of active hiring.',
-    items: [
-      'Hiring signal strength (Strong / Possible / Unlikely)',
-      'Recruiter identification (Yes / Likely / No)',
-      'Company size and industry context',
-      'Actionable tips on how to approach this specific person',
-      'A natural connection request that does not sound like a template',
-    ],
-    cta: 'Fill in your job profile below so your outreach messages feel personal and relevant.',
-  },
-};
-
-function updateModeInfoBox(intent) {
-  const box = document.getElementById('mode-info-box');
-  if (!box) return;
-  const info = MODE_INFO[intent] || MODE_INFO.b2b_sales;
-  box.innerHTML = `
-    <span class="mib-icon">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-      </svg>
-    </span>
-    <div class="mib-content">
-      <div class="mib-title">${info.title}</div>
-      <p class="mib-desc">${info.desc}</p>
-      <ul class="mib-list">${info.items.map(i => `<li>${i}</li>`).join('')}</ul>
-      <div class="mib-cta">${info.cta}</div>
-    </div>`;
-}
-
-// ── Mode Selector ─────────────────────────────────────────────────────────────
-// Scoped to the Outreach tab's own selector, not just `.mode-card` — the onboarding overlay's
-// mode-choice step (added below) reuses the same card markup/class for visual consistency but
-// needs its own independent click handling, not this one.
-const modeCards = document.querySelectorAll('#mode-selector .mode-card');
-const intentStatus = document.getElementById('intent-status');
-
-function applyIntentVisibility(intent) {
-  const isSales = intent === 'b2b_sales';
-  const isB2c   = intent === 'b2c_sales';
-  const isJob   = intent === 'job_search';
-
-  document.getElementById('icp-profile-switcher')?.classList.toggle('hidden', !isSales);
-  document.getElementById('sales-config')?.classList.toggle('hidden', !isSales);
-  document.getElementById('business-config')?.classList.toggle('hidden', !isSales);
-  document.getElementById('message-config')?.classList.toggle('hidden', !isSales);
-  document.getElementById('b2c-config')?.classList.toggle('hidden', !isB2c);
-  document.getElementById('b2c-icp-config')?.classList.toggle('hidden', !isB2c);
-  document.getElementById('b2c-message-config')?.classList.toggle('hidden', !isB2c);
-  document.getElementById('job-config')?.classList.toggle('hidden', !isJob);
-  document.getElementById('job-message-config')?.classList.toggle('hidden', !isJob);
-
-  updateModeInfoBox(intent);
-}
-
-chrome.storage.local.get('analysisIntent', result => {
-  const current = result.analysisIntent || 'b2b_sales';
-  modeCards.forEach(card => card.classList.toggle('active', card.dataset.intent === current));
-  applyIntentVisibility(current);
-});
-
-modeCards.forEach(card => {
-  card.addEventListener('click', () => {
-    const intent = card.dataset.intent;
-    chrome.storage.local.set({ analysisIntent: intent }, () => {
-      modeCards.forEach(c => c.classList.toggle('active', c.dataset.intent === intent));
-      applyIntentVisibility(intent);
-      const label = { b2b_sales: 'Switched to B2B Sales mode.', b2c_sales: 'Switched to Freelance mode.', job_search: 'Switched to Job Search mode.' };
-      showStatus(intentStatus, label[intent] || 'Mode saved.', 'success');
-    });
-  });
-});
-
-// ── ICP ───────────────────────────────────────────────────────────────────────
-const DEFAULT_EXCLUDES = ['Tech service providers', 'IT outsourcing / staffing', 'Digital / marketing agencies'];
-const tagState = { targets: [], excludes: [] };
-
-function renderTags(kind) {
-  const id = kind === 'targets' ? 'target-tags' : 'exclude-tags';
-  const cls = kind === 'targets' ? 'tag-target' : 'tag-exclude';
-  const container = document.getElementById(id);
-  if (!container) return;
-  container.innerHTML = tagState[kind].map((t, i) => `
-    <span class="tag ${cls}">${escapeHtml(t)}
-      <button type="button" class="tag-remove" data-kind="${kind}" data-idx="${i}" aria-label="Remove">&times;</button>
-    </span>`).join('');
-  container.querySelectorAll('.tag-remove').forEach(btn =>
-    btn.addEventListener('click', () => { tagState[btn.dataset.kind].splice(Number(btn.dataset.idx), 1); renderTags(btn.dataset.kind); }));
-}
-
-function wireTagInput(inputId, kind) {
-  const input = document.getElementById(inputId);
-  if (!input) return;
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault();
-      const val = input.value.trim().replace(/,$/, '');
-      if (val && !tagState[kind].some(t => t.toLowerCase() === val.toLowerCase())) { tagState[kind].push(val); renderTags(kind); }
-      input.value = '';
-    } else if (e.key === 'Backspace' && !input.value && tagState[kind].length) { tagState[kind].pop(); renderTags(kind); }
-  });
-}
-
-wireTagInput('target-input', 'targets');
-wireTagInput('exclude-input', 'excludes');
-
-document.getElementById('icp-save-btn')?.addEventListener('click', () => {
-  const active = icpProfilesState.find(p => p.id === activeIcpProfileIdState);
-  if (!active) return;
-  active.targetIndustries = tagState.targets;
-  active.excludeIndustries = tagState.excludes;
-  persistIcpProfiles().then(() => showStatus(document.getElementById('icp-status'), 'ICP saved.', 'success'));
-});
-
-document.getElementById('icp-reset-btn')?.addEventListener('click', () => {
-  tagState.excludes = [...DEFAULT_EXCLUDES];
-  renderTags('excludes');
-  showStatus(document.getElementById('icp-status'), 'Excludes reset to default — click Save ICP to keep.', 'info');
-});
-
-// Generic version of the tag-input ICP setup above, reusable for Freelance's own target/exclude
-// industries — kept separate from tagState/renderTags/wireTagInput above (B2B-only, already wired
-// with a default-excludes reset button that doesn't apply to B2C) rather than generalizing working
-// code just to add one more caller.
-function setupTagCard({ targetsId, targetInputId, excludesId, excludeInputId, saveBtnId, statusId, storageKeys }) {
-  const state = { targets: [], excludes: [] };
-  const [targetKey, excludeKey] = storageKeys;
-
-  function render(kind) {
-    const id = kind === 'targets' ? targetsId : excludesId;
-    const cls = kind === 'targets' ? 'tag-target' : 'tag-exclude';
-    const container = document.getElementById(id);
-    if (!container) return;
-    container.innerHTML = state[kind].map((t, i) => `
-      <span class="tag ${cls}">${escapeHtml(t)}
-        <button type="button" class="tag-remove" data-kind="${kind}" data-idx="${i}" aria-label="Remove">&times;</button>
-      </span>`).join('');
-    container.querySelectorAll('.tag-remove').forEach(btn =>
-      btn.addEventListener('click', () => { state[btn.dataset.kind].splice(Number(btn.dataset.idx), 1); render(btn.dataset.kind); }));
-  }
-
-  function wireInput(inputId, kind) {
-    const input = document.getElementById(inputId);
-    if (!input) return;
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ',') {
-        e.preventDefault();
-        const val = input.value.trim().replace(/,$/, '');
-        if (val && !state[kind].some(t => t.toLowerCase() === val.toLowerCase())) { state[kind].push(val); render(kind); }
-        input.value = '';
-      } else if (e.key === 'Backspace' && !input.value && state[kind].length) { state[kind].pop(); render(kind); }
-    });
-  }
-
-  function load(targets, excludes) {
-    state.targets = Array.isArray(targets) ? targets : [];
-    state.excludes = Array.isArray(excludes) ? excludes : [];
-    render('targets');
-    render('excludes');
-  }
-
-  wireInput(targetInputId, 'targets');
-  wireInput(excludeInputId, 'excludes');
-  chrome.storage.local.get(storageKeys, r => load(r[targetKey], r[excludeKey]));
-
-  document.getElementById(saveBtnId)?.addEventListener('click', () => {
-    chrome.storage.local.set({ [targetKey]: state.targets, [excludeKey]: state.excludes }, () =>
-      showStatus(document.getElementById(statusId), 'Target industries saved.', 'success'));
-  });
-
-  return { load };
-}
-
-const b2cIcpCard = setupTagCard({
-  targetsId: 'b2c-target-tags', targetInputId: 'b2c-target-input',
-  excludesId: 'b2c-exclude-tags', excludeInputId: 'b2c-exclude-input',
-  saveBtnId: 'b2c-icp-save-btn', statusId: 'b2c-icp-status',
-  storageKeys: ['b2cTargetIndustries', 'b2cExcludeIndustries'],
-});
-
-// ── Business Profile ──────────────────────────────────────────────────────────
-const bizFields = { expertise: 'biz-expertise', offer: 'biz-offer', idealCustomer: 'biz-customer', problem: 'biz-problem', valueProp: 'biz-valueprop', senderName: 'biz-name', companyName: 'biz-company' };
-
-document.getElementById('biz-save-btn')?.addEventListener('click', () => {
-  const active = icpProfilesState.find(p => p.id === activeIcpProfileIdState);
-  if (!active) return;
-  const businessProfile = {};
-  Object.entries(bizFields).forEach(([key, id]) => { const v = document.getElementById(id)?.value.trim(); if (v) businessProfile[key] = v; });
-  active.businessProfile = businessProfile;
-  persistIcpProfiles().then(() => showStatus(document.getElementById('biz-status'), 'Business profile saved.', 'success'));
-});
-
-// ── ICP / Business Profiles (multiple saved targeting profiles) ────────────────
-// One "active" profile at a time, same model the ICP/Business Profile cards above always had —
-// this just makes it possible to save more than one and switch, for a user who sells to more than
-// one kind of buyer. Migrates the old flat targetIndustries/excludeIndustries/businessProfile keys
-// into a single "Default" profile the first time this runs, exactly once (mirrors the same
-// migration in background/ai.js's ensureIcpProfilesMigrated, since content/background/options share
-// no bundler here — same duplication pattern already used for SETTINGS_KEYS elsewhere).
-let icpProfilesState = [];
-let activeIcpProfileIdState = null;
-
-function genIcpProfileId() {
-  return `icp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function persistIcpProfiles() {
-  return new Promise(resolve => {
-    chrome.storage.local.set({ icpProfiles: icpProfilesState, activeIcpProfileId: activeIcpProfileIdState }, resolve);
-  });
-}
-
-function renderIcpProfileSelect() {
-  const sel = document.getElementById('icp-profile-select');
-  if (!sel) return;
-  sel.innerHTML = icpProfilesState.map(p =>
-    `<option value="${escapeHtml(p.id)}" ${p.id === activeIcpProfileIdState ? 'selected' : ''}>${escapeHtml(p.name)}</option>`
-  ).join('');
-}
-
-function loadActiveIcpProfileIntoForm() {
-  const active = icpProfilesState.find(p => p.id === activeIcpProfileIdState) || icpProfilesState[0];
-  if (!active) return;
-  // Copy, never alias — assigning active.targetIndustries directly made tagState.targets the
-  // SAME array object, so every tag typed/removed mutated the profile in storage in place, with
-  // no Save click involved at all. That looked like it "just worked" — until icpProfilesState got
-  // rebuilt from a fresh storage read (initIcpProfiles() re-running after sign-in), which replaces
-  // every profile with newly-deserialized objects and leaves tagState pointing at a now-detached,
-  // orphaned array. Anything typed after that point had nothing real to land in and was silently
-  // lost — the exact "filled it in, refreshed, gone" bug this fixes.
-  tagState.targets = Array.isArray(active.targetIndustries) ? [...active.targetIndustries] : [];
-  tagState.excludes = Array.isArray(active.excludeIndustries) ? [...active.excludeIndustries] : [...DEFAULT_EXCLUDES];
-  renderTags('targets');
-  renderTags('excludes');
-  const b = active.businessProfile || {};
-  Object.entries(bizFields).forEach(([k, id]) => { const el = document.getElementById(id); if (el) el.value = b[k] || ''; });
-}
-
-// Safety net for switching away from a profile with edits still sitting in the form, unsaved —
-// commits whatever's currently typed into the OLD active profile before the switch, so creating
-// or picking a different profile can never silently discard in-progress work just because the
-// user didn't click Save ICP / Save Business Profile first.
-function commitFormIntoActiveProfile() {
-  const active = icpProfilesState.find(p => p.id === activeIcpProfileIdState);
-  if (!active) return;
-  active.targetIndustries = [...tagState.targets];
-  active.excludeIndustries = [...tagState.excludes];
-  const businessProfile = {};
-  Object.entries(bizFields).forEach(([key, id]) => { const v = document.getElementById(id)?.value.trim(); if (v) businessProfile[key] = v; });
-  active.businessProfile = businessProfile;
-}
-
-function initIcpProfiles() {
-  chrome.storage.local.get(['icpProfiles', 'activeIcpProfileId', 'targetIndustries', 'excludeIndustries', 'businessProfile'], r => {
-    if (Array.isArray(r.icpProfiles) && r.icpProfiles.length) {
-      icpProfilesState = r.icpProfiles;
-      activeIcpProfileIdState = r.activeIcpProfileId && icpProfilesState.some(p => p.id === r.activeIcpProfileId)
-        ? r.activeIcpProfileId : icpProfilesState[0].id;
-    } else {
-      const defaultProfile = {
-        id: genIcpProfileId(),
-        name: 'Default',
-        targetIndustries: Array.isArray(r.targetIndustries) ? r.targetIndustries : [],
-        excludeIndustries: Array.isArray(r.excludeIndustries) ? r.excludeIndustries : [...DEFAULT_EXCLUDES],
-        businessProfile: r.businessProfile || {},
-      };
-      icpProfilesState = [defaultProfile];
-      activeIcpProfileIdState = defaultProfile.id;
-      persistIcpProfiles();
-    }
-    renderIcpProfileSelect();
-    loadActiveIcpProfileIntoForm();
-  });
-}
-initIcpProfiles();
-
-document.getElementById('icp-profile-select')?.addEventListener('change', (e) => {
-  commitFormIntoActiveProfile();
-  activeIcpProfileIdState = e.target.value;
-  loadActiveIcpProfileIntoForm();
-  persistIcpProfiles();
-});
-
-document.getElementById('icp-profile-new-btn')?.addEventListener('click', () => {
-  const name = (window.prompt('Name this profile — e.g. "Healthcare clients"', '') || '').trim();
-  if (!name) return;
-  commitFormIntoActiveProfile();
-  const newProfile = { id: genIcpProfileId(), name, targetIndustries: [], excludeIndustries: [...DEFAULT_EXCLUDES], businessProfile: {} };
-  icpProfilesState.push(newProfile);
-  activeIcpProfileIdState = newProfile.id;
-  renderIcpProfileSelect();
-  loadActiveIcpProfileIntoForm();
-  persistIcpProfiles();
-  showStatus(document.getElementById('icp-profile-status'), `Created "${name}" — fill in its ICP and Business Profile below, then save each.`, 'success');
-});
-
-document.getElementById('icp-profile-rename-btn')?.addEventListener('click', () => {
-  const active = icpProfilesState.find(p => p.id === activeIcpProfileIdState);
-  if (!active) return;
-  const name = (window.prompt('Rename this profile', active.name) || '').trim();
-  if (!name) return;
-  active.name = name;
-  renderIcpProfileSelect();
-  persistIcpProfiles();
-  showStatus(document.getElementById('icp-profile-status'), 'Renamed.', 'success');
-});
-
-document.getElementById('icp-profile-delete-btn')?.addEventListener('click', () => {
-  if (icpProfilesState.length <= 1) {
-    showStatus(document.getElementById('icp-profile-status'), "Can't delete your only profile.", 'info');
-    return;
-  }
-  const active = icpProfilesState.find(p => p.id === activeIcpProfileIdState);
-  if (!active) return;
-  if (!window.confirm(`Delete "${active.name}"? This can't be undone.`)) return;
-  icpProfilesState = icpProfilesState.filter(p => p.id !== active.id);
-  activeIcpProfileIdState = icpProfilesState[0].id;
-  renderIcpProfileSelect();
-  loadActiveIcpProfileIntoForm();
-  persistIcpProfiles();
-  showStatus(document.getElementById('icp-profile-status'), 'Deleted.', 'success');
-});
-
-// ── Message Style ─────────────────────────────────────────────────────────────
-const msgState = { tone: 'warm', length: 'standard', includeCta: false, ctaText: '' };
-
-function renderSeg(segId, val) {
-  document.querySelectorAll(`#${segId} button`).forEach(b => b.classList.toggle('active', b.dataset.val === val));
-}
-
-function wireSeg(segId, key) {
-  document.querySelectorAll(`#${segId} button`).forEach(btn =>
-    btn.addEventListener('click', () => { msgState[key] = btn.dataset.val; renderSeg(segId, btn.dataset.val); }));
-}
-
-wireSeg('tone-seg', 'tone');
-wireSeg('length-seg', 'length');
-
-const ctaToggle = document.getElementById('cta-toggle');
-const ctaTextEl = document.getElementById('cta-text');
-
-chrome.storage.local.get('messagePresets', r => {
-  const p = r.messagePresets || {};
-  msgState.tone = p.tone || 'warm';
-  msgState.length = p.length || 'standard';
-  msgState.includeCta = !!p.includeCta;
-  msgState.ctaText = p.ctaText || '';
-  renderSeg('tone-seg', msgState.tone);
-  renderSeg('length-seg', msgState.length);
-  if (ctaToggle) ctaToggle.checked = msgState.includeCta;
-  if (ctaTextEl) ctaTextEl.value = msgState.ctaText;
-});
-
-document.getElementById('msg-save-btn')?.addEventListener('click', () => {
-  const messagePresets = { tone: msgState.tone, length: msgState.length, includeCta: ctaToggle?.checked || false, ctaText: ctaTextEl?.value.trim() || '' };
-  chrome.storage.local.set({ messagePresets }, () => showStatus(document.getElementById('msg-status'), 'Message style saved.', 'success'));
-});
-
-// Generic version of the tone/length/CTA setup above, reusable for B2C and Job Search's own
-// message-style cards — kept separate from msgState/wireSeg/renderSeg above (those are B2B-only
-// and already wired) rather than generalizing working code just to add two more callers.
-function setupStyleCard({ toneSegId, lengthSegId, ctaToggleId, ctaTextId, saveBtnId, statusId, storageKey }) {
-  const state = { tone: 'warm', length: 'standard', includeCta: false, ctaText: '' };
-  const ctaToggleEl = document.getElementById(ctaToggleId);
-  const ctaTextInput = document.getElementById(ctaTextId);
-
-  function render() {
-    document.querySelectorAll(`#${toneSegId} button`).forEach(b => b.classList.toggle('active', b.dataset.val === state.tone));
-    document.querySelectorAll(`#${lengthSegId} button`).forEach(b => b.classList.toggle('active', b.dataset.val === state.length));
-  }
-
-  function load(presets) {
-    const p = presets || {};
-    state.tone = p.tone || 'warm';
-    state.length = p.length || 'standard';
-    state.includeCta = !!p.includeCta;
-    state.ctaText = p.ctaText || '';
-    render();
-    if (ctaToggleEl) ctaToggleEl.checked = state.includeCta;
-    if (ctaTextInput) ctaTextInput.value = state.ctaText;
-  }
-
-  document.querySelectorAll(`#${toneSegId} button`).forEach(btn =>
-    btn.addEventListener('click', () => { state.tone = btn.dataset.val; render(); }));
-  document.querySelectorAll(`#${lengthSegId} button`).forEach(btn =>
-    btn.addEventListener('click', () => { state.length = btn.dataset.val; render(); }));
-
-  chrome.storage.local.get(storageKey, r => load(r[storageKey]));
-
-  document.getElementById(saveBtnId)?.addEventListener('click', () => {
-    const presets = { tone: state.tone, length: state.length, includeCta: ctaToggleEl?.checked || false, ctaText: ctaTextInput?.value.trim() || '' };
-    chrome.storage.local.set({ [storageKey]: presets }, () => showStatus(document.getElementById(statusId), 'Message style saved.', 'success'));
-  });
-
-  return { load };
-}
-
-const b2cStyleCard = setupStyleCard({
-  toneSegId: 'b2c-tone-seg', lengthSegId: 'b2c-length-seg',
-  ctaToggleId: 'b2c-cta-toggle', ctaTextId: 'b2c-cta-text',
-  saveBtnId: 'b2c-msg-save-btn', statusId: 'b2c-msg-status',
-  storageKey: 'b2cMessagePresets',
-});
-const jobStyleCard = setupStyleCard({
-  toneSegId: 'job-tone-seg', lengthSegId: 'job-length-seg',
-  ctaToggleId: 'job-cta-toggle', ctaTextId: 'job-cta-text',
-  saveBtnId: 'job-msg-save-btn', statusId: 'job-msg-status',
-  storageKey: 'jobMessagePresets',
-});
-
-// ── B2C Profile ───────────────────────────────────────────────────────────────
-const b2cFields = { expertise: 'b2c-expertise', services: 'b2c-services', targetClient: 'b2c-target', problem: 'b2c-problem', valueProp: 'b2c-valueprop', senderName: 'b2c-name' };
-
-chrome.storage.local.get('b2cProfile', r => {
-  const p = r.b2cProfile || {};
-  Object.entries(b2cFields).forEach(([key, id]) => { const el = document.getElementById(id); if (el && p[key]) el.value = p[key]; });
-});
-
-document.getElementById('b2c-save-btn')?.addEventListener('click', () => {
-  const b2cProfile = {};
-  Object.entries(b2cFields).forEach(([key, id]) => { const v = document.getElementById(id)?.value.trim(); if (v) b2cProfile[key] = v; });
-  chrome.storage.local.set({ b2cProfile }, () => showStatus(document.getElementById('b2c-status'), 'Personal profile saved.', 'success'));
-});
-
-// ── Job Profile ───────────────────────────────────────────────────────────────
-const jobTagState = { roles: [], industries: [] };
-
-function renderJobTags(kind) {
-  const id = kind === 'roles' ? 'job-role-tags' : 'job-industry-tags';
-  const container = document.getElementById(id);
-  if (!container) return;
-  container.innerHTML = jobTagState[kind].map((t, i) => `
-    <span class="tag tag-target">${escapeHtml(t)}
-      <button type="button" class="tag-remove" data-kind="${kind}" data-idx="${i}" aria-label="Remove">&times;</button>
-    </span>`).join('');
-  container.querySelectorAll('.tag-remove').forEach(btn =>
-    btn.addEventListener('click', () => { jobTagState[btn.dataset.kind].splice(Number(btn.dataset.idx), 1); renderJobTags(btn.dataset.kind); }));
-}
-
-function wireJobTagInput(inputId, kind) {
-  const input = document.getElementById(inputId);
-  if (!input) return;
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault();
-      const val = input.value.trim().replace(/,$/, '');
-      if (val && !jobTagState[kind].some(t => t.toLowerCase() === val.toLowerCase())) { jobTagState[kind].push(val); renderJobTags(kind); }
-      input.value = '';
-    } else if (e.key === 'Backspace' && !input.value && jobTagState[kind].length) { jobTagState[kind].pop(); renderJobTags(kind); }
-  });
-}
-
-wireJobTagInput('job-role-input', 'roles');
-wireJobTagInput('job-industry-input', 'industries');
-
-chrome.storage.local.get('jobProfile', r => {
-  const p = r.jobProfile || {};
-  const setVal = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
-  setVal('job-name', p.senderName);
-  setVal('job-title', p.currentTitle);
-  setVal('job-background', p.background);
-  setVal('job-years', p.yearsExp);
-  jobTagState.roles = Array.isArray(p.targetRoles) ? p.targetRoles : [];
-  jobTagState.industries = Array.isArray(p.targetIndustries) ? p.targetIndustries : [];
-  renderJobTags('roles');
-  renderJobTags('industries');
-});
-
-document.getElementById('job-save-btn')?.addEventListener('click', () => {
-  const raw = {
-    senderName: document.getElementById('job-name')?.value.trim(),
-    currentTitle: document.getElementById('job-title')?.value.trim(),
-    background: document.getElementById('job-background')?.value.trim(),
-    yearsExp: document.getElementById('job-years')?.value,
-    targetRoles: jobTagState.roles.length ? jobTagState.roles : undefined,
-    targetIndustries: jobTagState.industries.length ? jobTagState.industries : undefined,
-  };
-  const jobProfile = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined && v !== ''));
-  chrome.storage.local.set({ jobProfile }, () => showStatus(document.getElementById('job-status'), 'Job profile saved.', 'success'));
-});
+// ── Outreach setup ─────────────────────────────────────────────────────────────
+// The B2C/B2B toggle, targeting profiles and message style live in options/setup.js.
 
 // ── Anthropic API Key ──────────────────────────────────────────────────────────
 const apiKeyInput = document.getElementById('api-key');
@@ -792,25 +241,30 @@ chrome.storage.local.get('creatorProfile', r => {
 // storage keys with no shared source of truth — a user fills out "what I do / who I sell to"
 // twice, and the two can silently drift. Rather than merging the schemas (real risk of breaking
 // either flow), this is a one-click, blanks-only prefill: existing values are never overwritten.
-document.getElementById('creator-prefill-btn')?.addEventListener('click', () => {
-  // Reads whichever ICP profile is currently active (see "ICP / Business Profiles" above) —
-  // in-memory state already populated by initIcpProfiles(), which runs at load regardless of
-  // which settings tab happens to be visible.
-  const b = (icpProfilesState.find(p => p.id === activeIcpProfileIdState) || {}).businessProfile || {};
-  if (!Object.keys(b).length) {
-    showStatus(document.getElementById('creator-status'), 'No Business Profile found — fill it in under Outreach settings first.', 'info');
+async function activeProfileFor(intent) {
+  const k = intent === 'b2b_sales' ? ['icpProfiles', 'activeIcpProfileId'] : ['b2cProfiles', 'activeB2cProfileId'];
+  const r = await chrome.storage.local.get(k);
+  const list = r[k[0]] || [];
+  return list.find(p => p.id === r[k[1]]) || list[0] || null;
+}
+
+// Personal-brand posts are about you, so they prefill from the active B2C profile. Blanks only —
+// existing values are never overwritten.
+document.getElementById('creator-prefill-btn')?.addEventListener('click', async () => {
+  const p = await activeProfileFor('b2c_sales');
+  const pitch = p?.pitch || {};
+  if (!pitch.oneLiner && !pitch.senderName && !(pitch.skills || []).length) {
+    showStatus(document.getElementById('creator-status'), 'Fill in your B2C pitch under Outreach first.', 'info');
     return;
   }
   const fillIfEmpty = (id, val) => { const el = document.getElementById(id); if (el && val && !el.value.trim()) el.value = val; };
-  fillIfEmpty('creator-name', b.senderName);
-  fillIfEmpty('creator-audience', b.idealCustomer);
-  if (b.expertise && !creatorDomainTagState.domains.length) {
-    b.expertise.split(',').map(s => s.trim()).filter(Boolean).forEach(t => {
-      if (!creatorDomainTagState.domains.some(existing => existing.toLowerCase() === t.toLowerCase())) creatorDomainTagState.domains.push(t);
-    });
+  fillIfEmpty('creator-name', pitch.senderName);
+  fillIfEmpty('creator-audience', p.icp?.idealCustomer);
+  if ((pitch.skills || []).length && !creatorDomainTagState.domains.length) {
+    creatorDomainTagState.domains = pitch.skills.slice(0, 10);
     renderCreatorDomainTags();
   }
-  showStatus(document.getElementById('creator-status'), 'Filled in from your Business Profile — review and save.', 'success');
+  showStatus(document.getElementById('creator-status'), 'Filled in from your B2C pitch. Review and save.', 'success');
 });
 
 document.getElementById('creator-save-btn')?.addEventListener('click', () => {
@@ -834,17 +288,19 @@ chrome.storage.local.get('companyProfile', r => {
   setVal('co-products', p.products); setVal('co-icp', p.icp); setVal('co-goal', p.goal); setVal('co-style', p.postStyle);
 });
 
-document.getElementById('co-prefill-btn')?.addEventListener('click', () => {
-  const b = (icpProfilesState.find(p => p.id === activeIcpProfileIdState) || {}).businessProfile || {};
-  if (!Object.keys(b).length) {
-    showStatus(document.getElementById('co-status'), 'No Business Profile found — fill it in under Outreach settings first.', 'info');
+// Company posts prefill from the active B2B profile.
+document.getElementById('co-prefill-btn')?.addEventListener('click', async () => {
+  const p = await activeProfileFor('b2b_sales');
+  const b = p?.businessProfile || {};
+  if (!b.offer && !b.companyName) {
+    showStatus(document.getElementById('co-status'), 'Fill in your B2B offer under Outreach first.', 'info');
     return;
   }
   const fillIfEmpty = (id, val) => { const el = document.getElementById(id); if (el && val && !el.value.trim()) el.value = val; };
   fillIfEmpty('co-name', b.companyName);
   fillIfEmpty('co-products', b.offer);
-  fillIfEmpty('co-icp', b.idealCustomer);
-  showStatus(document.getElementById('co-status'), 'Filled in from your Business Profile — review and save.', 'success');
+  fillIfEmpty('co-icp', p.icp?.idealCustomer);
+  showStatus(document.getElementById('co-status'), 'Filled in from your B2B offer. Review and save.', 'success');
 });
 
 document.getElementById('co-save-btn')?.addEventListener('click', () => {
@@ -855,52 +311,10 @@ document.getElementById('co-save-btn')?.addEventListener('click', () => {
 
 // ── Reload all form fields from storage (called after sign-in) ────────────────
 function loadAllSettings() {
+  globalThis.LPSetup?.reload();
   chrome.storage.local.get([
-    'analysisIntent', 'messagePresets', 'b2cProfile', 'jobProfile',
-    'b2cMessagePresets', 'jobMessagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries',
     'anthropicApiKey', 'hubspotApiKey', 'creatorProfile', 'companyProfile', 'reminderSettings',
   ], r => {
-    // Mode
-    const intent = r.analysisIntent || 'b2b_sales';
-    modeCards.forEach(c => c.classList.toggle('active', c.dataset.intent === intent));
-    applyIntentVisibility(intent);
-
-    // ICP / Business profile — re-fetches its own keys (icpProfiles may have just changed via
-    // cloud sync restore, which this generic loop above doesn't know how to merge itself)
-    initIcpProfiles();
-
-    // Message presets
-    const mp = r.messagePresets || {};
-    msgState.tone = mp.tone || 'warm';
-    msgState.length = mp.length || 'standard';
-    msgState.includeCta = !!mp.includeCta;
-    msgState.ctaText = mp.ctaText || '';
-    renderSeg('tone-seg', msgState.tone);
-    renderSeg('length-seg', msgState.length);
-    if (ctaToggle) ctaToggle.checked = msgState.includeCta;
-    if (ctaTextEl) ctaTextEl.value = msgState.ctaText;
-
-    // B2C profile
-    const b2c = r.b2cProfile || {};
-    Object.entries(b2cFields).forEach(([k, id]) => { const el = document.getElementById(id); if (el) el.value = b2c[k] || ''; });
-
-    // Job profile
-    const job = r.jobProfile || {};
-    const sv = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
-    sv('job-name', job.senderName); sv('job-title', job.currentTitle);
-    sv('job-background', job.background); sv('job-years', job.yearsExp);
-    jobTagState.roles = Array.isArray(job.targetRoles) ? job.targetRoles : [];
-    jobTagState.industries = Array.isArray(job.targetIndustries) ? job.targetIndustries : [];
-    renderJobTags('roles');
-    renderJobTags('industries');
-
-    // B2C / Job Search message style (separate presets from B2B's)
-    b2cStyleCard.load(r.b2cMessagePresets);
-    jobStyleCard.load(r.jobMessagePresets);
-
-    // B2C's own target/exclude industries (separate from B2B's ICP)
-    b2cIcpCard.load(r.b2cTargetIndustries, r.b2cExcludeIndustries);
-
     // Reminder settings
     loadReminderSettingsUI(r.reminderSettings);
 
@@ -1090,7 +504,10 @@ document.getElementById('open-privacy-btn')?.addEventListener('click', () => {
 // lets one person configure targeting once and hand it out as a paste-able code. Whitelist only:
 // API keys, the pipeline, and personal profiles (job search, personal-brand creator) never leave.
 // senderName is stripped on export and the importer's own is kept, so reps don't sign as each other.
-const TEAM_CODE_PREFIX = 'LINKPILOT-TEAM-1:';
+// v2 carries the structured two-mode setup. v1 codes (free-text industries, three modes) are still
+// accepted and converted with the same migration the extension itself uses.
+const TEAM_CODE_V2 = 'LINKPILOT-TEAM-2:';
+const TEAM_CODE_V1 = 'LINKPILOT-TEAM-1:';
 
 function toBase64Utf8(str) {
   const bytes = new TextEncoder().encode(str);
@@ -1104,91 +521,86 @@ function fromBase64Utf8(b64) {
   return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
 }
 
-const strList = v => (Array.isArray(v) ? v.filter(x => typeof x === 'string' && x.trim()).map(x => x.trim().slice(0, 120)).slice(0, 50) : []);
-function strFields(obj, drop = []) {
+const TEAM_KEYS = ['icpProfiles', 'activeIcpProfileId', 'messagePresets', 'b2cProfiles', 'activeB2cProfileId', 'b2cMessagePresets', 'companyProfile'];
+const companyFields = obj => {
   const out = {};
-  if (!obj || typeof obj !== 'object') return out;
-  Object.entries(obj).forEach(([k, v]) => {
-    if (!drop.includes(k) && typeof v === 'string' && v.trim()) out[k] = v.slice(0, 2000);
-  });
+  ['name', 'industry', 'about', 'products', 'icp', 'goal', 'postStyle'].forEach(k => { if (typeof obj?.[k] === 'string' && obj[k].trim()) out[k] = obj[k].slice(0, 2000); });
   return out;
-}
+};
 
-document.getElementById('team-copy-btn')?.addEventListener('click', () => {
+document.getElementById('team-copy-btn')?.addEventListener('click', async () => {
   const status = document.getElementById('team-setup-status');
-  chrome.storage.local.get(['icpProfiles', 'activeIcpProfileId', 'messagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries', 'b2cProfile', 'b2cMessagePresets', 'companyProfile'], r => {
-    const data = {
-      icpProfiles: (Array.isArray(r.icpProfiles) ? r.icpProfiles : []).map(p => ({
-        id: p.id, name: p.name,
-        targetIndustries: strList(p.targetIndustries), excludeIndustries: strList(p.excludeIndustries),
-        businessProfile: strFields(p.businessProfile, ['senderName']),
-      })),
-      activeIcpProfileId: r.activeIcpProfileId,
-      messagePresets: r.messagePresets,
-      b2cTargetIndustries: strList(r.b2cTargetIndustries), b2cExcludeIndustries: strList(r.b2cExcludeIndustries),
-      b2cProfile: strFields(r.b2cProfile, ['senderName']),
-      b2cMessagePresets: r.b2cMessagePresets,
-      companyProfile: strFields(r.companyProfile),
-    };
-    if (!data.icpProfiles.length && !data.b2cTargetIndustries.length) {
-      showStatus(status, 'Nothing to share yet — set up your ICP first.', 'error');
-      return;
-    }
-    const code = TEAM_CODE_PREFIX + toBase64Utf8(JSON.stringify({ v: 1, data }));
-    navigator.clipboard.writeText(code)
-      .then(() => showStatus(status, 'Team setup code copied — paste it to your team.', 'success'))
-      .catch(() => showStatus(status, 'Could not copy to the clipboard.', 'error'));
-  });
+  const S = globalThis.LP_SCHEMA;
+  await globalThis.LPSetup?.save?.(); // include anything typed but not yet saved
+  const r = await chrome.storage.local.get(TEAM_KEYS);
+  const data = {
+    icpProfiles: (r.icpProfiles || []).map(p => S.sanitizeB2bProfile(p, '')),
+    activeIcpProfileId: r.activeIcpProfileId,
+    messagePresets: S.sanitizePresets(r.messagePresets, 'b2b_sales'),
+    b2cProfiles: (r.b2cProfiles || []).map(p => S.sanitizeB2cProfile(p, '')),
+    activeB2cProfileId: r.activeB2cProfileId,
+    b2cMessagePresets: S.sanitizePresets(r.b2cMessagePresets, 'b2c_sales'),
+    companyProfile: companyFields(r.companyProfile),
+  };
+  const hasAny = [...data.icpProfiles, ...data.b2cProfiles].some(p => p.icp.industries.length || p.icp.customIndustries.length || p.icp.hirerTypes.length);
+  if (!hasAny) { showStatus(status, 'Nothing to share yet. Set up your targeting first.', 'error'); return; }
+  const code = TEAM_CODE_V2 + toBase64Utf8(JSON.stringify({ v: 2, data }));
+  navigator.clipboard.writeText(code)
+    .then(() => showStatus(status, 'Team setup code copied. Paste it to your team.', 'success'))
+    .catch(() => showStatus(status, 'Could not copy to the clipboard.', 'error'));
 });
 
-document.getElementById('team-import-btn')?.addEventListener('click', () => {
+// v1 payload → v2 shapes, reusing the extension's own legacy migration.
+function teamV1ToV2(d) {
+  const S = globalThis.LP_SCHEMA;
+  const icpProfiles = (Array.isArray(d.icpProfiles) ? d.icpProfiles : []).map(p => S.migrateB2bProfile(p) || p);
+  const b2c = S.buildB2cFromLegacy({ b2cProfile: d.b2cProfile, b2cTargetIndustries: d.b2cTargetIndustries, b2cExcludeIndustries: d.b2cExcludeIndustries });
+  return {
+    icpProfiles, activeIcpProfileId: d.activeIcpProfileId,
+    messagePresets: { tone: d.messagePresets?.tone }, b2cProfiles: [b2c], activeB2cProfileId: b2c.id,
+    b2cMessagePresets: { tone: d.b2cMessagePresets?.tone }, companyProfile: d.companyProfile,
+  };
+}
+
+document.getElementById('team-import-btn')?.addEventListener('click', async () => {
   const status = document.getElementById('team-setup-status');
+  const S = globalThis.LP_SCHEMA;
   const raw = (document.getElementById('team-import-input')?.value || '').trim();
-  if (!raw.startsWith(TEAM_CODE_PREFIX)) { showStatus(status, 'That is not a LinkPilot team setup code.', 'error'); return; }
+  const prefix = raw.startsWith(TEAM_CODE_V2) ? TEAM_CODE_V2 : raw.startsWith(TEAM_CODE_V1) ? TEAM_CODE_V1 : null;
+  if (!prefix) { showStatus(status, 'That is not a LinkPilot team setup code.', 'error'); return; }
   let data;
   try {
-    const parsed = JSON.parse(fromBase64Utf8(raw.slice(TEAM_CODE_PREFIX.length)));
-    if (parsed?.v !== 1 || !parsed.data) throw new Error('bad version');
-    data = parsed.data;
+    const parsed = JSON.parse(fromBase64Utf8(raw.slice(prefix.length)));
+    if (!parsed?.data || (parsed.v !== 1 && parsed.v !== 2)) throw new Error('bad version');
+    data = parsed.v === 1 ? teamV1ToV2(parsed.data) : parsed.data;
   } catch {
-    showStatus(status, 'This code is damaged or incomplete — ask for a fresh copy.', 'error');
+    showStatus(status, 'This code is damaged or incomplete. Ask for a fresh copy.', 'error');
     return;
   }
-  if (!confirm('Replace your ICP, business profiles, and message style with this team setup? Your API keys, pipeline, and personal profiles are not affected.')) return;
+  if (!confirm('Replace your B2C and B2B targeting profiles and message style with this team setup? Your API keys, pipeline and name are not affected.')) return;
 
-  chrome.storage.local.get(['icpProfiles', 'activeIcpProfileId', 'b2cProfile'], mine => {
-    const myActive = (mine.icpProfiles || []).find(p => p.id === mine.activeIcpProfileId) || (mine.icpProfiles || [])[0];
-    const mySender = myActive?.businessProfile?.senderName;
-    const icpProfiles = (Array.isArray(data.icpProfiles) ? data.icpProfiles : [])
-      .filter(p => p && typeof p.id === 'string' && typeof p.name === 'string')
-      .map(p => ({
-        id: p.id, name: p.name.slice(0, 80),
-        targetIndustries: strList(p.targetIndustries), excludeIndustries: strList(p.excludeIndustries),
-        businessProfile: { ...strFields(p.businessProfile, ['senderName']), ...(mySender ? { senderName: mySender } : {}) },
-      }));
-    const update = {
-      b2cTargetIndustries: strList(data.b2cTargetIndustries),
-      b2cExcludeIndustries: strList(data.b2cExcludeIndustries),
-      b2cProfile: { ...strFields(data.b2cProfile, ['senderName']), ...(mine.b2cProfile?.senderName ? { senderName: mine.b2cProfile.senderName } : {}) },
-      companyProfile: strFields(data.companyProfile),
-    };
-    if (icpProfiles.length) {
-      update.icpProfiles = icpProfiles;
-      update.activeIcpProfileId = icpProfiles.some(p => p.id === data.activeIcpProfileId) ? data.activeIcpProfileId : icpProfiles[0].id;
-    }
-    const presets = v => (v && typeof v === 'object') ? {
-      tone: typeof v.tone === 'string' ? v.tone.slice(0, 30) : 'warm',
-      length: v.length === 'short' ? 'short' : 'standard',
-      includeCta: !!v.includeCta,
-      ctaText: typeof v.ctaText === 'string' ? v.ctaText.slice(0, 200) : '',
-    } : null;
-    if (presets(data.messagePresets)) update.messagePresets = presets(data.messagePresets);
-    if (presets(data.b2cMessagePresets)) update.b2cMessagePresets = presets(data.b2cMessagePresets);
-    chrome.storage.local.set(update, () => {
-      showStatus(status, 'Team setup imported — reloading.', 'success');
-      setTimeout(() => location.reload(), 700);
-    });
-  });
+  const mine = await chrome.storage.local.get(['icpProfiles', 'activeIcpProfileId', 'b2cProfiles', 'activeB2cProfileId']);
+  const myB2b = (mine.icpProfiles || []).find(p => p.id === mine.activeIcpProfileId) || (mine.icpProfiles || [])[0];
+  const myB2c = (mine.b2cProfiles || []).find(p => p.id === mine.activeB2cProfileId) || (mine.b2cProfiles || [])[0];
+  const b2bName = myB2b?.businessProfile?.senderName || '';
+  const b2cName = myB2c?.pitch?.senderName || '';
+
+  const update = { companyProfile: companyFields(data.companyProfile) };
+  const icpProfiles = (Array.isArray(data.icpProfiles) ? data.icpProfiles : []).map(p => S.sanitizeB2bProfile(p, b2bName));
+  if (icpProfiles.length) {
+    update.icpProfiles = icpProfiles;
+    update.activeIcpProfileId = icpProfiles.some(p => p.id === data.activeIcpProfileId) ? data.activeIcpProfileId : icpProfiles[0].id;
+    update.messagePresets = S.sanitizePresets(data.messagePresets, 'b2b_sales');
+  }
+  const b2cProfiles = (Array.isArray(data.b2cProfiles) ? data.b2cProfiles : []).map(p => S.sanitizeB2cProfile(p, b2cName));
+  if (b2cProfiles.length) {
+    update.b2cProfiles = b2cProfiles;
+    update.activeB2cProfileId = b2cProfiles.some(p => p.id === data.activeB2cProfileId) ? data.activeB2cProfileId : b2cProfiles[0].id;
+    update.b2cMessagePresets = S.sanitizePresets(data.b2cMessagePresets, 'b2c_sales');
+  }
+  await chrome.storage.local.set(update);
+  showStatus(status, 'Team setup imported. Reloading.', 'success');
+  setTimeout(() => location.reload(), 700);
 });
 
 // ── Clear All Data ────────────────────────────────────────────────────────────
@@ -1230,12 +642,7 @@ const STAGE_META = {
   closed:          { label: 'Closed',          tone: 'muted' },
 };
 const STAGE_ORDER = Object.keys(STAGE_META);
-// "Booked"/"Closed" are sales-deal language that don't map onto a job seeker's mental model —
-// swap in interview/hired framing for job_search contacts. Same override, duplicated in
-// content/index.js and popup/index.js alongside their own STAGE_META copies.
-const JOB_STAGE_LABELS = { booked: 'Interview', closed: 'Hired' };
-function stageLabel(stage, intent) {
-  if (intent === 'job_search' && JOB_STAGE_LABELS[stage]) return JOB_STAGE_LABELS[stage];
+function stageLabel(stage) {
   return STAGE_META[stage]?.label || 'New';
 }
 
@@ -1303,14 +710,12 @@ const PIPELINE_COLUMNS = [
   { label: 'New',              tone: 'neutral', stages: ['new'] },
   { label: 'Reaching out',     tone: 'info',    stages: ['connection_sent', 'messaged'] },
   { label: 'Following up',     tone: 'warn',    stages: ['followup_1', 'followup_2', 'followup_3plus'] },
-  { label: 'Replied / booked', jobLabel: 'Replied / interview', tone: 'good', stages: ['replied', 'booked'] },
-  { label: 'Closed',           jobLabel: 'Hired',               tone: 'muted', stages: ['closed'] },
+  { label: 'Replied / booked', tone: 'good',  stages: ['replied', 'booked'] },
+  { label: 'Closed',           tone: 'muted', stages: ['closed'] },
 ];
 
-// Only rename a column header when the board is filtered to a single intent — with mixed
-// intents on screen, the sales-flavored default is the least-wrong shared label.
-function columnLabel(col, intentFilter) {
-  return (intentFilter === 'job_search' && col.jobLabel) ? col.jobLabel : col.label;
+function columnLabel(col) {
+  return col.label;
 }
 
 const PIPELINE_SCORE_TONE = {
@@ -1347,7 +752,8 @@ function renderPipelineBoard() {
   const filter = (document.getElementById('pipeline-search')?.value || '').trim().toLowerCase();
   const intentFilter = document.getElementById('pipeline-intent-filter')?.value || '';
   const filtered = _pipelineContacts.filter(c => {
-    if (intentFilter && (c.intent || 'b2b_sales') !== intentFilter) return false;
+    // Contacts saved before modes existed had no intent and were B2B (the old default).
+    if (intentFilter && (c.intent ? globalThis.LP_SCHEMA.normalizeIntent(c.intent) : 'b2b_sales') !== intentFilter) return false;
     if (!filter) return true;
     return (c.name || '').toLowerCase().includes(filter) || (c.company || '').toLowerCase().includes(filter);
   });

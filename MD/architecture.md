@@ -76,8 +76,13 @@ The core AI surface. Three user-facing message handlers, all exported and routed
 - `handleGenerateFirstMessage(profileData, analysis, intent, tone, userInstructions, stage, daysSinceLastTouch, contextMaterial, previousAttempt, strategy)`
 - `handleGenerateChatFollowup({ conversationText, isRaw, contactName, senderName, intent, userInstructions, stage, daysSinceLastTouch, analysis, contextMaterial, strategy })`
 
-Each branches on `intent` (`job_search` / `b2c_sales` / `b2b_sales`, default) to build a different
-system prompt, but all three share:
+Each resolves the mode with `getModeContext(intent)` (B2C unless intent is exactly `b2b_sales` —
+legacy `job_search` lands in B2C) and builds its prompt from the active profile via
+`buildIcpContext` (structured targeting, with LinkedIn industry names for matching),
+`buildSenderContext` (the only allowed source of anything said about the sender) and
+`buildStyleRules` (tone + ending). Shapes and option lists live in `shared/schema.js` and
+`shared/taxonomy.js`, loaded by the worker, the content script and the options page alike.
+All handlers share:
 
 - **`AUTHENTICITY_RULES`** — bans em-dashes, emojis, "Hi [Name]" openers, generic filler, restating
   what the recipient said, corporate jargon, fixed acknowledge-pitch-question templates.

@@ -26,60 +26,26 @@
       <!-- Step 2: Mode choice -->
       <div class="ob-step hidden" id="ob-step-mode">
         <div class="ob-welcome-title">What are you using LinkedIn for?</div>
-        <div class="ob-welcome-desc">This shapes how the AI scores contacts and writes your outreach — you can change it anytime in Settings.</div>
-        <div class="mode-selector ob-mode-selector" id="ob-mode-selector">
-          <button class="mode-card" type="button" data-intent="b2b_sales" id="ob-mode-b2b">
-            <span class="mode-card-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
-              </svg>
-            </span>
+        <div class="ob-welcome-desc">This shapes how LinkPilot scores people and writes your outreach. You can switch any time.</div>
+        <div class="mode-selector ob-mode-selector" id="ob-mode-selector" role="radiogroup" aria-label="Outreach mode">
+          <button class="mode-card active" type="button" role="radio" aria-checked="true" data-intent="b2c_sales">
+            <span class="mode-card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
             <div class="mode-card-body">
-              <span class="mode-card-name">B2B Sales</span>
-              <span class="mode-card-tagline">Score and qualify prospects for your sales pipeline</span>
+              <span class="mode-card-name">B2C — you, finding work</span>
+              <span class="mode-card-tagline">Jobs, freelance projects and teams that need your skills</span>
             </div>
-            <span class="mode-card-check" aria-hidden="true">
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                <path d="M2 6.5l2.8 2.8 5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </span>
+            <span class="mode-card-check" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6.5l2.8 2.8 5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           </button>
-          <button class="mode-card" type="button" data-intent="b2c_sales" id="ob-mode-b2c">
-            <span class="mode-card-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-              </svg>
-            </span>
+          <button class="mode-card" type="button" role="radio" aria-checked="false" data-intent="b2b_sales">
+            <span class="mode-card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></span>
             <div class="mode-card-body">
-              <span class="mode-card-name">Freelance / Consulting</span>
-              <span class="mode-card-tagline">Find clients for your individual expertise and services</span>
+              <span class="mode-card-name">B2B — your company, finding clients</span>
+              <span class="mode-card-tagline">Companies that buy what your business sells</span>
             </div>
-            <span class="mode-card-check" aria-hidden="true">
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                <path d="M2 6.5l2.8 2.8 5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </span>
-          </button>
-          <button class="mode-card" type="button" data-intent="job_search" id="ob-mode-job">
-            <span class="mode-card-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
-              </svg>
-            </span>
-            <div class="mode-card-body">
-              <span class="mode-card-name">Job Search</span>
-              <span class="mode-card-tagline">Identify recruiters, hiring managers, and open-role signals</span>
-            </div>
-            <span class="mode-card-check" aria-hidden="true">
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                <path d="M2 6.5l2.8 2.8 5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </span>
+            <span class="mode-card-check" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6.5l2.8 2.8 5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           </button>
         </div>
-        <button class="ob-btn-primary" id="ob-mode-next" disabled>Continue</button>
+        <button class="ob-btn-primary" id="ob-mode-next">Continue</button>
       </div>
 
       <!-- Step 3: Connect Anthropic -->
@@ -110,7 +76,7 @@
             <div class="ob-plan-desc">Perfect for getting started</div>
             <ul class="ob-plan-features">
               <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>50 AI analyses per month</li>
-              <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>All outreach modes (B2B, Freelance, Job)</li>
+              <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>B2C and B2B modes</li>
               <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>AI post creator</li>
               <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Connection &amp; follow-up messages</li>
               <li class="ob-feat-muted"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>HubSpot CRM integration</li>
@@ -127,7 +93,7 @@
             <div class="ob-plan-desc">For power users &amp; sales teams</div>
             <ul class="ob-plan-features">
               <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Unlimited AI analyses</li>
-              <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>All outreach modes (B2B, Freelance, Job)</li>
+              <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>B2C and B2B modes</li>
               <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>AI post creator</li>
               <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>HubSpot CRM push</li>
               <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Early access to new features</li>
@@ -208,80 +174,20 @@
       <div class="stab-panel" id="panel-outreach">
         <div class="panel-header">
           <h1>Outreach</h1>
-          <p class="panel-sub">Choose your LinkedIn goal and fill in your profile. The AI uses these to score every profile and personalise your messages.</p>
+          <p class="panel-sub">Tell LinkPilot who you are and who you want to reach. Every score and every message it writes is built from this.</p>
         </div>
 
-        <!-- Mode Selector -->
-        <div class="card">
-          <h3>What are you using LinkedIn for?</h3>
-          <p class="card-desc">Select your goal. The AI analyses every profile differently depending on your mode.</p>
-          <div class="mode-selector" id="mode-selector">
-            <button class="mode-card" data-intent="b2b_sales" id="mode-b2b">
-              <span class="mode-card-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                  <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
-                </svg>
-              </span>
-              <div class="mode-card-body">
-                <span class="mode-card-name">B2B Sales</span>
-                <span class="mode-card-tagline">Score and qualify prospects for your sales pipeline</span>
-              </div>
-              <span class="mode-card-check" aria-hidden="true">
-                <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                  <path d="M2 6.5l2.8 2.8 5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </span>
-            </button>
-            <button class="mode-card" data-intent="b2c_sales" id="mode-b2c">
-              <span class="mode-card-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                </svg>
-              </span>
-              <div class="mode-card-body">
-                <span class="mode-card-name">Freelance / Consulting</span>
-                <span class="mode-card-tagline">Find clients for your individual expertise and services</span>
-              </div>
-              <span class="mode-card-check" aria-hidden="true">
-                <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                  <path d="M2 6.5l2.8 2.8 5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </span>
-            </button>
-            <button class="mode-card" data-intent="job_search" id="mode-job">
-              <span class="mode-card-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                  <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
-                </svg>
-              </span>
-              <div class="mode-card-body">
-                <span class="mode-card-name">Job Search</span>
-                <span class="mode-card-tagline">Identify recruiters, hiring managers, and open-role signals</span>
-              </div>
-              <span class="mode-card-check" aria-hidden="true">
-                <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                  <path d="M2 6.5l2.8 2.8 5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </span>
-            </button>
-          </div>
-          <div id="intent-status" class="status-msg" aria-live="polite"></div>
-        </div>
-
-        <!-- Mode info box -->
-        <div class="mode-info-box" id="mode-info-box"></div>
+        <div id="setup-root" class="setup-root"></div>
 
         <!-- Team setup: share ICP + business profiles across a BD team -->
         <div class="card" id="team-setup-card">
           <h3>Team setup</h3>
-          <p class="card-desc">Set up your ICP and business profiles once, then share them with your team. A rep pastes the code below and gets the same targeting in seconds. API keys and personal details are never included.</p>
+          <p class="card-desc">Set up targeting once and share it with your team. A rep pastes the code and gets the same B2B and B2C setup in seconds. API keys, names and the pipeline are never included.</p>
           <div class="actions">
             <button type="button" id="team-copy-btn" class="btn-secondary">Copy team setup code</button>
           </div>
           <div class="form-group">
-            <label for="team-import-input">Import a team setup <span class="label-hint">— replaces your ICP and business profiles</span></label>
+            <label for="team-import-input">Import a team setup <span class="label-hint">— replaces your targeting profiles and message style</span></label>
             <textarea id="team-import-input" rows="3" placeholder="Paste a LINKPILOT-TEAM code here" spellcheck="false"></textarea>
           </div>
           <div id="team-setup-status" class="status-msg" aria-live="polite"></div>
@@ -290,293 +196,6 @@
           </div>
         </div>
 
-        <!-- Profile cards — shown/hidden per mode -->
-        <div id="step2-block">
-
-          <!-- B2B: multiple saved ICP/business profiles -->
-          <div class="card hidden" id="icp-profile-switcher">
-            <div class="card-mode-badge badge-sales">B2B Sales</div>
-            <h3>ICP and business profiles</h3>
-            <p class="card-desc">If you sell to more than one kind of buyer, save a separate profile for each — the ICP and Business Profile cards below always belong to whichever one is active here.</p>
-            <div class="form-group">
-              <label for="icp-profile-select">Active profile</label>
-              <select id="icp-profile-select" class="form-select"></select>
-            </div>
-            <div id="icp-profile-status" class="status-msg" aria-live="polite"></div>
-            <div class="actions">
-              <button type="button" id="icp-profile-new-btn" class="btn-secondary">New profile</button>
-              <button type="button" id="icp-profile-rename-btn" class="btn-secondary">Rename</button>
-              <button type="button" id="icp-profile-delete-btn" class="btn-secondary">Delete</button>
-            </div>
-          </div>
-
-          <!-- B2B: ICP -->
-          <div class="card hidden" id="sales-config">
-            <div class="card-mode-badge badge-sales">B2B Sales</div>
-            <h3>Ideal customer profile (ICP)</h3>
-            <p class="card-desc">Define which industries you sell into and which to skip. The AI rates every prospect as <strong>strong</strong>, <strong>partial</strong> or <strong>poor</strong> fit.</p>
-            <div class="form-group">
-              <label>Target industries <span class="label-hint">— prospects here score higher</span></label>
-              <div class="tag-input" id="target-tags"></div>
-              <input type="text" id="target-input" class="tag-text" placeholder='Type an industry and press Enter — e.g. "Dental", "Fintech"' autocomplete="off" />
-            </div>
-            <div class="form-group">
-              <label>Excluded industries <span class="label-hint">— flagged as poor fit automatically</span></label>
-              <div class="tag-input" id="exclude-tags"></div>
-              <input type="text" id="exclude-input" class="tag-text" placeholder='Type to exclude and press Enter — e.g. "IT staffing"' autocomplete="off" />
-            </div>
-            <div id="icp-status" class="status-msg" aria-live="polite"></div>
-            <div class="actions">
-              <button type="button" id="icp-save-btn" class="btn-primary">Save ICP</button>
-              <button type="button" id="icp-reset-btn" class="btn-secondary">Reset excludes to default</button>
-            </div>
-          </div>
-
-          <!-- B2B: Business Profile -->
-          <div class="card hidden" id="business-config">
-            <div class="card-mode-badge badge-sales">B2B Sales</div>
-            <h3>Your business profile</h3>
-            <p class="card-desc">Tell the AI what you sell and who you sell to. It uses this to write personalised outreach that references your context without ever making a hard pitch.</p>
-            <div class="form-group">
-              <label for="biz-expertise">Your personal expertise <span class="optional">(optional)</span></label>
-              <textarea id="biz-expertise" rows="2" placeholder="e.g. Senior Full Stack Engineer with 10 years in AI, ML automation, and blockchain"></textarea>
-            </div>
-            <div class="form-group">
-              <label for="biz-offer">What you sell / offer</label>
-              <textarea id="biz-offer" rows="2" placeholder="e.g. We build custom patient-booking software for dental clinics"></textarea>
-            </div>
-            <div class="form-group">
-              <label for="biz-customer">Your ideal customer</label>
-              <textarea id="biz-customer" rows="2" placeholder="e.g. Clinic owners and practice managers at multi-location dental groups"></textarea>
-            </div>
-            <div class="form-group">
-              <label for="biz-problem">Problem you solve</label>
-              <textarea id="biz-problem" rows="2" placeholder="e.g. They lose revenue to no-shows and manual scheduling"></textarea>
-            </div>
-            <div class="form-group">
-              <label for="biz-valueprop">Value prop <span class="optional">(optional)</span></label>
-              <input type="text" id="biz-valueprop" placeholder="e.g. Cut no-shows by 40% with automated reminders" />
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label for="biz-name">Your first name <span class="optional">(optional)</span></label>
-                <input type="text" id="biz-name" placeholder="e.g. Jane" />
-              </div>
-              <div class="form-group">
-                <label for="biz-company">Your company name <span class="optional">(optional)</span></label>
-                <input type="text" id="biz-company" placeholder="e.g. Acme" />
-              </div>
-            </div>
-            <div id="biz-status" class="status-msg" aria-live="polite"></div>
-            <div class="actions">
-              <button type="button" id="biz-save-btn" class="btn-primary">Save business profile</button>
-            </div>
-          </div>
-
-          <!-- B2B: Message Style -->
-          <div class="card hidden" id="message-config">
-            <div class="card-mode-badge badge-sales">B2B Sales</div>
-            <h3>Message style</h3>
-            <p class="card-desc">Set your default tone and length for AI-generated connection requests and messages.</p>
-            <div class="form-group">
-              <label>Tone</label>
-              <div class="seg" id="tone-seg">
-                <button type="button" data-val="warm">Warm</button>
-                <button type="button" data-val="direct">Direct</button>
-                <button type="button" data-val="casual">Casual</button>
-                <button type="button" data-val="professional">Professional</button>
-              </div>
-            </div>
-            <div class="form-group">
-              <label>Length</label>
-              <div class="seg" id="length-seg">
-                <button type="button" data-val="short">Short</button>
-                <button type="button" data-val="standard">Standard</button>
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="checkbox-row">
-                <input type="checkbox" id="cta-toggle" />
-                Include a soft call-to-action at the end
-              </label>
-              <input type="text" id="cta-text" placeholder='e.g. "Open to a quick chat sometime?"' />
-            </div>
-            <div id="msg-status" class="status-msg" aria-live="polite"></div>
-            <div class="actions">
-              <button type="button" id="msg-save-btn" class="btn-primary">Save message style</button>
-            </div>
-          </div>
-
-          <!-- Freelance: Target Industries -->
-          <div class="card hidden" id="b2c-icp-config">
-            <div class="card-mode-badge badge-b2c">Freelance</div>
-            <h3>Target client industries</h3>
-            <p class="card-desc">Optional — your own target/exclude industries, separate from any B2B ICP you've configured. The AI rates each contact's <strong>Client Potential</strong> using these instead.</p>
-            <div class="form-group">
-              <label>Target industries <span class="label-hint">— contacts here score higher</span></label>
-              <div class="tag-input" id="b2c-target-tags"></div>
-              <input type="text" id="b2c-target-input" class="tag-text" placeholder='Type an industry and press Enter — e.g. "Startups", "E-commerce"' autocomplete="off" />
-            </div>
-            <div class="form-group">
-              <label>Excluded industries <span class="optional">(optional)</span></label>
-              <div class="tag-input" id="b2c-exclude-tags"></div>
-              <input type="text" id="b2c-exclude-input" class="tag-text" placeholder='Type to exclude and press Enter' autocomplete="off" />
-            </div>
-            <div id="b2c-icp-status" class="status-msg" aria-live="polite"></div>
-            <div class="actions">
-              <button type="button" id="b2c-icp-save-btn" class="btn-primary">Save target industries</button>
-            </div>
-          </div>
-
-          <!-- Freelance: Personal Profile -->
-          <div class="card hidden" id="b2c-config">
-            <div class="card-mode-badge badge-b2c">Freelance</div>
-            <h3>Your personal profile</h3>
-            <p class="card-desc">Tell the AI about your expertise and services so it can evaluate each contact as a potential client and suggest the best approach angle.</p>
-            <div class="form-group">
-              <label for="b2c-expertise">Your expertise / domain</label>
-              <textarea id="b2c-expertise" rows="2" placeholder="e.g. Full-stack developer specialising in React and Node.js — 8 years building SaaS products"></textarea>
-            </div>
-            <div class="form-group">
-              <label for="b2c-services">Services you offer</label>
-              <textarea id="b2c-services" rows="2" placeholder="e.g. MVP builds, custom dashboards, API integrations"></textarea>
-            </div>
-            <div class="form-group">
-              <label for="b2c-target">Your target clients</label>
-              <textarea id="b2c-target" rows="2" placeholder="e.g. Funded early-stage startups and solo founders"></textarea>
-            </div>
-            <div class="form-group">
-              <label for="b2c-problem">Problem you solve</label>
-              <textarea id="b2c-problem" rows="2" placeholder="e.g. Founders who need to ship fast but can't justify a full-time engineer"></textarea>
-            </div>
-            <div class="form-group">
-              <label for="b2c-valueprop">Your unique angle <span class="optional">(optional)</span></label>
-              <input type="text" id="b2c-valueprop" placeholder="e.g. Shipped 20+ MVPs, always on time, async-first" />
-            </div>
-            <div class="form-group">
-              <label for="b2c-name">Your first name <span class="optional">(optional)</span></label>
-              <input type="text" id="b2c-name" placeholder="e.g. Jane" />
-            </div>
-            <div id="b2c-status" class="status-msg" aria-live="polite"></div>
-            <div class="actions">
-              <button type="button" id="b2c-save-btn" class="btn-primary">Save personal profile</button>
-            </div>
-          </div>
-
-          <!-- Freelance: Message Style -->
-          <div class="card hidden" id="b2c-message-config">
-            <div class="card-mode-badge badge-b2c">Freelance</div>
-            <h3>Message style</h3>
-            <p class="card-desc">Set your default tone and length for AI-generated connection requests and messages. Separate from your B2B style — switching modes never carries one over into the other.</p>
-            <div class="form-group">
-              <label>Tone</label>
-              <div class="seg" id="b2c-tone-seg">
-                <button type="button" data-val="warm">Warm</button>
-                <button type="button" data-val="direct">Direct</button>
-                <button type="button" data-val="casual">Casual</button>
-                <button type="button" data-val="professional">Professional</button>
-              </div>
-            </div>
-            <div class="form-group">
-              <label>Length</label>
-              <div class="seg" id="b2c-length-seg">
-                <button type="button" data-val="short">Short</button>
-                <button type="button" data-val="standard">Standard</button>
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="checkbox-row">
-                <input type="checkbox" id="b2c-cta-toggle" />
-                Include a soft call-to-action at the end
-              </label>
-              <input type="text" id="b2c-cta-text" placeholder='e.g. "Open to a quick chat sometime?"' />
-            </div>
-            <div id="b2c-msg-status" class="status-msg" aria-live="polite"></div>
-            <div class="actions">
-              <button type="button" id="b2c-msg-save-btn" class="btn-primary">Save message style</button>
-            </div>
-          </div>
-
-          <!-- Job Search: Seeker Profile -->
-          <div class="card hidden" id="job-config">
-            <div class="card-mode-badge badge-job">Job Search</div>
-            <h3>Your job seeker profile</h3>
-            <p class="card-desc">The AI uses this to write connection requests that sound natural — not like a job application.</p>
-            <div class="form-row">
-              <div class="form-group">
-                <label for="job-name">Your first name <span class="optional">(optional)</span></label>
-                <input type="text" id="job-name" placeholder="e.g. Alex" />
-              </div>
-              <div class="form-group">
-                <label for="job-title">Your current or target job title</label>
-                <input type="text" id="job-title" placeholder="e.g. Product Manager" />
-              </div>
-            </div>
-            <div class="form-group">
-              <label for="job-background">Your professional background <span class="label-hint">— 1 to 3 sentences</span></label>
-              <textarea id="job-background" rows="3" placeholder="e.g. 5 years in B2B SaaS product management at two Series-B startups."></textarea>
-            </div>
-            <div class="form-group">
-              <label>Roles you are targeting</label>
-              <div class="tag-input" id="job-role-tags"></div>
-              <input type="text" id="job-role-input" class="tag-text" placeholder='Press Enter after each — e.g. "Product Manager", "Growth Lead"' autocomplete="off" />
-            </div>
-            <div class="form-group">
-              <label>Industries you are targeting <span class="optional">(optional)</span></label>
-              <div class="tag-input" id="job-industry-tags"></div>
-              <input type="text" id="job-industry-input" class="tag-text" placeholder='e.g. "SaaS", "Fintech"' autocomplete="off" />
-            </div>
-            <div class="form-group">
-              <label for="job-years">Years of experience</label>
-              <select id="job-years" class="form-select">
-                <option value="">Select...</option>
-                <option value="0–2 years (entry-level)">0–2 years (entry-level)</option>
-                <option value="3–5 years (mid-level)">3–5 years (mid-level)</option>
-                <option value="6–10 years (senior)">6–10 years (senior)</option>
-                <option value="10+ years (lead / principal)">10+ years (lead / principal)</option>
-              </select>
-            </div>
-            <div id="job-status" class="status-msg" aria-live="polite"></div>
-            <div class="actions">
-              <button type="button" id="job-save-btn" class="btn-primary">Save job profile</button>
-            </div>
-          </div>
-
-          <!-- Job Search: Message Style -->
-          <div class="card hidden" id="job-message-config">
-            <div class="card-mode-badge badge-job">Job Search</div>
-            <h3>Message style</h3>
-            <p class="card-desc">Set your default tone and length for AI-generated connection requests and messages. Separate from your other modes' style.</p>
-            <div class="form-group">
-              <label>Tone</label>
-              <div class="seg" id="job-tone-seg">
-                <button type="button" data-val="warm">Warm</button>
-                <button type="button" data-val="direct">Direct</button>
-                <button type="button" data-val="casual">Casual</button>
-                <button type="button" data-val="professional">Professional</button>
-              </div>
-            </div>
-            <div class="form-group">
-              <label>Length</label>
-              <div class="seg" id="job-length-seg">
-                <button type="button" data-val="short">Short</button>
-                <button type="button" data-val="standard">Standard</button>
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="checkbox-row">
-                <input type="checkbox" id="job-cta-toggle" />
-                Include a soft call-to-action at the end
-              </label>
-              <input type="text" id="job-cta-text" placeholder='e.g. "Open to hearing more about the role?"' />
-            </div>
-            <div id="job-msg-status" class="status-msg" aria-live="polite"></div>
-            <div class="actions">
-              <button type="button" id="job-msg-save-btn" class="btn-primary">Save message style</button>
-            </div>
-          </div>
-
-        </div><!-- end step2-block -->
       </div><!-- end panel-outreach -->
 
       <!-- ── Tab: Pipeline ──────────────────────────────────────────────────── -->
@@ -614,11 +233,10 @@
         </div>
         <div class="pipeline-toolbar">
           <input type="text" id="pipeline-search" class="pipeline-search" placeholder="Filter by name or company..." />
-          <select id="pipeline-intent-filter" class="pipeline-intent-filter">
+          <select id="pipeline-intent-filter" class="pipeline-intent-filter" aria-label="Filter by mode">
             <option value="">All modes</option>
-            <option value="b2b_sales">B2B Sales</option>
-            <option value="b2c_sales">Freelance</option>
-            <option value="job_search">Job Search</option>
+            <option value="b2c_sales">B2C</option>
+            <option value="b2b_sales">B2B</option>
           </select>
           <div class="notifications-wrap">
             <button type="button" id="notifications-btn" class="btn-secondary">
@@ -911,6 +529,9 @@
     </main>
   </div>
 
+  <script src="../shared/taxonomy.js"></script>
+  <script src="../shared/schema.js"></script>
   <script src="index.js"></script>
+  <script src="setup.js"></script>
 </body>
 </html>

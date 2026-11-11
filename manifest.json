@@ -32,7 +32,7 @@
       "matches": [
         "https://www.linkedin.com/*"
       ],
-      "js": ["content/index.js"],
+      "js": ["shared/taxonomy.js", "shared/schema.js", "content/index.js"],
       "css": ["content/styles.css"],
       "run_at": "document_idle"
     }

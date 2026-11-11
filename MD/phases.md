@@ -174,6 +174,42 @@ mode confirmed or ruled out.
 
 ---
 
+## Phase 7b — Two modes (B2C default + B2B) and structured ICP ✅ STEP 1 DONE (2026-11-11, uncommitted)
+
+**Asked for directly by the user**:
+- Drop Job Search. "Freelance" becomes B2C: an individual finding jobs, projects or a team seat.
+- B2C is the default, with a toggle to B2B.
+- ICPs come from dropdowns of researched industries and sub-segments, plus countries and skip lists.
+- Free text only for the user's own specifics.
+- Gather as much detail as possible.
+
+**Step 1 shipped**:
+- `shared/taxonomy.js`: 24 groups, 208 segments, aligned to LinkedIn Industry Codes V2. It also holds headcount bands, Sales Navigator seniority and functions, and 7 regions covering 59 countries.
+- `shared/schema.js`: modes, option lists, profile shapes, an idempotent migration, and sanitizers.
+- `options/setup.js`: a data-driven form engine with chips, tags, searchable industry and location pickers, proof points, saved profiles per mode, and a sticky save bar.
+- **B2C rubric rewritten.** It scores whether this person can hire, refer or bring in the sender, using hirer type, opportunity type, hiring signals, an industry fit flag with `excluded`, and the no-ICP cap. Job and freelance logic is merged under one OPPORTUNITY RULE.
+- **Mode switch** in Settings, the popup and the panel.
+- **Settings sync** moved to the background worker.
+- **Team codes v2.** They carry the structured profiles; v1 codes still import.
+
+**Verified**:
+- 43-check flow test, with 0 failures in light and dark:
+  - migration of real legacy data
+  - pickers, the save round-trip and team code v2
+  - the popup and panel toggles
+  - every AI handler in both modes plus legacy `job_search`, run with an invalid key
+- Contrast audit: 1,426 nodes, 0 failures.
+- No overflow at 390px.
+
+**Not verified**:
+- Message and scoring *quality* of the rewritten B2C prompts against the real API. This needs a fresh key to run the benchmark.
+
+**Step 2 (next)**:
+- Post Creator in both modes, driven by the active profile: content pillars and post goal.
+- Read the user's real recent posts from their own activity page, plus generated history, to avoid repeats and match their voice.
+
+---
+
 ## Phase 8 — Activity Monitoring & Learning System 🔷 SCOPED, NOT STARTED, LOW PRIORITY
 
 Captured from an earlier planning pass (not re-derived here, just preserved so it isn't lost):

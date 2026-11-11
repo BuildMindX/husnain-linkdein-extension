@@ -26,9 +26,10 @@ scoring rubric, ICP config, and outreach framing is used):
 
 | Mode | Who | What they need |
 |---|---|---|
-| **B2B Sales** | Sales/BD reps prospecting on LinkedIn | Prospect scoring vs. their ICP, decision-maker signal, personalized outreach that doesn't read as a pitch |
-| **Freelance / Consulting** | Independent freelancers/consultants | Client-potential scoring, pain-point signals, peer-to-peer (not vendor) outreach |
-| **Job Search** | Active job seekers | Hiring-signal detection, recruiter identification, non-desperate networking messages |
+| **B2C** (default) | Individuals finding work on their own LinkedIn: jobs, freelance/contract projects, a place on a team | Opportunity scoring (can this person hire / refer / bring me in), hiring and need signals, honest peer-to-peer outreach that never reads as an application |
+| **B2B** | Sales/BD reps prospecting for their company | Prospect scoring vs. a structured ICP (industries + sub-segments, locations, headcount, seniority, functions, titles), decision-maker signal, outreach that doesn't pitch |
+
+Job Search and Freelance were merged into B2C on 2026-11-11 at the user's request ("there are two types of businesses: B2B and B2C"); existing data migrates automatically (shared/schema.js `migrate()`).
 
 The current primary real-world user is Satyron's own internal BD team (Husnain Ali's company); the
 product is also intended to be sold externally, which is why UI polish and reliability both matter —
@@ -63,10 +64,14 @@ an internal tool's bar is lower than a sellable one.
   each with a one-line explanation, selectable live on all three generation surfaces above.
 - **Refine with AI** — post-hoc tone/wording rewrite of an already-generated message, with optional
   custom instructions, separate from strategy selection (generation-time vs. post-hoc).
-- **Multi-profile ICP / Business Profile support (B2B mode)** — multiple named ICP configurations
-  (target/exclude industries, business description) the user can switch between.
-- **Message Style presets** — per-mode (B2B / Freelance / Job Search) saved defaults for tone,
-  length, and call-to-action behavior, read into every generation prompt.
+- **Structured setup, both modes** — dropdowns and chips instead of free text wherever the answer
+  comes from a known set: a researched 24-group / 208-segment industry taxonomy aligned with
+  LinkedIn Industry Codes V2, regions and countries, LinkedIn headcount bands, Sales Navigator
+  seniority and functions. Free text only for what only the user knows (offer, proof points, notes).
+- **Multiple saved profiles in both modes** — e.g. "Healthcare clients" vs "Logistics clients" (B2B),
+  "Full-time ML roles" vs "Freelance agent projects" (B2C).
+- **Message style per mode** — tone plus how messages end (default: an interest question, per
+  Gong's cold-outreach data). Length is no longer a setting: short always (LinkedIn InMail data).
 - **Team Setup share code** — one person configures the ICP/business profiles, copies a code, and
   each rep imports it in Settings; API keys, pipeline, and personal profiles are never included.
 - **ICP safeguards** — prospects scored with no ICP configured are capped at Medium and labeled, and

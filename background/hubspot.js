@@ -116,14 +116,16 @@ function formatAnalysisForNote(analysis, intent) {
     if (analysis.decisionMaker) lines.push(`Decision Maker: ${analysis.decisionMaker}`);
     if (analysis.industryFit?.level) lines.push(`Industry Fit: ${analysis.industryFit.level}${analysis.industryFit.reasoning ? ` — ${analysis.industryFit.reasoning}` : ''}`);
     if (analysis.companySize) lines.push(`Company Size: ${analysis.companySize}`);
-  } else if (intent === 'b2c_sales') {
-    if (analysis.clientPotential?.score) lines.push(`Client Potential: ${analysis.clientPotential.score}${analysis.clientPotential.reasoning ? ` — ${analysis.clientPotential.reasoning}` : ''}`);
-    if (analysis.decisionMaker) lines.push(`Decision Maker: ${analysis.decisionMaker}`);
-    if ((analysis.painPoints || []).length) lines.push(`Pain Points: ${analysis.painPoints.join('; ')}`);
+  } else {
+    const score = analysis.clientPotential?.score || analysis.hiringSignal?.score;
+    const why = analysis.clientPotential?.reasoning || analysis.hiringSignal?.reasoning;
+    if (score) lines.push(`Opportunity: ${score}${why ? ` — ${why}` : ''}`);
+    if (analysis.hirerType) lines.push(`Who they are: ${analysis.hirerType}`);
+    if (analysis.opportunityType) lines.push(`Likely opportunity: ${analysis.opportunityType}`);
+    if (analysis.industryFit?.level) lines.push(`Fit: ${analysis.industryFit.level}${analysis.industryFit.reasoning ? ` — ${analysis.industryFit.reasoning}` : ''}`);
+    if ((analysis.hiringSignals || []).length) lines.push(`Hiring / need signals: ${analysis.hiringSignals.join('; ')}`);
+    if ((analysis.painPoints || []).length) lines.push(`Needs: ${analysis.painPoints.join('; ')}`);
     if (analysis.approachAngle) lines.push(`Recommended Approach: ${analysis.approachAngle}`);
-  } else if (intent === 'job_search') {
-    if (analysis.hiringSignal?.score) lines.push(`Hiring Signal: ${analysis.hiringSignal.score}${analysis.hiringSignal.reasoning ? ` — ${analysis.hiringSignal.reasoning}` : ''}`);
-    if (analysis.isRecruiter) lines.push(`Is Recruiter: ${analysis.isRecruiter}`);
   }
   if (analysis.industry) lines.push(`Industry: ${analysis.industry}`);
   if ((analysis.keyInsights || []).length) lines.push(`Key Insights: ${analysis.keyInsights.join('; ')}`);

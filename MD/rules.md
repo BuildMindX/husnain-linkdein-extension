@@ -17,10 +17,14 @@ is the reason it exists, not decoration.
   options scripts in this codebase, so nothing enforces this automatically — a key present in one
   but not the other means that data silently never reaches the cloud (or never restores on sign-in)
   with no error anywhere. Check both files any time a new persisted setting is added.
-- **Never share one storage key across modes.** B2B/Freelance/Job-Search each get their own ICP,
-  business-profile, target-industries, and message-preset keys (`messagePresets` /
-  `b2cMessagePresets` / `jobMessagePresets`, etc.) — never consolidate "to reduce duplication."
-  Mode-switching must never leak one mode's config into another's.
+- **Two modes, separate storage.** B2C (`b2cProfiles`, `activeB2cProfileId`, `b2cMessagePresets`)
+  and B2B (`icpProfiles`, `activeIcpProfileId`, `messagePresets`) never share keys. Shapes, option
+  lists and the legacy migration live only in `shared/schema.js`; taxonomy ids in
+  `shared/taxonomy.js` are stored in user data and team codes, so never rename or reuse an id —
+  only add. Read the mode through `normalizeIntent` everywhere (anything not `b2b_sales` is B2C).
+- **Settings cloud sync is owned by the background worker** (storage.onChanged in
+  background/index.js), so a change from any surface syncs. A write batch that includes
+  `settingsFieldTimestamps` is a cloud restore and must not be re-stamped.
 - **Never write inline `<script>` in an extension HTML page.** Manifest V3's default CSP
   (`script-src 'self'`) blocks it outright with no visible error — the page just silently does
   nothing. All JS in an extension page must live in an external `.js` file referenced via

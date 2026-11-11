@@ -2,13 +2,14 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
 export const SETTINGS_KEYS = [
   'analysisIntent',
-  // targetIndustries/excludeIndustries/businessProfile are the pre-multi-profile keys — kept here
-  // so an older cached cloud snapshot doesn't lose them, but nothing reads them once icpProfiles
-  // exists locally (see background/ai.js's ensureIcpProfilesMigrated).
+  // Current two-mode profiles (see shared/schema.js).
+  'icpProfiles', 'activeIcpProfileId', 'messagePresets',
+  'b2cProfiles', 'activeB2cProfileId', 'b2cMessagePresets',
+  // Pre-2026-11 keys: still synced so an older cloud snapshot restores into something the
+  // migration in shared/schema.js can convert, and so sign-out clears them. Nothing reads them
+  // after migration.
   'targetIndustries', 'excludeIndustries', 'businessProfile',
-  'icpProfiles', 'activeIcpProfileId',
-  'messagePresets', 'b2cProfile', 'jobProfile',
-  'b2cMessagePresets', 'jobMessagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries',
+  'b2cProfile', 'jobProfile', 'jobMessagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries',
   'creatorProfile', 'companyProfile', 'reminderSettings',
   'anthropicApiKey', 'hubspotApiKey',
 ];

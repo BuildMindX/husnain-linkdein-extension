@@ -10,9 +10,16 @@ import {
   handleRefineMessage,
   handleSuggestPostTopics,
   handleGeneratePost,
+  ensureMigrated,
+  resetMigration,
 } from './ai.js';
 import { fetchHubSpotPipelines, fetchHubSpotOwners, pushHubSpotDeal } from './hubspot.js';
 import { checkFollowUpReminders, checkNewReplyNotifications, updateReminderBadge } from './reminders.js';
+
+// Old three-mode settings (B2B / Freelance / Job Search, free-text industries) are converted to the
+// two-mode structured schema the first time a worker starts — idempotent, so running it on every
+// worker start is safe and also catches settings restored from an older cloud snapshot.
+ensureMigrated();
 
 async function pushSettingsToCloud(settings) {
   try {
@@ -117,7 +124,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === 'GOOGLE_SIGN_IN') {
-    handleGoogleSignIn().then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
+    handleGoogleSignIn()
+      .then(async res => { resetMigration(); await ensureMigrated(); return res; })
+      .then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
     return true;
   }
   if (msg.type === 'GOOGLE_SIGN_OUT') {
@@ -210,6 +219,28 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // while browsing LinkedIn instead, where the Options page is almost never open. Without this,
 // pipeline changes would never actually reach the cloud in normal use, and the cross-device sync
 // added for it would be sync in name only.
+// Settings sync, owned here (not by the options page) so changes from any surface reach the cloud.
+// Every settings change stamps a per-field timestamp for the sign-in merge, except a batch that
+// already carries settingsFieldTimestamps — that's a cloud restore writing merged data, and
+// re-stamping it "now" would make restored fields look freshly edited on this device.
+let _settingsSyncDebounceTimer = null;
+chrome.storage.onChanged.addListener(async (changes, area) => {
+  if (area !== 'local' || 'settingsFieldTimestamps' in changes) return;
+  const changed = SETTINGS_KEYS.filter(k => k in changes);
+  if (!changed.length) return;
+  const { settingsFieldTimestamps = {} } = await chrome.storage.local.get('settingsFieldTimestamps');
+  const now = Date.now();
+  changed.forEach(k => { settingsFieldTimestamps[k] = now; });
+  await chrome.storage.local.set({ settingsFieldTimestamps });
+  clearTimeout(_settingsSyncDebounceTimer);
+  _settingsSyncDebounceTimer = setTimeout(async () => {
+    const { googleUser } = await chrome.storage.local.get('googleUser');
+    if (!googleUser) return;
+    const settings = await chrome.storage.local.get([...SETTINGS_KEYS, 'savedContacts', 'settingsFieldTimestamps']);
+    pushSettingsToCloud(settings);
+  }, 1500);
+});
+
 let _pipelineSyncDebounceTimer = null;
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !('savedContacts' in changes)) return;
