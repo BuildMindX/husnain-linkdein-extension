@@ -1,11 +1,11 @@
-import { OPENAI_API_URL, OPENAI_MODEL } from './config.js';
+import { ANTHROPIC_API_URL, ANTHROPIC_VERSION, ANTHROPIC_MODEL } from './config.js';
 
 // ─── Storage Helpers ──────────────────────────────────────────────────────────
 
 async function getApiKey() {
-  const result = await chrome.storage.local.get('openaiApiKey');
-  if (!result.openaiApiKey) throw new Error('NO_API_KEY');
-  return result.openaiApiKey;
+  const result = await chrome.storage.local.get('anthropicApiKey');
+  if (!result.anthropicApiKey) throw new Error('NO_API_KEY');
+  return result.anthropicApiKey;
 }
 
 const DEFAULT_EXCLUDES = ['Tech service providers', 'IT outsourcing / staffing', 'Digital / marketing agencies'];
@@ -26,7 +26,12 @@ const AUTHENTICITY_RULES = `- No em dashes, zero hyphens used as dashes
 - No generic enthusiasm ("That's amazing!", "Impressive!", "Love this!") — if something is genuinely worth reacting to, react to the specific detail, not with a generic exclamation
 - Do not follow a fixed acknowledge-then-pitch-then-question template every time — real conversation doesn't have a formula, and back-to-back messages that all end in a question read as scripted
 - Vary sentence length and rhythm like a real person typing quickly, not evenly-structured prose
-- Contractions are normal ("I'm", "it's", "don't") — avoid stiff, fully-spelled-out phrasing`;
+- Contractions are normal ("I'm", "it's", "don't") — avoid stiff, fully-spelled-out phrasing
+- Never read their profile back to them. Opening with their own title, company, tenure, team size, or stats followed by a judgment ("14 crews across Ohio is a lot of moving parts", "five years at Stripe, now VP at Brex, great arc", "says a lot about your priorities") is the single most recognizable sign of automated outreach. They know their own résumé. If you use a profile detail, it is evidence for something you say about it — what it implies, what it makes hard, or a question it raises — never the point itself
+- No stock outreach phrases: "a lot of moving parts/pieces", "no small thing", "refreshingly honest", "says a lot about", "is where X gets real", "the lesson most teams learn late", "I'd value having you in my network", "hoping to follow along", "must be interesting", "great arc", "right in my lane"
+- Do not default to an either/or question ("what's harder: X or Y?", "is it A or B?"). Across a rep's outbox it is an obvious template. Use it only when those two options genuinely are the crux for this person; otherwise ask one direct, open, specific question
+- Do not smuggle assumptions into questions: never ask about something they haven't said is true (e.g. how their agents are performing when nothing says they run agents)
+- If you mention how long they've been somewhere, compute it from today's date in the profile data — or leave it out; a wrong number destroys credibility`;
 
 // Shared by handleGenerateConnectionRequest and handleGenerateFirstMessage — both are
 // pre-conversation one-shots (no thread to ground against yet), so this is scoped to the
@@ -83,14 +88,14 @@ Let the answers decide which detail you lead with and what you ask. The message 
 // Shared by handleGenerateConnectionRequest and handleGenerateFirstMessage only — a user-selectable
 // structural pattern for *how* to open a pre-relationship message, same "pick a named instructional
 // block by key" shape as STAGE_TO_ANGLE below, just chosen by the user up front instead of derived
-// from tracked stage. CONNECTION_REQUEST_FRAMEWORK/FIRST_MESSAGE_FRAMEWORK still govern length/
+// from tracked stage. CONNECTION_REQUEST_FRAMEWORK/buildFirstMessageFramework() still govern length/
 // no-pitch/grounding; a strategy only decides which kind of opening detail to lead with.
 const STRATEGY_PLAYBOOK = {
   smart_pick: `STRATEGY — SMART PICK: no strategy was chosen, so you choose one. Before writing, privately judge which of the approaches below best fits what you actually know about this person: a recent post or specific activity available → lead with CURIOSITY GAP or SHARP QUESTION; a senior/time-poor title with little other signal → DIRECT & CLEAR; almost no usable signal at all → GIVE FIRST or DIRECT & CLEAR (never force a different one just to seem personalized when the data isn't there); a genuine mutual connection or shared context visible in the data → SHARED GROUND. Pick exactly one, commit to it fully, and do not mention or hint that you made this choice.`,
   curiosity_gap: `STRATEGY — CURIOSITY GAP: open with one concrete, specific, slightly unexpected observation about this person or their recent activity — not a compliment, not a restatement of their title. The observation should create a genuine open loop (something the reader wants to know more about), not just state a fact. Close with a question that only they, specifically, could answer — never a generic one that could go to anyone.`,
-  direct_value: `STRATEGY — DIRECT & CLEAR: skip any warm-up or scene-setting. In the first sentence, state plainly why you're reaching out, tied to one real, specific thing about them — then stop. This does not mean pitching: "clear" means the reader instantly understands why you're messaging them, not what you're selling. Best suited to senior or clearly time-poor recipients; still follows every no-pitch rule elsewhere in this prompt.`,
+  direct_value: `STRATEGY — DIRECT & CLEAR: skip any warm-up, scene-setting, or compliment. The first sentence must name the concrete reason for this message — the specific thing about them you're writing about and why it matters — so it could not be mistaken for flattery. Then stop. This does not mean pitching: "clear" means the reader instantly understands why you're messaging them, not what you're selling. Best suited to senior or clearly time-poor recipients; still follows every no-pitch rule elsewhere in this prompt.`,
   problem_first: `STRATEGY — PROBLEM-FIRST: name one specific challenge or friction point that someone in their actual role, industry, or company stage plausibly deals with right now — grounded in their real profile data, not a generic industry template that could apply to anyone in that field. State it as an observation, then ask directly whether it resonates for them. Never follow it with a solution, a pitch, or any hint of what the sender offers — that conversation only happens if they reply.`,
-  shared_ground: `STRATEGY — SHARED GROUND: reference a real mutual connection, shared context, or overlap that is ACTUALLY present in the profile data below (a stated mutual-connections count, an overlapping employer in their experience history, a shared group or interest literally visible in the data) — never one you infer or assume. If nothing genuine like this exists in the data, do not force it: silently switch to the DIRECT & CLEAR approach instead and write that kind of message, without mentioning the switch.`,
+  shared_ground: `STRATEGY — SHARED GROUND: reference a real mutual connection, shared context, or overlap that is ACTUALLY present in the profile data below (a stated mutual-connections count, an overlapping employer in their experience history, a shared group or interest literally visible in the data) — never one you infer or assume. A mutual-connections count in the data is real and usable: mentioning it plainly (e.g. the number you share) is a valid shared-ground opener. If nothing genuine like this exists in the data, do not force it: silently switch to the DIRECT & CLEAR approach instead and write that kind of message, without mentioning the switch.`,
   sharp_question: `STRATEGY — SHARP QUESTION: the message IS the question — there is no separate observation before it. Ask one specific, well-researched question that references a real, concrete detail from their profile or activity, proving you actually looked. Never a generic conversation-starter question ("How's business?", "What are you working on these days?") — if the question could be sent to 1,000 other people unchanged, it is not specific enough.`,
   give_first: `STRATEGY — GIVE FIRST: share one genuinely specific insight, observation, or useful point relevant to their actual situation — something that gives them something, not something that asks for their time. No ask at the end, or at most one extremely soft, easy-to-ignore one. Works especially well written peer-to-peer rather than vendor-to-prospect.`,
   relevant_pattern: `STRATEGY — RELEVANT PATTERN: briefly mention a pattern or trend the SENDER has genuinely noticed, drawn only from the sender's own stated background/expertise provided below (never invented client names, counts, or testimonials) — phrase it as an honest observation ("I've noticed...", "A few people in [X]...") not a credential or a pitch. If no real sender background is available to draw from, do not invent one — fall back to DIRECT & CLEAR instead.`,
@@ -357,13 +362,16 @@ function buildAnalysisContext(analysis, intent) {
 }
 
 function buildProfileText(p, userNotes) {
-  const lines = [];
+  // Without today's date the model guessed tenure from "2021 - Present" and stated it as fact
+  // ("four years" on one run, "five years" on the next).
+  const lines = [`Today's date: ${new Date().toISOString().slice(0, 10)}`];
   if (p.name) lines.push(`Name: ${p.name}`);
   if (p.headline) lines.push(`Headline: ${p.headline}`);
   if (p.location) lines.push(`Location: ${p.location}`);
   if (p.connections) lines.push(`Connections: ${p.connections}`);
   if (p.followers) lines.push(`Followers: ${p.followers}`);
   if (p.mutualConnections) lines.push(`Mutual connections with sender: ${p.mutualConnections} (a real, verifiable shared-network signal — only reference it if it would sound natural, never force it in)`);
+  if (p.about) lines.push(`\nAbout (their own words): ${p.about.slice(0, 1000)}`);
   if (p.experience?.length) {
     lines.push('\nExperience:');
     p.experience.forEach((e, i) => {
@@ -386,7 +394,7 @@ function buildProfileText(p, userNotes) {
       lines.push(`  Post ${i + 1}: ${post.slice(0, 300)}`);
     });
   }
-  if (p.rawText && lines.length < 4) {
+  if (p.rawText && lines.length < 5) { // 5, not 4: the date line above is always present
     lines.push('\nRaw profile text (extract all details from this):');
     lines.push(p.rawText.slice(0, 3000));
   } else if (p.rawText) {
@@ -397,38 +405,69 @@ function buildProfileText(p, userNotes) {
     lines.push('\n--- User notes (prioritize these when crafting the message) ---');
     lines.push(userNotes.trim());
   }
+  // Measured: on profiles with only titles and companies, pushing for a "specific hook" made the
+  // model invent what the person or company works on (e.g. claiming Brex is building AI agents for
+  // expense review). Saying so explicitly is what keeps a thin profile honest instead of creative.
+  if (isThinProfile(p) && !(userNotes && userNotes.trim())) {
+    lines.push('\nDATA NOTE: this profile has no posts, no About section, and no role descriptions — only titles and companies. Unless an ADDITIONAL CONTEXT FROM THE USER section supplies real detail, there is no specific detail to anchor on. Do NOT invent what they work on, what their company is building internally, or what they care about. Write a short, honest message about what is actually visible (their role and company), and ask about their actual work.');
+  }
   return lines.join('\n');
+}
+
+function isThinProfile(p) {
+  return !(p.posts?.length) && !p.about && !(p.experience || []).some(e => (e.description || '').trim());
 }
 
 // ─── Core AI Call ─────────────────────────────────────────────────────────────
 
-async function callAI(systemPrompt, userPrompt, { temperature } = {}) {
+// No `temperature` is sent: the configured model (claude-sonnet-5-5) rejects the parameter as
+// deprecated, so sampling is left to the API and output consistency comes from the prompts plus
+// the retry guard in callAIWithBannedPhraseGuard.
+async function callAI(systemPrompt, userPrompt) {
   const apiKey = await getApiKey();
-  const response = await fetch(OPENAI_API_URL, {
+  const response = await fetch(ANTHROPIC_API_URL, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': ANTHROPIC_VERSION,
+      // Required for any request with a browser Origin, which includes an extension service
+      // worker — without it Anthropic rejects the call with a 401 even for a valid key.
+      'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
-      max_tokens: 2000,
-      ...(temperature !== undefined ? { temperature } : {}),
+      model: ANTHROPIC_MODEL,
+      // Thinking shares this budget with the answer. At 2000, one post spent 1,477 tokens thinking
+      // and was cut off mid-JSON; several others came within 100 tokens. Only used tokens are billed.
+      max_tokens: 8000,
       messages: [
-        { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
+      system: systemPrompt,
     }),
   });
   if (!response.ok) {
+    // Anthropic's own status-code vocabulary, not OpenAI's — notably 529 (overloaded), not 503,
+    // is the "service temporarily down" signal here. Internal error-code strings stay the same
+    // (NO_API_KEY/INVALID_KEY/RATE_LIMITED/API_DOWN) so nothing downstream needs to know the
+    // provider changed.
     if (response.status === 401) throw new Error('INVALID_KEY');
     if (response.status === 429) throw new Error('RATE_LIMITED');
-    if (response.status === 503) throw new Error('API_DOWN');
+    if (response.status === 500 || response.status === 529) throw new Error('API_DOWN');
     const err = await response.json().catch(() => ({}));
     throw new Error(err?.error?.message || `API error ${response.status}`);
   }
   const data = await response.json();
-  return (data.choices[0].message.content || '').trim();
+  // A truncated answer must fail loudly: returned as-is, a half-written post showed up in the UI as
+  // raw JSON. TRUNCATED_RESPONSE already has user-facing copy ("cut short — try again").
+  if (data.stop_reason === 'max_tokens') throw new Error('TRUNCATED_RESPONSE');
+  // The model may emit a thinking block before its answer (content = [thinking, text]), so the
+  // answer is not reliably content[0] — collect every text block instead.
+  return (data.content || [])
+    .filter(b => b.type === 'text')
+    .map(b => b.text)
+    .join('')
+    .trim();
 }
 
 // A small, deliberately narrow set of literal phrases confirmed via live testing to slip through
@@ -447,6 +486,17 @@ const BANNED_PHRASES = [
   'i came across your profile',
   'i noticed from your profile',
   'impressive background',
+  'caught my eye',
+  'glad to have you in my network',
+  "this one's familiar",
+  'familiar ground',
+  'a lot of moving parts',
+  'a lot of moving pieces',
+  'refreshingly honest',
+  "i'd value having you in my network",
+  'right in my lane',
+  'says a lot about',
+  'no pressure at all',
 ];
 
 function findBannedPhrase(text) {
@@ -454,31 +504,27 @@ function findBannedPhrase(text) {
   return BANNED_PHRASES.find(p => lower.includes(p)) || null;
 }
 
-// A fixed, moderate temperature (down from the provider default of ~1.0) for every message-writing
-// call — the single biggest lever behind "sometimes great, sometimes not," since the exact same
-// prompt can otherwise swing from tight and on-brief to meandering purely on sampling luck. Still
-// well above 0 so messages don't read as robotically identical across contacts.
-const MESSAGE_TEMPERATURE = 0.75;
-
 // Only one strategy has a structural signature reliable enough to check mechanically without
 // real risk of false positives: SHARP QUESTION explicitly requires the message to BE a question,
 // so "does it end in a question mark" is a fair, cheap check. The other 7 strategies don't have an
 // equally crisp, unambiguous signature (e.g. "no pitch" or "grounded in real data" can't be
-// verified by a string check) — better to leave those to the instruction + temperature control
+// verified by a string check) — better to leave those to the instructions
 // than add a brittle heuristic that could false-positive on a genuinely good message.
-function violatesStrategyShape(text, strategy) {
-  if (strategy === 'sharp_question') {
-    const trimmed = (text || '').trim();
-    if (trimmed && !/[?？]\s*$/.test(trimmed)) return 'was written as the Sharp Question strategy but doesn\'t end in a question';
-  }
+function violatesStrategyShape(text, strategy, requireQuestion) {
+  const trimmed = (text || '').trim();
+  const endsInQuestion = /[?？]\s*$/.test(trimmed);
+  if (strategy === 'sharp_question' && trimmed && !endsInQuestion) return 'was written as the Sharp Question strategy but doesn\'t end in a question';
+  // First messages must close on one low-friction question (the framework's rule 3) — measured: ~1
+  // in 10 ended on a statement instead. Give First is exempt: it deliberately may carry no ask.
+  if (requireQuestion && strategy !== 'give_first' && trimmed && !endsInQuestion) return 'did not end with the one low-friction question the framework requires';
   return null;
 }
 
-async function callAIWithBannedPhraseGuard(systemPrompt, userPrompt, maxChars, strategy) {
-  const first = await callAI(systemPrompt, userPrompt, { temperature: MESSAGE_TEMPERATURE });
+async function callAIWithBannedPhraseGuard(systemPrompt, userPrompt, maxChars, strategy, { requireQuestion = false } = {}) {
+  const first = await callAI(systemPrompt, userPrompt);
   const hit = findBannedPhrase(first);
   const overLength = typeof maxChars === 'number' && first.length > maxChars;
-  const shapeViolation = violatesStrategyShape(first, strategy);
+  const shapeViolation = violatesStrategyShape(first, strategy, requireQuestion);
   if (!hit && !overLength && !shapeViolation) return first;
 
   const violations = [];
@@ -486,7 +532,7 @@ async function callAIWithBannedPhraseGuard(systemPrompt, userPrompt, maxChars, s
   if (overLength) violations.push(`ran ${first.length} characters, over the ${maxChars}-character limit`);
   if (shapeViolation) violations.push(shapeViolation);
   const retryPrompt = `${systemPrompt}\n\nYour previous attempt ${violations.join(' and ')}. Rewrite from scratch fixing this — don't just trim or swap words, write a genuinely tighter version that respects every rule above.`;
-  return callAI(retryPrompt, userPrompt, { temperature: MESSAGE_TEMPERATURE });
+  return callAI(retryPrompt, userPrompt);
 }
 
 // ─── Profile Analysis ─────────────────────────────────────────────────────────
@@ -663,16 +709,16 @@ Return exactly this structure:
   "timingCaution": "One sentence flagging a REAL reason right now might be bad timing to reach out — e.g. they started this exact role within the last few weeks, their company shows visible signs of layoffs or contraction, or they explicitly posted about being on leave or overwhelmed. Empty string if nothing genuinely stands out — do not invent a caution just to fill this field."
 }
 
-industryFit guide:
-- Strong: their company's industry is one of the TARGET INDUSTRIES below (or closely adjacent).
-- Partial: a plausible B2B buyer, but not in a listed target industry.
-- Poor: their company is in an EXCLUDED industry or clearly irrelevant. Set "excluded": true and level "Poor".
-- industryFit MUST influence potentialClient.score: Poor/excluded fit can never score High.
+industryFit guide (judge against BOTH the target industries AND the "Our ideal customer" description below — the description is the more specific of the two):
+- Strong: their company is in a TARGET INDUSTRY (or closely adjacent) and does not contradict the ideal-customer description.
+- Partial: not in a listed target industry, but clearly the KIND of company the ideal-customer description names (same type of business, same problem). "Could in theory buy something" is not Partial.
+- Poor: their company is in an EXCLUDED industry or clearly irrelevant. Set "excluded": true ONLY when it matches one of the listed EXCLUDED INDUSTRIES; clearly irrelevant but not listed is "Poor" with "excluded": false.
+- industryFit MUST influence potentialClient.score: Poor/excluded fit is always Low; Partial fit can never score High.
 
 Scoring guide (combine seniority AND industry fit):
-- High: decision-maker (Director/VP/C-level/Owner) AND Strong or Partial fit
-- Medium: some influence or buying signals, at least Partial fit
-- Low: individual contributor, OR Poor/excluded fit, OR irrelevant
+- High: decision-maker (Director/VP/C-level/Owner) AND Strong fit
+- Medium: decision-maker with Partial fit, OR a manager/influencer with Strong fit
+- Low: individual contributor, OR Poor/excluded fit, OR irrelevant, OR not enough data to judge fit at all (no company, no industry, no description) — a title alone never earns Medium
 
 decisionMaker guide:
 - Yes: C-level, VP, Director, Owner, Founder
@@ -694,11 +740,25 @@ ${buildIcpContext(cfg)}`;
   const raw = await callAI(systemPrompt, userPrompt);
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('TRUNCATED_RESPONSE');
+  let result;
   try {
-    return JSON.parse(jsonMatch[0]);
+    result = JSON.parse(jsonMatch[0]);
   } catch {
     throw new Error('TRUNCATED_RESPONSE');
   }
+
+  // With no target industries configured, the rubric collapses to seniority alone — measured: a VP
+  // at a concrete-paving company scored "High" for an AI-infrastructure seller. A rep can't tell
+  // that apart from a real ICP match, so it's capped here in code (not just asked of the model) and
+  // flagged for the panel to say plainly that the score wasn't checked against any ICP.
+  if (cfg && !cfg.targets.length) {
+    result.icpMissing = true;
+    if (result.potentialClient?.score === 'High') {
+      result.potentialClient.score = 'Medium';
+      result.potentialClient.reasoning = `${result.potentialClient.reasoning || ''} (Capped at Medium: no target industries are set, so ICP fit is unverified.)`.trim();
+    }
+  }
+  return result;
 }
 
 // ─── Bulk Search-Results Scoring ───────────────────────────────────────────────
@@ -744,13 +804,27 @@ One entry per input person, in the same order, using the exact same "id" value g
   if (!jsonMatch) throw new Error('TRUNCATED_RESPONSE');
   try {
     const parsed = JSON.parse(jsonMatch[0]);
-    return { scores: Array.isArray(parsed.scores) ? parsed.scores : [] };
+    const scores = Array.isArray(parsed.scores) ? parsed.scores : [];
+    // Same seniority-only collapse as handleAnalyzeProfile when no B2B ICP is set — same cap.
+    if (cfg && !cfg.targets.length) {
+      scores.forEach(s => { if (s.score === 'High') s.score = 'Medium'; });
+      return { scores, icpMissing: true };
+    }
+    return { scores };
   } catch {
     throw new Error('TRUNCATED_RESPONSE');
   }
 }
 
 // ─── Connection Request ───────────────────────────────────────────────────────
+
+// Job Search used to forbid any mention of the sender, even to a recruiter who had just posted the
+// sender's exact role — measured: the model either broke the rule or wrote a "just networking" note
+// that a strict reviewer read as a disguised application. Honest interest beats a disguise when the
+// role is public; pure networking stays sender-free.
+const JOB_HIRING_CONTEXT_RULE = `HIRING-CONTEXT RULE — first decide which situation this is, from their profile data only:
+(a) They are visibly hiring for a role that matches the sender's target roles (a recruiter or hiring manager whose headline, role description, or posts mention an open role in that area). Be honest about the interest: a note that pretends to be "just networking" to someone who publicly posted the role reads as a disguised application. In one short clause name the role, give ONE concrete reason the sender fits (only from the sender's real background below), then ask one specific question about the role or the team. No résumé dump, nothing desperate ("any opportunity", "please consider me"), and never "open to work".
+(b) Anyone else: pure peer networking. Keep it entirely about their work, with no sender background and no job-seeking.`;
 
 // Grounded in 2026 LinkedIn acceptance-rate research (Leadriver's 50,000+ request benchmark,
 // Belkins' 20M+ outreach study, Closely's connection-request psychology data): acceptance barely
@@ -765,7 +839,9 @@ const CONNECTION_REQUEST_FRAMEWORK = `CONNECTION REQUEST FRAMEWORK — a recipie
 2. NO SELLING: a connection note that pitches, offers, or explains what the sender does gets ignored faster here than anywhere else in the sequence — there isn't even a relationship yet to justify it. The trigger itself is the reason to connect; it doesn't need a value pitch attached.
 3. SHORTER THAN THE LIMIT: the character cap below is a ceiling, not a target to fill. The strongest notes in the data run 140-180 characters — well under most limits — not padded out to the maximum. Only use more of the budget if there's a second real, specific detail worth adding, never to sound more thorough.
 
-If there is no genuine trigger for this person, a short, honest, low-key note beats a generic one dressed up to sound personalized — vague flattery performs worse than no note at all.`;
+If there is no genuine trigger for this person, a short, honest, low-key note beats a generic one dressed up to sound personalized — vague flattery performs worse than no note at all.
+
+4. IT IS AN INVITATION, NOT A MESSAGE: they have not accepted yet. Never write as if they have ("glad to have you in my network", "thanks for connecting", "great to be connected"). Never sign off with your name — LinkedIn already shows who sent it, and a sign-off wastes characters.`;
 
 export async function handleGenerateConnectionRequest(profileData, intent, userNotes, contextMaterial, previousAttempt, strategy) {
   const isJobSearch = intent === 'job_search';
@@ -791,8 +867,8 @@ Rules:
 - Hard limit: 200 characters total (count carefully)
 - No corporate speak, no buzzwords
 - Show genuine interest in their company or work — not desperation
-- No mention of "looking for opportunities" or "open to work"
-- Sound like a curious professional, not an applicant
+- Never say "looking for opportunities" or "open to work"
+${JOB_HIRING_CONTEXT_RULE}
 ${PRECONVERSATION_GROUNDING}
 
 ${WHY_THEM_WHY_NOW_GATE}
@@ -855,29 +931,52 @@ Return ONLY the connection request text. Nothing else. No quotes around it.`;
   systemPrompt += buildVarietyNote(previousAttempt, strategy);
 
   const userPrompt = buildProfileText(profileData, userNotes);
-  return { text: await callAIWithBannedPhraseGuard(systemPrompt, userPrompt, 200, strategy) };
+  const text = await callAIWithBannedPhraseGuard(systemPrompt, userPrompt, 200, strategy);
+  const senderName = cfg?.business?.senderName || b2cProfile?.senderName || jobProfile?.senderName;
+  return { text: stripSignOff(text, senderName) };
+}
+
+// Connection requests and first messages both still signed off with the sender's name in testing ("…shakes
+// out. Husnain") — a trailing-name check is cheap and certain, so it's removed here rather than
+// trusted to the instruction alone. Only strips a name sitting at the very end on its own.
+function stripSignOff(text, senderName) {
+  const name = (senderName || '').trim().split(/\s+/)[0];
+  if (!name) return text;
+  const n = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text
+    .replace(new RegExp(`([.!?])\\s*[—–-]?\\s*${n}[.!]?\\s*$`, 'i'), '$1')
+    .replace(new RegExp(`\\n\\s*[—–-]?\\s*${n}[.!]?\\s*$`, 'i'), '')
+    .trim();
 }
 
 // ─── First Message ────────────────────────────────────────────────────────────
 
-// Grounded in current outbound-messaging research (independently corroborated across multiple
-// 2026 cold-outreach playbooks): messages that pitch in the first touch — even just hinting at
-// ROI, efficiency, or what the sender offers — measurably underperform ones that stay purely
-// curious about the recipient. Reply rates for first-touch pitches fall below 5%; concise
-// (40-70 word) messages built around one real, specific detail and closed with a low-friction
-// question routinely land in the 25-40% range. This replaces the older "hint at value" guidance
-// that used to live in the b2b decision-maker branch, which was itself fighting this framework.
-const FIRST_MESSAGE_FRAMEWORK = `FIRST-MESSAGE FRAMEWORK — this is the actual structure of a message that gets replies, not a style suggestion:
+// Grounded in 2026 cold-outreach data: first touches that pitch (features, ROI, "we help companies
+// like yours", a call ask) fall below 5% reply; concise 40-70 word messages built on one real detail
+// and a low-friction question land around 25-40%. The pure no-pitch version of this, though, made
+// every message read as a curious peer with no reason to be writing — the BD team's direct complaint
+// was that messages never said why the sender was relevant. allowBridge permits exactly one short
+// relevance clause (sender's real expertise tied to THEIR situation) without crossing into a pitch.
+// Job Search passes false: a job seeker's first message stays entirely about the recipient.
+function buildFirstMessageFramework(allowBridge) {
+  const situation = allowBridge
+    ? `2. THEIR SITUATION FIRST, PLUS ONE RELEVANCE BRIDGE: keep the message mostly about them — an observation, or what you noticed about their situation. Then add exactly ONE short clause (about 15 words max) that connects what the sender genuinely does (taken only from the sender context provided — never invented) to THIS person's specific situation, so they understand why you, specifically, are writing. Make it specific to THEIR problem — name the particular thing the sender has built or worked on that relates to what this person described — not a generic company tagline. Test it: if the bridge would read the same in a message to a different prospect, it is a tagline — rewrite it to name the specific part of THEIR problem the sender works on. Phrase it fresh every time: never use stock bridge phrasing like "so this is familiar", "familiar ground", "this one's familiar", or "I think about this a lot". It is context, not a pitch: no feature lists, no ROI or efficiency claims, no "we help companies like yours", no pricing, no request for a call or meeting. If there is no sender context, or the bridge would feel forced for this person, leave it out entirely.`
+    : `2. THEIR SITUATION, NOT YOUR PITCH: the body stays entirely about them — an observation, a genuine question, or what you noticed about their situation. Do not describe what the sender does, offers, or has achieved, and do not hint at value, ROI, or efficiency gains — even softly. That conversation happens after they reply, never in message 1.`;
+  const selfCheck = allowBridge
+    ? `Self-check before finalizing: does the first line prove real, specific knowledge of THIS person? Does the message describe the sender in more than one short clause, or make any value, ROI, or "we help" claim? If either check fails, rewrite before returning.`
+    : `Self-check before finalizing: does the first line prove real, specific knowledge of THIS person? Does any part of the message describe the sender's company, product, or value instead of the recipient's own situation? If either check fails, rewrite before returning.`;
+  return `FIRST-MESSAGE FRAMEWORK — this is the actual structure of a message that gets replies, not a style suggestion:
 
 1. SPECIFIC HOOK (first line): open on one real, individual detail — something true of THIS person that couldn't be copy-pasted to the next 1,000 profiles unchanged. If nothing specific enough exists, say so honestly (a warm, generic opener beats a faked-specific one) — never invent one.
-2. THEIR SITUATION, NOT YOUR PITCH: the body stays entirely about them — an observation, a genuine question, or what you noticed about their situation. Do not describe what the sender does, offers, or has achieved, and do not hint at value, ROI, or efficiency gains — even softly. The moment a message explains the sender instead of the recipient, it reads as a pitch and reply rates collapse. That conversation happens after they reply, never in message 1.
+${situation}
 3. ONE LOW-FRICTION QUESTION: end with a single question that's easy and low-stakes to answer — never a request for a call, a meeting, a demo, pricing, or any other real commitment. It should feel genuinely optional — the recipient should be able to ignore it without feeling rude.
 
 LENGTH: the single most consistent finding in current outreach data. Keep the whole message to 40-70 words (tighter — 40-50 — for senior or executive recipients, who get the most outreach and scan the fastest). Every sentence past that measurably hurts reply rate rather than helping it. If a draft runs long, cut explanation before cutting personalization.
 
 FORMAT: write as 1 short paragraph, or 2 short paragraphs separated by a blank line only if there are genuinely two distinct beats (the hook, then the question) — never one dense wall of text, and never pad to a second paragraph just to have one when the whole thought is naturally a single beat.
 
-Self-check before finalizing: does the first line prove real, specific knowledge of THIS person? Does any part of the message describe the sender's company, product, or value instead of the recipient's own situation? If either check fails, rewrite before returning.`;
+${selfCheck}`;
+}
 
 function buildConnectionRecencyNote(stage, daysSinceLastTouch) {
   if (stage !== 'connection_sent' || !Number.isFinite(daysSinceLastTouch) || daysSinceLastTouch <= 2) return '';
@@ -919,12 +1018,16 @@ export async function handleGenerateFirstMessage(profileData, analysis, intent, 
   const toneGuide = toneInstructions[tone] || toneInstructions.warm;
   const analysisCtx = buildAnalysisContext(a, intent);
   const maxChars = isJobSearch ? 300 : 350;
+  // The relevance bridge is only possible when there's real sender context to draw on — without it
+  // the model would have to invent what the sender does, which the grounding rules forbid.
+  const hasB2cSender = !!(b2cProfile && (b2cProfile.expertise || b2cProfile.services));
+  const hasB2bSender = !!(cfg?.business && (cfg.business.expertise || cfg.business.offer));
 
   let systemPrompt;
 
   if (isJobSearch) {
     const approachGuide = scoreVal === 'Strong'
-      ? 'Strong hiring signal — be direct and purposeful. Reference their active hiring context or recent company move. Make it clear you are someone worth talking to, not just someone looking for a job.'
+      ? 'Strong hiring signal — they are hiring in the sender\'s area. Follow case (a) of the HIRING-CONTEXT RULE: honest interest in the specific role, one concrete fit reason, one specific question.'
       : isMidValue
       ? 'Possible hiring signal — be curious and exploratory. Express genuine interest in their work.'
       : 'Weak hiring signal — keep it short and very low-commitment. Pure relationship-building, no hint of job-seeking.';
@@ -934,14 +1037,14 @@ export async function handleGenerateFirstMessage(profileData, analysis, intent, 
 TONE: ${toneGuide}
 APPROACH FOR THIS CONTACT: ${approachGuide}
 
-${FIRST_MESSAGE_FRAMEWORK}
+${buildFirstMessageFramework(scoreVal === 'Strong')}
 
 ${buildStrategyGuidance(strategy)}
 
 JOB-SEARCH-SPECIFIC RULES:
-- Sound like an accomplished professional reaching out to exchange ideas — never like a job seeker asking for a favour
-- Never mention "looking for opportunities", "open to work", "my next role", or anything that frames you as seeking something
-- Never reference your own background, resume, or job search in this message — the specific hook and the question are both about THEM
+- Sound like an accomplished professional, never like someone asking for a favour
+- Never say "looking for opportunities", "open to work", or "my next role"
+${JOB_HIRING_CONTEXT_RULE}
 
 HARD RULES:
 - Max 300 characters total
@@ -968,13 +1071,13 @@ ${AUTHENTICITY_RULES}
 TONE: ${toneGuide}
 APPROACH FOR THIS PROSPECT: ${approachGuide}
 
-${FIRST_MESSAGE_FRAMEWORK}
+${buildFirstMessageFramework(hasB2cSender)}
 
 ${buildStrategyGuidance(strategy)}
 
 B2C-SPECIFIC RULES:
 - Establish peer credibility through how the message sounds, not by stating it — position the sender as someone who works in the same domain, not a vendor
-- Never say "I can help you with X", "my services include Y", or anything naming what the sender offers — that is the exact pitch pattern the framework above bans
+- Never say "I can help you with X" or "my services include Y" — beyond the single relevance clause the framework allows, phrased as context rather than an offer, the message does not describe the sender's services
 
 HARD RULES:
 - Max 350 characters total
@@ -1011,7 +1114,7 @@ DECISION-MAKER ASSESSMENT: ${dmGuide}
 BUDGET SIGNAL: ${budgetGuide}
 APPROACH FOR THIS PROSPECT: ${approachGuide}
 
-${FIRST_MESSAGE_FRAMEWORK}
+${buildFirstMessageFramework(hasB2bSender)}
 
 ${buildStrategyGuidance(strategy)}
 
@@ -1042,7 +1145,9 @@ ${AUTHENTICITY_RULES}
   systemPrompt += buildVarietyNote(previousAttempt, strategy);
 
   const userPrompt = buildProfileText(profileData);
-  return { text: await callAIWithBannedPhraseGuard(systemPrompt, userPrompt, maxChars, strategy) };
+  const text = await callAIWithBannedPhraseGuard(systemPrompt, userPrompt, maxChars, strategy, { requireQuestion: true });
+  const senderName = cfg?.business?.senderName || b2cProfile?.senderName || jobProfile?.senderName;
+  return { text: stripSignOff(text, senderName) };
 }
 
 // ─── Refine Message ───────────────────────────────────────────────────────────
@@ -1063,9 +1168,11 @@ TONE: ${tone?.toUpperCase() || 'WARM'}
 Tone definition: ${toneGuide}
 
 Rules:
-- Keep the same core meaning and intent as the original
+- Keep the same core meaning and intent as the original, including its main question — and do not add claims, opinions, or credentials it didn't make (e.g. turning curiosity into "I have strong opinions on this")
 - Apply the tone throughout — it should feel consistent, not patchy
-- Follow the user's instructions exactly
+- Follow the user's instructions exactly, and treat length instructions as measurable: "shorter" means cutting at least a third of the words; "longer" means meaningfully more. Measured: "make it shorter" once went from 36 words to 35.
+- If the instruction adds an ask (such as a call), attach it naturally to the message's existing question rather than stacking a second request, and skip softeners like "no pressure at all"
+- Use the recipient's name and company only as they appear in the profile below
 - Max 350 characters unless the instructions explicitly request more
 ${AUTHENTICITY_RULES}
 - Return ONLY the refined message text. No quotes, no explanation.`;
@@ -1081,14 +1188,12 @@ ${instructions?.trim() || 'No specific instructions — just apply the tone cons
 
 ${analysis ? `ANALYSIS CONTEXT:\n${buildAnalysisContext(analysis, intent)}` : ''}`;
 
-  return { text: await callAIWithBannedPhraseGuard(systemPrompt, userPrompt) };
+  return { text: await callAIWithBannedPhraseGuard(systemPrompt, userPrompt, 350) };
 }
 
 // ─── Post Creator ─────────────────────────────────────────────────────────────
 
 export async function handleSuggestPostTopics(creatorProfile, recentPosts = [], mode = 'personal', companyProfile = null) {
-  const apiKey = await getApiKey();
-
   let context, styleDesc, topicTypes;
 
   if (mode === 'company' && companyProfile) {
@@ -1122,12 +1227,9 @@ Company goal: ${co.goal || 'attract clients and build brand awareness'}`;
     ? `\n\nCRITICAL — these topics were already posted recently. Do NOT suggest anything similar or overlapping:\n${recentPosts.map((p, i) => `${i + 1}. "${p.slice(0, 200)}"`).join('\n')}`
     : '';
 
-  const userPrompt = `You are a LinkedIn content strategist${mode === 'company' ? ' specializing in B2B company thought leadership' : ' for tech thought leaders'}.
+  const systemPrompt = `You are a LinkedIn content strategist${mode === 'company' ? ' specializing in B2B company thought leadership' : ' for tech thought leaders'}.
 
-${context}
-Preferred style: ${styleDesc}
-
-Suggest 5 fresh, high-performing LinkedIn post topics. Mix of: ${topicTypes}.${avoidSection}
+Suggest 5 fresh, high-performing LinkedIn post topics for the person/company described below.
 
 Respond ONLY with valid JSON — no markdown, no explanation:
 {
@@ -1146,37 +1248,33 @@ Requirements:
 - Grounded in real current developments — no generic advice
 - Phrased to appeal to the stated audience`;
 
-  const res = await fetch(OPENAI_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: OPENAI_MODEL, temperature: 0.88, messages: [{ role: 'user', content: userPrompt }] }),
-  });
-  if (!res.ok) {
-    if (res.status === 401) throw new Error('INVALID_KEY');
-    if (res.status === 429) throw new Error('RATE_LIMITED');
-    if (res.status === 503) throw new Error('API_DOWN');
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `OpenAI error ${res.status}`);
-  }
-  const data = await res.json();
-  const raw = (data.choices[0]?.message?.content || '').trim();
-  try { return JSON.parse(raw); } catch {
-    const m = raw.match(/\{[\s\S]*\}/);
-    return m ? JSON.parse(m[0]) : { topics: [] };
-  }
+  const userPrompt = `${context}
+Preferred style: ${styleDesc}
+
+Mix of topic types: ${topicTypes}.${avoidSection}`;
+
+  const raw = await callAI(systemPrompt, userPrompt);
+  const parsed = parseJsonObject(raw);
+  return { topics: Array.isArray(parsed.topics) ? parsed.topics : [] };
 }
 
 export async function handleGeneratePost({ topic, angle, hook, style, creatorProfile, mode, companyProfile }) {
-  const apiKey = await getApiKey();
-
   let systemContext, authorCtx, styleGuide, hashtagContext;
+
+  // Posts previously saw only a topic list and an audience, so they had no first-hand proof to draw
+  // on — a strict review called them credible-sounding but generic. The sender's real background
+  // (already saved in their outreach profiles) is the only allowed source of proof points.
+  const [jobProfile, b2cProfile, sales] = await Promise.all([getJobProfile(), getB2cProfile(), getSalesConfig()]);
+  const proof = mode === 'company'
+    ? [sales.business?.offer, sales.business?.valueProp].filter(Boolean).join(' ')
+    : [jobProfile.background, b2cProfile.valueProp].filter(Boolean).join(' ');
 
   if (mode === 'company' && companyProfile) {
     const co = companyProfile;
     const coStyleGuides = {
-      thought_leadership: 'Thought Leadership: Open with a bold industry observation, unpack the insight with data or evidence, position the company as a forward-thinking authority, close with an invitation to discuss',
-      industry_insight: 'Industry Insight: Lead with a striking statistic or trend, explain what it means for the industry, share the company\'s perspective, end with a question for the audience',
-      case_study: 'Case Study/Success: Open with the client\'s challenge (no names needed), describe the approach and solution, quantify the result, close with the lesson or takeaway',
+      thought_leadership: 'Thought Leadership: Open with a sharp industry observation, unpack it with clear reasoning (and evidence only if it is real — see credibility rules), position the company as a forward-thinking authority, close with an invitation to discuss',
+      industry_insight: 'Industry Insight: Lead with a trend (cite a statistic only if it is widely known and verifiable — never a made-up figure), explain what it means for the industry, share the company\'s perspective, end with a question for the audience',
+      case_study: 'Case Study/Success: Open with the client\'s challenge (no names needed), describe the approach and solution, state the result — with numbers only if they come from the real background provided, otherwise qualitatively — close with the lesson or takeaway',
       culture: 'Company Culture: Open with a specific authentic moment or milestone, tell the human story behind it, tie it to company values, end with a culture-forward message',
       product_spotlight: 'Product Spotlight: Open with the pain point your product solves (not the product itself), introduce the solution naturally, show the outcome, soft CTA',
     };
@@ -1188,12 +1286,12 @@ About: ${co.about || ''}
 Products/Services: ${co.products || ''}
 ICP: ${co.icp || 'business decision makers'}
 Goal: ${co.goal || 'attract clients, build brand awareness'}`;
-    hashtagContext = `Niche company hashtags (#${(co.industry || 'Tech').replace(/\s+/g, '')}), broad (#B2B #BusinessGrowth), and topic-specific. No #LinkedIn.`;
+    hashtagContext = `Hashtags specific to the post's topic and the company's field (e.g. the technology or problem discussed). No generic engagement tags like #B2B, #BusinessGrowth, #Innovation, or #LinkedIn.`;
   } else {
     const cp = creatorProfile || {};
     const domains = (Array.isArray(cp.domains) && cp.domains.length) ? cp.domains.join(', ') : 'AI, machine learning, technology';
     const personalStyleGuides = {
-      educational: 'Educational/Insight: Open with a surprising fact or bold statement, explain the concept in plain terms, give a concrete example or analogy, close with a key takeaway and question',
+      educational: 'Educational/Insight: Open with a sharp, true claim, explain the concept in plain terms, give a concrete example or analogy, close with a key takeaway and question',
       story: 'Personal Story: Open with a vivid specific moment (not "I"), build the narrative arc, share the lesson learned, make it universally relatable',
       hottake: 'Hot Take: Open with a bold counter-intuitive claim, dismantle the common view with evidence, offer your alternative framework, invite respectful debate',
       tips: 'Quick Tips: Lead with the value proposition ("Here\'s how to…" or "X things I wish I knew"), 3-5 numbered points, each crisp and actionable, close with a "save this" or follow CTA',
@@ -1208,14 +1306,7 @@ Goal: ${cp.goal || 'build personal brand'}`;
 
   const wordCount = mode === 'company' ? '200-320 words' : '150-280 words';
 
-  const userPrompt = `${systemContext}
-
-Write a LinkedIn post on:
-Topic: ${topic}
-Angle: ${angle || 'your best angle'}
-Opening hook to build from: ${hook || 'craft the best hook'}
-Style guide: ${styleGuide}
-${authorCtx}
+  const systemPrompt = `${systemContext}
 
 LinkedIn format rules:
 - First line = scroll-stopper hook. No opener starting with "I" or "We". No emojis at the very start.
@@ -1226,33 +1317,45 @@ LinkedIn format rules:
 - End with one sharp engagement question OR a compelling CTA.
 - Word count: ${wordCount}.
 
+Credibility rules:
+- Write from real experience. Where it strengthens the post, use ONE concrete proof point from the REAL BACKGROUND provided (a real project, number, or lesson). Never invent stories, clients, metrics, or "I once saw a team that..." anecdotes that aren't in that background. If no background is provided, make the argument on its merits instead of faking experience.
+- Avoid the stock AI-written LinkedIn template: one-line dramatic reveals ("The model was never the problem.", "That's where most roadmaps quietly die."), then-vs-now hooks of any timeframe ("Six months ago... Now...", "Two years ago... Today..."), "→" arrow bullet lists, "winners won't be X, they'll be Y" closers, symmetrical aphorisms, and drama words like "quietly", "silently", "obsolete". Lead with the sharpest concrete claim and write like a practitioner explaining something to a peer.
+- If you use a proof point, make clear it is the author's own work (e.g. "a voice platform I built"), not a vague "teams I know".
+- Never invent incidents, numbers, or quotes ("an agent looped 47 times", "a client cut costs 60%"). A scenario that isn't from the real background must be framed as hypothetical ("picture an agent that...").
+- Every technical claim must be precisely true. Don't say a technique "solves", "fixes", or gives something "for free" unless it actually does — a CTO audience will catch an overclaim and stop trusting the rest.
+
 Return ONLY valid JSON:
 {
   "post": "Full post text (use \\n for line breaks between paragraphs)",
-  "hashtags": ["hashtag1", "hashtag2", "hashtag3", "hashtag4", "hashtag5"],
-  "imagePrompt": "Write a detailed photorealistic image prompt for this post. Describe a cinematic, real-world scene or abstract concept visualization — dramatic lighting, depth, atmosphere, professional color grading. NOT a cartoon, NOT an illustration, NOT flat design. No text overlay, no logos, no identifiable faces. Think high-end editorial photography meets concept art. The image must feel real and visually compelling, directly reflecting the post topic."
+  "hashtags": ["hashtag1", "hashtag2", "hashtag3", "hashtag4", "hashtag5"]
 }
 
-Hashtag rules: 5-7 tags. ${hashtagContext}`;
+Hashtag rules: 5-7 tags.`;
 
-  const res = await fetch(OPENAI_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: OPENAI_MODEL, temperature: 0.78, messages: [{ role: 'user', content: userPrompt }] }),
-  });
-  if (!res.ok) {
-    if (res.status === 401) throw new Error('INVALID_KEY');
-    if (res.status === 429) throw new Error('RATE_LIMITED');
-    if (res.status === 503) throw new Error('API_DOWN');
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `OpenAI error ${res.status}`);
+  const userPrompt = `Write a LinkedIn post on:
+Topic: ${topic}
+Angle: ${angle || 'your best angle'}
+Opening hook to build from: ${hook || 'craft the best hook'}
+Style guide: ${styleGuide}
+${authorCtx}
+${proof ? `\nREAL BACKGROUND (the only allowed source of proof points):\n${proof}` : ''}
+
+${hashtagContext}`;
+
+  const raw = await callAI(systemPrompt, userPrompt);
+  const parsed = parseJsonObject(raw);
+  if (typeof parsed.post !== 'string' || !parsed.post.trim()) throw new Error('TRUNCATED_RESPONSE');
+  return { post: parsed.post, hashtags: Array.isArray(parsed.hashtags) ? parsed.hashtags : [] };
+}
+
+// Both post handlers ask for JSON. Anything that doesn't parse into an object is an error the UI
+// already explains — never raw model text, which previously landed in the post box as literal JSON.
+function parseJsonObject(raw) {
+  const candidates = [raw, (raw.match(/\{[\s\S]*\}/) || [])[0]].filter(Boolean);
+  for (const c of candidates) {
+    try { const v = JSON.parse(c); if (v && typeof v === 'object') return v; } catch {}
   }
-  const data = await res.json();
-  const raw = (data.choices[0]?.message?.content || '').trim();
-  try { return JSON.parse(raw); } catch {
-    const m = raw.match(/\{[\s\S]*\}/);
-    return m ? JSON.parse(m[0]) : { post: raw, hashtags: [], imagePrompt: '' };
-  }
+  throw new Error('TRUNCATED_RESPONSE');
 }
 
 // ─── Follow-Up ────────────────────────────────────────────────────────────────
@@ -1319,29 +1422,4 @@ Return ONLY the message text, followed by the NEED_ID and LEAD_READ lines descri
     : withContext;
 
   return { text: await callAIWithBannedPhraseGuard(finalPrompt, `CONVERSATION:\n${conversationText || '(no messages found)'}`, 300, strategy) };
-}
-
-export async function handleGeneratePostImage(prompt) {
-  const apiKey = await getApiKey();
-  const fullPrompt = `Cinematic photorealistic concept photography for a professional LinkedIn post: ${prompt}. Style: high-end editorial photography, dramatic natural or studio lighting, shallow depth of field, rich realistic textures, professional color grading. Absolutely NO cartoons, NO vector illustrations, NO flat design, NO clip art. NO text overlay, NO logos, NO identifiable human faces. The image must look like a real photograph or a hyper-realistic render — visually striking, modern, and conceptually meaningful. 4K quality, ultra-detailed.`;
-
-  const res = await fetch('https://api.openai.com/v1/images/generations', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: 'gpt-image-1',
-      prompt: fullPrompt,
-      n: 1,
-      size: '1024x1024',
-      quality: 'high',
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error?.message || `Image generation error ${res.status}`);
-
-  const b64 = data.data?.[0]?.b64_json;
-  const url = data.data?.[0]?.url;
-  if (b64) return { b64 };
-  if (url) return { url };
-  throw new Error('No image data returned from API');
 }

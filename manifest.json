@@ -18,7 +18,7 @@
   },
   "host_permissions": [
     "https://www.linkedin.com/*",
-    "https://api.openai.com/*",
+    "https://api.anthropic.com/*",
     "https://api.hubapi.com/*",
     "https://www.googleapis.com/*",
     "https://hokgbtrptddjgwgvvhrb.supabase.co/*"
@@ -51,14 +51,16 @@
     "default_title": "LinkPilot AI",
     "default_popup": "popup/index.html",
     "default_icon": {
-      "16": "assets/extension_icon.png",
-      "48": "assets/extension_icon.png",
-      "128": "assets/extension_icon.png"
+      "16": "assets/icon-16.png",
+      "32": "assets/icon-32.png",
+      "48": "assets/icon-48.png",
+      "128": "assets/icon-128.png"
     }
   },
   "icons": {
-    "16": "assets/extension_icon.png",
-    "48": "assets/extension_icon.png",
-    "128": "assets/extension_icon.png"
+    "16": "assets/icon-16.png",
+    "32": "assets/icon-32.png",
+    "48": "assets/icon-48.png",
+    "128": "assets/icon-128.png"
   }
 }

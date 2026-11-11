@@ -25,8 +25,7 @@
   let pcTopics = [];
   let pcSelected = null;     // { title, angle, hook }
   let pcStyle = 'educational';
-  let pcResult = null;       // { post, hashtags, imagePrompt }
-  let pcImageB64 = null;
+  let pcResult = null;       // { post, hashtags }
   let pcMode = 'personal';   // 'personal' | 'company'
 
   // Time / world clock state
@@ -45,14 +44,14 @@
   // Mirrors background/ai.js's STRATEGY_PLAYBOOK keys exactly; an unrecognized/omitted value
   // falls back to Smart Pick server-side.
   const STRATEGIES = [
-    { val: 'smart_pick',      label: 'Smart Pick',      desc: 'Let AI choose the best fit' },
-    { val: 'curiosity_gap',   label: 'Curiosity Gap',   desc: 'Open with an unexpected detail' },
-    { val: 'direct_value',    label: 'Direct & Clear',  desc: 'Plain, no warm-up' },
-    { val: 'problem_first',   label: 'Problem-First',   desc: 'Name a challenge, ask if it fits' },
-    { val: 'shared_ground',   label: 'Shared Ground',   desc: 'Reference real mutual context' },
-    { val: 'sharp_question',  label: 'Sharp Question',  desc: 'Lead with one specific question' },
-    { val: 'give_first',      label: 'Give First',      desc: 'Offer insight, no ask' },
-    { val: 'relevant_pattern',label: 'Relevant Pattern',desc: 'Share an honest observation' },
+    { val: 'smart_pick',      label: 'Smart pick',      desc: 'LinkPilot picks the best angle' },
+    { val: 'curiosity_gap',   label: 'Curiosity gap',   desc: 'Open with an unexpected detail' },
+    { val: 'direct_value',    label: 'Direct and clear',  desc: 'Plain, no warm-up' },
+    { val: 'problem_first',   label: 'Problem first',   desc: 'Name a challenge, ask if it fits' },
+    { val: 'shared_ground',   label: 'Shared ground',   desc: 'Reference real mutual context' },
+    { val: 'sharp_question',  label: 'Sharp question',  desc: 'Lead with one specific question' },
+    { val: 'give_first',      label: 'Give first',      desc: 'Offer insight, no ask' },
+    { val: 'relevant_pattern',label: 'Relevant pattern',desc: 'Share an honest observation' },
   ];
 
   // ─── IndexedDB ────────────────────────────────────────────────────────────────
@@ -298,13 +297,11 @@
     banner.id = 'lia-search-banner';
     banner.innerHTML = `
       <div class="lia-search-banner-inner">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(167,139,250,0.9)" style="flex-shrink:0">
-          <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/>
-        </svg>
-        <span class="lia-search-banner-label" id="lia-search-banner-label">LinkPilot AI — ICP-aware AI scoring</span>
+        <span class="lia-logo lia-logo--sm" aria-hidden="true">LP</span>
+        <span class="lia-search-banner-label" id="lia-search-banner-label">Score these results against your ICP</span>
         <button id="lia-search-upgrade-btn" class="lia-search-upgrade-btn" style="display:none">Upgrade to Pro</button>
         <button id="lia-search-addall-btn" class="lia-search-score-btn" style="display:none">Add All Qualified to Pipeline</button>
-        <button id="lia-score-btn" class="lia-search-score-btn">Score Results</button>
+        <button id="lia-score-btn" class="lia-search-score-btn">Score results</button>
       </div>`;
 
     banner.querySelector('#lia-search-upgrade-btn')?.addEventListener('click', () => {
@@ -336,7 +333,7 @@
       if (_searchScored) {
         document.querySelectorAll('.lia-search-badge').forEach(el => el.remove());
         document.querySelectorAll('[data-lia-scored]').forEach(el => delete el.dataset.liaScored);
-        btn.textContent = 'Score Results';
+        btn.textContent = 'Score results';
         _searchScored = false;
         const addAllBtn = document.getElementById('lia-search-addall-btn');
         if (addAllBtn) addAllBtn.style.display = 'none';
@@ -426,21 +423,19 @@
     banner.id = 'lia-search-banner';
     banner.innerHTML = `
       <div class="lia-search-banner-inner">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(167,139,250,0.9)" stroke-width="1.8" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
-        <span class="lia-search-banner-label">LinkPilot AI — Sales Navigator search scoring is coming soon. Use standard LinkedIn search (linkedin.com/search/results/people) for AI scoring today.</span>
+        <span class="lia-logo lia-logo--sm" aria-hidden="true">LP</span>
+        <span class="lia-search-banner-label">Sales Navigator scoring is coming soon. Use standard LinkedIn search (linkedin.com/search/results/people) for AI scoring today.</span>
       </div>`;
     const main = document.querySelector('main');
     if (main) main.insertAdjacentElement('afterbegin', banner);
   }
 
-  const SEARCH_SCORE_COLORS = {
-    High:     { fg: '#16a34a', bg: 'rgba(22,163,74,0.10)',   border: 'rgba(22,163,74,0.28)' },
-    Medium:   { fg: '#d97706', bg: 'rgba(217,119,6,0.10)',   border: 'rgba(217,119,6,0.28)'  },
-    Low:      { fg: '#94a3b8', bg: 'rgba(148,163,184,0.08)', border: 'rgba(148,163,184,0.2)' },
-    Strong:   { fg: '#16a34a', bg: 'rgba(22,163,74,0.10)',   border: 'rgba(22,163,74,0.28)' },
-    Possible: { fg: '#d97706', bg: 'rgba(217,119,6,0.10)',   border: 'rgba(217,119,6,0.28)'  },
-    Unlikely: { fg: '#94a3b8', bg: 'rgba(148,163,184,0.08)', border: 'rgba(148,163,184,0.2)' },
-  };
+  // Same tones as the panel's badges. The previous green/amber/slate failed WCAG AA on LinkedIn's
+  // white cards (2.5-3.3:1); these are 5.8-6.9:1.
+  const GOOD = { fg: '#1E6B47', bg: '#E8F5EE', border: '#B9DEC8' };
+  const MID  = { fg: '#7A5200', bg: '#FBF2DC', border: '#EAD39C' };
+  const LOW  = { fg: '#655374', bg: '#F3F0F8', border: '#D6C5EC' };
+  const SEARCH_SCORE_COLORS = { High: GOOD, Strong: GOOD, Medium: MID, Possible: MID, Low: LOW, Unlikely: LOW };
 
   async function scoreVisibleCards() {
     const btn = document.getElementById('lia-score-btn');
@@ -506,7 +501,7 @@
         const badge = document.createElement('span');
         badge.className = 'lia-search-badge';
         badge.title = `${entry.reasoning || entry.score} — click to open profile`;
-        badge.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:700;color:${fg};background:${bg};border:1px solid ${border};margin-left:7px;vertical-align:middle;white-space:nowrap;font-family:-apple-system,BlinkMacSystemFont,sans-serif;line-height:1.7;cursor:pointer;flex-shrink:0;`;
+        badge.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:600;line-height:1.4;color:${fg};background:${bg};border:1px solid ${border};margin-left:7px;vertical-align:middle;white-space:nowrap;font-family:-apple-system,BlinkMacSystemFont,sans-serif;line-height:1.7;cursor:pointer;flex-shrink:0;`;
         badge.innerHTML = `<span style="width:5px;height:5px;border-radius:50%;background:${fg};flex-shrink:0"></span>${entry.score}`;
         // Scored results otherwise dead-end here — the badge is the one thing on a search-results
         // card that's unambiguously "this extension's," so it doubles as the fast path into the
@@ -537,7 +532,7 @@
       if (labelEl) { labelEl.textContent = errMap[err.message] || 'Scoring failed — try again'; labelEl.classList.add('lia-search-banner-err'); }
       const upgradeBtn = document.getElementById('lia-search-upgrade-btn');
       if (upgradeBtn) upgradeBtn.style.display = err.message === 'LIMIT_REACHED' ? '' : 'none';
-      if (btn) { btn.disabled = false; btn.textContent = 'Score Results'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Score results'; }
     }
   }
 
@@ -877,8 +872,8 @@
     bar.id = 'lia-followup-bar';
     bar.innerHTML = `
       <div class="lia-followup-bar-inner">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(167,139,250,0.9)" style="flex-shrink:0"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/></svg>
-        <span class="lia-followup-bar-label">LinkPilot AI</span>
+        <span class="lia-logo lia-logo--sm" aria-hidden="true">LP</span>
+        <span class="lia-followup-bar-label">LinkPilot</span>
         <span id="lia-followup-tag" class="lia-followup-tag"></span>
         <span id="lia-followup-engagement" class="lia-followup-engagement" style="display:none"></span>
         <span id="lia-followup-status" class="lia-followup-status"></span>
@@ -1118,7 +1113,7 @@
         if (status) { status.textContent = errMap[res.error] || 'Error — try again'; status.className = 'lia-followup-status lia-followup-status-err'; }
       } else if (res.text) {
         const { text: messageText, leadRead, timingNote } = parseFollowupMeta(res.text);
-        if (timingNote && status) { status.textContent = `⚠ ${timingNote}`; status.title = timingNote; status.className = 'lia-followup-status lia-followup-status-err'; }
+        if (timingNote && status) { status.textContent = timingNote; status.title = timingNote; status.className = 'lia-followup-status lia-followup-status-err'; }
         // No room in this single-line status strip for a full "strategist's take" block (that
         // lives in the profile-panel tool instead) — fold the AI's honest engagement read into
         // the same confirmation line, and give it longer to be read than a bare checkmark would.
@@ -1126,7 +1121,7 @@
         if (!inserted) {
           await navigator.clipboard.writeText(messageText).catch(() => {});
           if (status && !timingNote) {
-            status.textContent = leadRead ? `✓ Copied · ${leadRead}` : '✓ Copied to clipboard';
+            status.textContent = leadRead ? `Copied · ${leadRead}` : 'Copied to clipboard';
             status.title = leadRead || '';
             status.className = 'lia-followup-status lia-followup-status-ok';
           }
@@ -1135,7 +1130,7 @@
           if (contactProfileUrl) { await advanceStageBySteps(contactProfileUrl, 1); await logOutreachAction('message'); await updateFollowupTag(); }
         } else {
           if (status && !timingNote) {
-            status.textContent = leadRead ? `✓ Inserted · ${leadRead}` : '✓ Inserted into chat';
+            status.textContent = leadRead ? `Inserted · ${leadRead}` : 'Inserted into chat';
             status.title = leadRead || '';
             status.className = 'lia-followup-status lia-followup-status-ok';
           }
@@ -1182,9 +1177,7 @@
     triggerBtn.id = 'lia-trigger';
     triggerBtn.setAttribute('aria-label', 'Open LinkPilot AI');
     triggerBtn.innerHTML = `
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/>
-      </svg>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.5"/><path d="m16 16-1.5-1.5"/></svg>
       <span>Analyze</span>
     `;
     triggerBtn.addEventListener('click', handleTriggerClick);
@@ -1241,7 +1234,7 @@
           <button class="lia-pc-mode-btn" data-mode="company" title="Post for your company">Company</button>
         </div>
         <button class="lia-pc-history-btn" id="lia-pc-history-btn" title="Post history" aria-label="Post history"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></button>
-        <button class="lia-pc-close" aria-label="Close">&times;</button>
+        <button class="lia-pc-close" aria-label="Close" title="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       </div>
       <div class="lia-pc-body" id="lia-pc-body"></div>
     `;
@@ -1254,11 +1247,12 @@
         if (btn.dataset.mode === pcMode) return;
         pcMode = btn.dataset.mode;
         postPanel.querySelectorAll('.lia-pc-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === pcMode));
-        pcTopics = []; pcSelected = null; pcResult = null; pcImageB64 = null;
+        pcTopics = []; pcSelected = null; pcResult = null;
         renderPcLanding();
       });
     });
     document.body.appendChild(postPanel);
+    keepErrorsInView(postPanel);
     setTimeout(() => postPanel.classList.add('lia-pc-open'), 10);
     renderPcLanding();
   }
@@ -1278,7 +1272,7 @@
     let infoHtml = '';
     if (isCompany) {
       if (co.name) {
-        infoHtml = `<div class="lia-pc-company-badge">🏢 ${escHtml(co.name)}${co.industry ? ` &middot; ${escHtml(co.industry)}` : ''}</div>`;
+        infoHtml = `<div class="lia-pc-company-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01"/></svg><span>${escHtml(co.name)}${co.industry ? ` &middot; ${escHtml(co.industry)}` : ''}</span></div>`;
       } else {
         infoHtml = `<p class="lia-pc-notice">No company profile found. Go to <strong>Settings → Post Creator</strong> and fill in your Company Profile first.</p>`;
       }
@@ -1291,7 +1285,7 @@
 
     const recentPosts = extractOwnPosts();
     const postCountNote = recentPosts.length
-      ? `<p class="lia-pc-posts-found">📋 ${recentPosts.length} recent post${recentPosts.length > 1 ? 's' : ''} found on this page — AI will avoid repeating similar topics.</p>`
+      ? `<p class="lia-pc-posts-found">${recentPosts.length} recent post${recentPosts.length > 1 ? 's' : ''} found on this page. New topics will avoid repeating them.</p>`
       : '';
 
     body.innerHTML = `
@@ -1302,20 +1296,13 @@
       </div>
       <div class="lia-pc-section">
         <button class="lia-btn-primary lia-pc-full-btn" id="lia-pc-suggest-btn"${!hasSetup && isCompany ? ' disabled' : ''}>
-          💡 Suggest Trending Topics
+          Suggest trending topics
         </button>
-        <div class="lia-pc-or">— or write about something specific —</div>
+        <div class="lia-pc-or">or write about something specific</div>
         <div class="lia-pc-custom-row">
           <input type="text" class="lia-pc-custom-input" id="lia-pc-custom-topic" placeholder="Type your topic idea..." />
           <button class="lia-btn-secondary" id="lia-pc-custom-go">Go</button>
         </div>
-        <div class="lia-pc-or" style="margin-top:14px">— already have a post? —</div>
-        <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-img-only-btn" style="display:flex;align-items:center;justify-content:center;gap:7px">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
-          </svg>
-          Generate Image for My Post
-        </button>
       </div>
     `;
     body.querySelector('#lia-pc-suggest-btn').addEventListener('click', () => {
@@ -1332,53 +1319,6 @@
     body.querySelector('#lia-pc-custom-topic').addEventListener('keydown', e => {
       if (e.key === 'Enter') body.querySelector('#lia-pc-custom-go').click();
     });
-    body.querySelector('#lia-pc-img-only-btn').addEventListener('click', renderPcImageOnly);
-  }
-
-  function renderPcImageOnly() {
-    const body = document.getElementById('lia-pc-body');
-    if (!body) return;
-    body.innerHTML = `
-      <div class="lia-pc-back-row">
-        <button class="lia-pc-back-btn" id="lia-pc-imgonly-back">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <polyline points="15 18 9 12 15 6"></polyline>
-          </svg>
-          Back
-        </button>
-      </div>
-      <div class="lia-pc-section">
-        <div class="lia-pc-label">Your Post or Description</div>
-        <textarea
-          class="lia-pc-imgonly-input"
-          id="lia-pc-imgonly-text"
-          rows="5"
-          placeholder="Paste your post text, or describe what the image should convey — e.g. 'A post about AI transforming healthcare with ethical challenges' ..."></textarea>
-      </div>
-      <div class="lia-pc-section">
-        <button class="lia-btn-primary lia-pc-full-btn" id="lia-pc-imgonly-gen">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
-          </svg>
-          Generate Image
-        </button>
-      </div>
-      <div id="lia-pc-image-area" class="lia-pc-image-area" style="display:none"></div>
-    `;
-
-    body.querySelector('#lia-pc-imgonly-back').addEventListener('click', renderPcLanding);
-
-    body.querySelector('#lia-pc-imgonly-gen').addEventListener('click', () => {
-      const text = body.querySelector('#lia-pc-imgonly-text')?.value.trim();
-      if (!text) {
-        body.querySelector('#lia-pc-imgonly-text').focus();
-        return;
-      }
-      const area = body.querySelector('#lia-pc-image-area');
-      if (area) area.style.display = '';
-      // Truncate to ~500 chars for the image prompt — enough context without overloading
-      generateImage(text.slice(0, 500));
-    });
   }
 
   async function loadTopics(cp, co, recentPosts = []) {
@@ -1389,7 +1329,7 @@
       <div class="lia-pc-loading">
         <div class="lia-spinner"></div>
         <p>${isCompany ? 'Generating B2B topic ideas for your company...' : 'Generating topic ideas for your niche...'}</p>
-        ${recentPosts.length ? '<p style="font-size:11px;color:#94a3b8;margin-top:4px">Checking your recent posts to avoid repetition...</p>' : ''}
+        ${recentPosts.length ? '<p class="lia-pc-notice">Checking your recent posts to avoid repetition…</p>' : ''}
       </div>
     `;
     const result = await new Promise(resolve => {
@@ -1404,7 +1344,7 @@
     if (result?.error) {
       if (result.error === 'LIMIT_REACHED') { renderPcLimitReached(); return; }
       const msg = result.error === 'NO_API_KEY'
-        ? 'No API key found. Add your OpenAI key in Settings → Integrations.'
+        ? 'No API key found. Add your Anthropic key in Settings → Integrations.'
         : friendlyAiErrorText(result.error);
       body.innerHTML = `<p class="lia-pc-error">${escHtml(msg)}</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-from-err">← Back</button>`;
       body.querySelector('#lia-pc-back-from-err').addEventListener('click', () => renderPcLanding());
@@ -1419,7 +1359,7 @@
     if (!body) return;
     body.innerHTML = `
       <div class="lia-pc-section">
-        <div class="lia-pc-sub-label">Pick a topic to write about:</div>
+        <div class="lia-pc-sub-label">Pick a topic</div>
         <div class="lia-pc-topic-list" id="lia-pc-topic-list"></div>
       </div>
       <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-topics" style="margin-top:8px">← Back</button>
@@ -1449,17 +1389,17 @@
 
     const styles = isCompany
       ? [
-          { val: 'thought_leadership', label: '🧠 Thought Leadership', desc: 'Authoritative industry perspective' },
-          { val: 'industry_insight',   label: '📊 Industry Insight',   desc: 'Data-driven trend analysis' },
-          { val: 'case_study',         label: '🏆 Case Study',         desc: 'Client success story' },
-          { val: 'culture',            label: '🤝 Culture / Team',     desc: 'Employer brand storytelling' },
-          { val: 'product_spotlight',  label: '🚀 Product Spotlight',  desc: 'Soft-sell your solution' },
+          { val: 'thought_leadership', label: 'Thought leadership', desc: 'Authoritative industry perspective' },
+          { val: 'industry_insight',   label: 'Industry insight',    desc: 'Data-driven trend analysis' },
+          { val: 'case_study',         label: 'Case study',          desc: 'Client success story' },
+          { val: 'culture',            label: 'Culture and team',    desc: 'Employer brand storytelling' },
+          { val: 'product_spotlight',  label: 'Product spotlight',   desc: 'Soft-sell your solution' },
         ]
       : [
-          { val: 'educational', label: '📚 Educational', desc: 'Teach something valuable' },
-          { val: 'story',       label: '💬 Story',       desc: 'Personal experience or journey' },
-          { val: 'hottake',     label: '🔥 Hot Take',    desc: 'Bold contrarian opinion' },
-          { val: 'tips',        label: '✅ Quick Tips',  desc: 'Practical, actionable list' },
+          { val: 'educational', label: 'Educational', desc: 'Teach something valuable' },
+          { val: 'story',       label: 'Story',          desc: 'Personal experience or journey' },
+          { val: 'hottake',     label: 'Hot take',       desc: 'Bold contrarian opinion' },
+          { val: 'tips',        label: 'Quick tips',     desc: 'Practical, actionable list' },
         ];
 
     if (isCompany) {
@@ -1475,7 +1415,7 @@
           <span class="lia-pc-st-label">Topic</span>
           <span class="lia-pc-st-title">${escHtml(pcSelected.title)}</span>
         </div>
-        <div class="lia-pc-sub-label" style="margin-top:14px">Choose a post style:</div>
+        <div class="lia-pc-sub-label" style="margin-top:14px">Post style</div>
         <div class="lia-pc-style-grid${isCompany ? ' lia-pc-style-grid-col' : ''}" id="lia-pc-style-grid">
           ${styles.map(s => `
             <button class="lia-pc-style-card${pcStyle === s.val ? ' active' : ''}" data-val="${s.val}">
@@ -1484,7 +1424,7 @@
             </button>`).join('')}
         </div>
       </div>
-      <button class="lia-btn-primary lia-pc-full-btn" id="lia-pc-write-btn">Write Post</button>
+      <button class="lia-btn-primary lia-pc-full-btn" id="lia-pc-write-btn">Write post</button>
       <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-style" style="margin-top:6px">← Back</button>
     `;
     body.querySelectorAll('.lia-pc-style-card').forEach(btn => {
@@ -1523,14 +1463,13 @@
     if (result?.error) {
       if (result.error === 'LIMIT_REACHED') { renderPcLimitReached(); return; }
       const msg = result.error === 'NO_API_KEY'
-        ? 'No API key found. Add your OpenAI key in Settings → Integrations.'
+        ? 'No API key found. Add your Anthropic key in Settings → Integrations.'
         : friendlyAiErrorText(result.error);
       body.innerHTML = `<p class="lia-pc-error">${escHtml(msg)}</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-back-we">← Back</button>`;
       body.querySelector('#lia-pc-back-we').addEventListener('click', () => renderPcStylePicker(cp, co));
       return;
     }
     pcResult = result;
-    pcImageB64 = null;
     savePostToHistory({
       post: result.post || '', hashtags: result.hashtags || [],
       topic: pcSelected?.title || '', style: pcStyle, mode: pcMode,
@@ -1574,7 +1513,7 @@
         </button>
       </div>
       <div class="lia-pc-section">
-        <div class="lia-pc-sub-label">Post History</div>
+        <div class="lia-pc-sub-label">Post history</div>
         ${list.length === 0
           ? `<p class="lia-pc-notice">No posts generated yet. Your last ${POST_HISTORY_LIMIT} AI-generated posts will show up here.</p>`
           : `<div class="lia-pc-history-list" id="lia-pc-history-list"></div>`}
@@ -1603,49 +1542,31 @@
         await navigator.clipboard.writeText(fullText).catch(() => {});
         const btn = btnEvt.currentTarget;
         const orig = btn.textContent;
-        btn.textContent = '✓ Copied!';
+        btn.textContent = 'Copied';
         setTimeout(() => { btn.textContent = orig; }, 2000);
       });
       listEl.appendChild(item);
     });
   }
 
-  async function renderPcPost(cp, co) {
+  function renderPcPost(cp, co) {
     const body = document.getElementById('lia-pc-body');
     if (!body) return;
-    const { post = '', hashtags = [], imagePrompt = '' } = pcResult || {};
+    const { post = '', hashtags = [] } = pcResult || {};
     const hashtagStr = hashtags.map(h => `#${h.replace(/^#/, '')}`).join(' ');
     const fullText = post + (hashtagStr ? `\n\n${hashtagStr}` : '');
 
-    // Image generation is Pro-only — check plan status now instead of letting a free user click
-    // Generate and only find out from a PRO_REQUIRED error after the post itself is already done.
-    const { userPlan } = await chrome.storage.local.get('userPlan');
-    const isPro = userPlan === 'pro';
-
     body.innerHTML = `
       <div class="lia-pc-section">
-        <div class="lia-pc-sub-label">Your Post</div>
+        <div class="lia-pc-sub-label">Your post</div>
         <div class="lia-pc-post-box">${escHtml(post).replace(/\n/g, '<br>')}</div>
         ${hashtagStr ? `<div class="lia-pc-hashtags">${escHtml(hashtagStr)}</div>` : ''}
         <div class="lia-pc-post-actions">
-          <button class="lia-btn-primary" id="lia-pc-copy-btn">Copy Post + Hashtags</button>
+          <button class="lia-btn-primary" id="lia-pc-copy-btn">Copy post + Hashtags</button>
           <button class="lia-btn-secondary" id="lia-pc-regen-btn">↺ Rewrite</button>
         </div>
-        <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-composer-btn" style="margin-top:7px">📋 Paste into LinkedIn Composer</button>
+        <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-composer-btn" style="margin-top:7px">Paste into LinkedIn composer</button>
       </div>
-
-      ${imagePrompt ? `
-      <div class="lia-pc-section">
-        <div class="lia-pc-sub-label">Image</div>
-        <div id="lia-pc-image-area">
-          <div class="lia-pc-image-prompt">${escHtml(imagePrompt)}</div>
-          ${isPro
-            ? `<button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-gen-image-btn">🎨 Generate Image (AI)</button>
-               <p class="lia-pc-image-note">Uses your OpenAI key · ~$0.04 per image</p>`
-            : `<button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-gen-image-btn">🔒 Generate Image — Upgrade to Pro</button>
-               <p class="lia-pc-image-note">Image generation is a Pro feature.</p>`}
-        </div>
-      </div>` : ''}
 
       <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-new-post" style="margin-top:8px">＋ Create Another Post</button>
     `;
@@ -1654,7 +1575,7 @@
       await navigator.clipboard.writeText(fullText).catch(() => {});
       const btn = body.querySelector('#lia-pc-copy-btn');
       const orig = btn.textContent;
-      btn.textContent = '✓ Copied!';
+      btn.textContent = 'Copied';
       setTimeout(() => { btn.textContent = orig; }, 2000);
     });
 
@@ -1663,7 +1584,7 @@
       const btn = body.querySelector('#lia-pc-composer-btn');
       const orig = btn.textContent;
       if (insertIntoPostComposer(fullText)) {
-        btn.textContent = '✓ Pasted into composer!';
+        btn.textContent = 'Pasted into the composer';
       } else {
         await navigator.clipboard.writeText(fullText).catch(() => {});
         btn.textContent = 'Copied — open "Start a post" on your feed, then paste';
@@ -1671,79 +1592,9 @@
       setTimeout(() => { btn.textContent = orig; }, 3000);
     });
     body.querySelector('#lia-pc-new-post').addEventListener('click', () => {
-      pcSelected = null; pcTopics = []; pcResult = null; pcImageB64 = null;
+      pcSelected = null; pcTopics = []; pcResult = null;
       renderPcLanding();
     });
-
-    body.querySelector('#lia-pc-gen-image-btn')?.addEventListener('click', () => {
-      if (isPro) { generateImage(imagePrompt); return; }
-      const btn = body.querySelector('#lia-pc-gen-image-btn');
-      btn.disabled = true;
-      btn.textContent = 'Opening checkout…';
-      chrome.runtime.sendMessage({ type: 'START_CHECKOUT' }, res => {
-        if (chrome.runtime.lastError || !res?.url) {
-          btn.disabled = false;
-          btn.textContent = '🔒 Generate Image — Upgrade to Pro';
-          return;
-        }
-        chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: res.url });
-        btn.disabled = false;
-        btn.textContent = '🔒 Generate Image — Upgrade to Pro';
-      });
-    });
-  }
-
-  async function generateImage(prompt) {
-    const area = document.getElementById('lia-pc-image-area');
-    if (!area) return;
-    area.innerHTML = `
-      <div class="lia-pc-loading">
-        <div class="lia-spinner"></div>
-        <p>Generating image...</p>
-      </div>
-    `;
-    const result = await new Promise(resolve => {
-      chrome.runtime.sendMessage({ type: 'GENERATE_POST_IMAGE', prompt }, resolve);
-    });
-    if (result?.error) {
-      if (result.error === 'PRO_REQUIRED') { renderPcLimitReached(); return; }
-      const msg = result.error === 'NO_API_KEY'
-        ? 'No API key found. Add your OpenAI key in Settings → Integrations.'
-        : friendlyAiErrorText(result.error);
-      area.innerHTML = `<p class="lia-pc-error">${escHtml(msg)}</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-retry-img">↺ Retry</button>`;
-      area.querySelector('#lia-pc-retry-img').addEventListener('click', () => generateImage(prompt));
-      return;
-    }
-
-    pcImageB64 = result?.b64 || null;
-    const imgSrc = result?.b64
-      ? `data:image/png;base64,${result.b64}`
-      : (result?.url || null);
-
-    if (imgSrc) {
-      area.innerHTML = `
-        <img class="lia-pc-image-preview" id="lia-pc-img-el" alt="Generated post image" />
-        <button class="lia-btn-primary lia-pc-full-btn" id="lia-pc-download-btn">⬇ Download Image</button>
-        <button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-regen-img">↺ Regenerate Image</button>
-      `;
-      area.querySelector('#lia-pc-img-el').src = imgSrc;
-
-      area.querySelector('#lia-pc-download-btn').addEventListener('click', () => {
-        const a = document.createElement('a');
-        a.href = imgSrc;
-        a.download = 'linkedin-post-image.png';
-        if (result?.b64) {
-          document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        } else {
-          window.open(imgSrc, '_blank');
-        }
-      });
-
-      area.querySelector('#lia-pc-regen-img').addEventListener('click', () => generateImage(prompt));
-    } else {
-      area.innerHTML = `<p class="lia-pc-error">No image returned. Try again.</p><button class="lia-btn-secondary lia-pc-full-btn" id="lia-pc-retry-img">↺ Retry</button>`;
-      area.querySelector('#lia-pc-retry-img').addEventListener('click', () => generateImage(prompt));
-    }
   }
 
   // ─── Time / World Clock ───────────────────────────────────────────────────────
@@ -1874,7 +1725,7 @@
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           <span>World Clock</span>
         </div>
-        <button class="lia-pc-close" aria-label="Close">&times;</button>
+        <button class="lia-pc-close" aria-label="Close" title="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       </div>
       <div class="lia-pc-body">
         <div id="lia-time-clocks" class="lia-time-clocks"></div>
@@ -1961,10 +1812,10 @@
       panelNeedsRecheck = true;
       const body = document.getElementById('lia-body');
       if (body) body.innerHTML = `
-        <div style="padding:28px 20px;text-align:center;">
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="rgba(167,139,250,0.6)" stroke-width="1.5" style="margin-bottom:12px"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
-          <div style="font-size:14px;font-weight:700;color:#f1f5f9;margin-bottom:6px;">Sales Navigator Support</div>
-          <div style="font-size:12.5px;color:rgba(196,181,253,0.6);line-height:1.6;">Full analysis on Sales Navigator profiles is coming soon. Open the person's standard LinkedIn profile (<code style="font-size:11px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">linkedin.com/in/…</code>) to use LinkPilot AI.</div>
+        <div class="lia-gate">
+          <div class="lia-gate-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg></div>
+          <div class="lia-gate-heading">Open the standard profile</div>
+          <div class="lia-gate-desc">Analysis on Sales Navigator profiles is coming soon. For now, open this person's regular LinkedIn profile (<code class="lia-code">linkedin.com/in/…</code>) to use LinkPilot.</div>
         </div>`;
       return;
     }
@@ -1989,23 +1840,23 @@
     const currentIntent = savedIntent || 'b2b_sales';
     const cacheIntentMatches = !stored?.intent || stored.intent === currentIntent;
     const hasCache = !!(stored?.analysis) && cacheIntentMatches;
-    const cacheAge = hasCache ? `· ${timeAgo(stored.timestamp)}` : '';
+    const cacheAge = hasCache && Number.isFinite(stored.timestamp) ? `· ${timeAgo(stored.timestamp)}` : '';
 
     const modeLabel = currentIntent === 'job_search' ? 'Job Search'
       : currentIntent === 'b2c_sales' ? 'Freelance'
       : 'B2B Sales';
 
     const analyzeDesc = hasCache
-      ? `View analysis ${cacheAge}`
-      : currentIntent === 'job_search' ? 'Check hiring signals — is this person recruiting or hiring?'
-      : currentIntent === 'b2c_sales' ? 'Score this contact as a potential client for your services'
-      : 'Score this prospect — potential, fit, and decision-maker level';
+      ? `Saved result${cacheAge ? ` — analyzed ${cacheAge.replace('· ', '')}` : ''}`
+      : currentIntent === 'job_search' ? 'Check whether this person is hiring or recruiting'
+      : currentIntent === 'b2c_sales' ? 'Score this contact as a potential client'
+      : 'Score fit, buying potential and decision-maker level';
 
     const connectionDesc = currentIntent === 'job_search'
-      ? 'Get a natural note that doesn\'t sound like a job application'
+      ? 'A short note that doesn\'t read like a job application'
       : currentIntent === 'b2c_sales'
-      ? 'Get a warm note positioning you as a fellow expert'
-      : 'Get a personalized note to send with a connection invite';
+      ? 'A short note that opens a peer conversation'
+      : 'A short, specific note to send with your invite';
 
     // Multiple ICP profiles can exist now (see background/ai.js's ensureIcpProfilesMigrated) —
     // read whichever is active rather than the old flat targetIndustries key directly, falling
@@ -2026,8 +1877,8 @@
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           </div>
           <div class="lia-icp-warning-body">
-            <div class="lia-icp-warning-title">No ICP Industries Set</div>
-            <div class="lia-icp-warning-text">Analysis will be generic without target industries. <button class="lia-icp-warning-link" id="lia-set-icp">Set ICP →</button></div>
+            <div class="lia-icp-warning-title">No target industries set</div>
+            <div class="lia-icp-warning-text">Analysis will be generic without target industries. <button class="lia-icp-warning-link" id="lia-set-icp">Set your ICP</button></div>
           </div>
         </div>` : ''}
         <p class="lia-purpose-intro">What do you want to do with this profile?</p>
@@ -2041,7 +1892,7 @@
             </svg>
           </span>
           <span class="lia-purpose-content">
-            <span class="lia-purpose-title">${hasCache ? 'View Analysis' : 'Analyze Profile'}</span>
+            <span class="lia-purpose-title">${hasCache ? 'View analysis' : 'Analyze profile'}</span>
             <span class="lia-purpose-desc">${analyzeDesc}</span>
           </span>
         </button>
@@ -2055,7 +1906,7 @@
             </svg>
           </span>
           <span class="lia-purpose-content">
-            <span class="lia-purpose-title">Connection Request</span>
+            <span class="lia-purpose-title">Connection request</span>
             <span class="lia-purpose-desc">${connectionDesc}</span>
           </span>
         </button>
@@ -2069,8 +1920,8 @@
             </svg>
           </span>
           <span class="lia-purpose-content">
-            <span class="lia-purpose-title">Follow-up Message</span>
-            <span class="lia-purpose-desc">${currentIntent === 'job_search' ? 'Continue an ongoing conversation — write the perfect follow-up' : 'Already messaging — get a contextual follow-up based on your conversation'}</span>
+            <span class="lia-purpose-title">Follow-up message</span>
+            <span class="lia-purpose-desc">${currentIntent === 'job_search' ? 'Draft your next reply from the conversation so far' : 'Draft the next message from the conversation so far'}</span>
           </span>
         </button>
         ${hasCache ? `<button class="lia-purpose-refresh" id="lia-purpose-reanalyze">
@@ -2234,7 +2085,7 @@
         </button>
       </div>
       <div class="lia-section">
-        <div class="lia-label">Outreach Stage <span class="lia-optional">(auto-detected — correct if needed)</span></div>
+        <div class="lia-label">Outreach stage <span class="lia-optional">(auto-detected — correct if needed)</span></div>
         <select class="lia-notes-input" id="lia-followup-stage-select" style="margin-bottom:4px">
           ${STAGE_ORDER.map(s => `<option value="${s}" ${s === trackedStage ? 'selected' : ''}>${stageLabel(s, intent)}</option>`).join('')}
         </select>
@@ -2273,7 +2124,7 @@
             <polyline points="7 23 3 19 7 15"></polyline>
             <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
           </svg>
-          Generate Follow-up
+          Generate follow-up
         </button>
         <div id="lia-followup-result" style="display:none;margin-top:12px"></div>
       </div>
@@ -2369,17 +2220,17 @@
         function renderFollowupResult(msgText, timingNote, needId, leadRead) {
           const hasTake = needId || leadRead;
           resultDiv.innerHTML = `
-            ${timingNote ? `<div class="lia-timing-note">⚠️ ${escHtml(timingNote)}</div>` : ''}
+            ${timingNote ? `<div class="lia-notice lia-notice--warn"><span>${escHtml(timingNote)}</span></div>` : ''}
             ${hasTake ? `
             <div class="lia-strategist-take">
               ${needId ? `<div class="lia-strategist-row"><span class="lia-strategist-label">Need</span><span class="lia-strategist-text">${escHtml(needId)}</span></div>` : ''}
               ${leadRead ? `<div class="lia-strategist-row"><span class="lia-strategist-label">Reads as</span><span class="lia-strategist-text">${escHtml(leadRead)}</span></div>` : ''}
             </div>` : ''}
-            <div class="lia-label">Follow-up Message</div>
+            <div class="lia-label">Follow-up message</div>
             <div class="lia-connection-box">
               <p id="lia-followup-text">${escHtml(msgText)}</p>
             </div>
-            <button class="lia-btn-primary lia-copy-btn" id="lia-followup-copy">Copy to Clipboard</button>
+            <button class="lia-btn-primary lia-copy-btn" id="lia-followup-copy">Copy message</button>
             ${buildRefineSectionHtml('followup')}
           `;
           resultDiv.style.display = '';
@@ -2389,7 +2240,7 @@
             await navigator.clipboard.writeText(msgText);
             copyBtn.textContent = 'Copied!';
             copyBtn.classList.add('copied');
-            setTimeout(() => { copyBtn.textContent = 'Copy to Clipboard'; copyBtn.classList.remove('copied'); }, 2000);
+            setTimeout(() => { copyBtn.textContent = 'Copy message'; copyBtn.classList.remove('copied'); }, 2000);
             advanceStageBySteps(currentProfileUrl, 1);
             logOutreachAction('message');
           });
@@ -2409,13 +2260,13 @@
         btn.disabled = false;
       } catch (err) {
         if (err.message === 'NO_API_KEY') {
-          resultDiv.innerHTML = `<p class="lia-error-msg">No API key found. Add your OpenAI key in Settings → Integrations.</p>`;
+          resultDiv.innerHTML = `<p class="lia-error-msg">No API key found. Add your Anthropic key in Settings → Integrations.</p>`;
         } else {
           resultDiv.innerHTML = `<p class="lia-error-msg" id="lia-followup-gen-error"></p>`;
           renderInlineAiError(resultDiv.querySelector('#lia-followup-gen-error'), err.message);
         }
         resultDiv.style.display = '';
-        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg> Generate Follow-up`;
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg> Generate follow-up`;
         btn.disabled = false;
       }
     });
@@ -2445,7 +2296,7 @@
           <p id="lia-single-text">${escHtml(text || '')}</p>
           <div class="lia-char-count ${charClass}">${charCount} / ${charLimit} chars</div>
         </div>
-        <button class="lia-btn-primary lia-copy-btn" id="lia-single-copy">Copy to Clipboard</button>
+        <button class="lia-btn-primary lia-copy-btn" id="lia-single-copy">Copy message</button>
       </div>
       <div class="lia-section lia-regen-section">
         <div class="lia-label">Your findings <span class="lia-optional">(optional — guides the rewrite)</span></div>
@@ -2472,7 +2323,7 @@
       await navigator.clipboard.writeText(text || '');
       btn.textContent = 'Copied!';
       btn.classList.add('copied');
-      setTimeout(() => { btn.textContent = 'Copy to Clipboard'; btn.classList.remove('copied'); }, 2000);
+      setTimeout(() => { btn.textContent = 'Copy message'; btn.classList.remove('copied'); }, 2000);
       advanceStage(currentProfileUrl, 'connection_sent');
       logOutreachAction('connection');
     });
@@ -2558,10 +2409,8 @@
     panel.innerHTML = `
       <div class="lia-header">
         <div class="lia-header-title">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/>
-          </svg>
-          <span>LinkPilot AI</span>
+          <span class="lia-logo" aria-hidden="true">LP</span>
+          <span>LinkPilot</span>
           <span class="lia-mode-badge" id="lia-header-mode-badge"></span>
         </div>
         <div class="lia-header-actions">
@@ -2581,7 +2430,9 @@
               <path d="M267.4 211.6c-25.1 23.7-40.8 57-40.8 94 0 29.3 9.7 56.3 26 78L203 434c-4.4-1.6-9.1-2.5-14-2.5-22.1 0-40 17.9-40 40s17.9 40 40 40 40-17.9 40-40c0-4-.6-7.9-1.6-11.6l50.1-50.2c21.7 14.2 47.4 22.5 75 22.5 76.2 0 138-61.8 138-138s-61.8-138-138-138c-30.2 0-58.2 9.7-80.8 26.1l.7-.7zM353.4 414c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zM260 75.2l30.6 10.3-2.2-31.9 25.9 19.3 11.2-30.3 15.6 27.7 22.2-23.6-.7 32.1 31.4-7.7-16.2 27.4 30.7 9.9-28.5 14.1 20.9 24.3-31.8-2.7 4.5 31.7-26.4-18.6-10.4 30.5-16.4-27.3-21.5 24.3.1-32.1-31.5 8.2L278 153l-30.9-9.4 28.9-13.6L256 106l32 2.2-4.9-31.7L260 75.2zM119.1 160.7l19 6.4-1.4-19.8 16.1 12 7-18.8 9.7 17.2 13.8-14.7-.4 19.9 19.5-4.8-10.1 17 19.1 6.2-17.7 8.7 13 15.1-19.7-1.7 2.8 19.7-16.4-11.6-6.4 18.9-10.2-16.9-13.3 15.1.1-19.9-19.6 5.1 9.6-16.9-19.2-5.8 17.9-8.5-8.1-15.6 19.9 1.4-3-19.6-5.3 5.3zM27.1 335.2l13.7 4.6-1-14.3L51.4 334l5-13.6 7 12.4 10-10.6-.3 14.4L87.2 333l-7.3 12.3 13.8 4.5-12.8 6.3 9.4 10.9-14.3-1.2 2 14.3L66.1 371l-4.7 13.7-7.3-12.2-9.6 10.9.1-14.4-14.2 3.7 6.9-12.2-13.8-4.2 12.9-6.1L27.1 335.2z"/>
             </svg>
           </button>
-          <button class="lia-close" aria-label="Close">&times;</button>
+          <button class="lia-close" aria-label="Close panel" title="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
         </div>
       </div>
       <div class="lia-tabs">
@@ -2625,6 +2476,7 @@
     });
 
     document.body.appendChild(panel);
+    keepErrorsInView(panel);
     reflectHubSpotState();
   }
 
@@ -2919,16 +2771,16 @@
     if (body) body.innerHTML = `
       <div class="lia-loading">
         <div class="lia-spinner"></div>
-        <p>Analyzing with OpenAI...</p>
+        <p>Analyzing with Claude...</p>
       </div>
     `;
   }
 
-  function _renderGate(bodyEl, { iconColor, iconGlow, iconSvg, heading, desc, btnId, btnLabel }) {
+  function _renderGate(bodyEl, { iconSvg, heading, desc, btnId, btnLabel }) {
     bodyEl.innerHTML = `
       <div class="lia-gate">
-        <div class="lia-gate-icon" style="--glow:${iconGlow};">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${iconSvg}</svg>
+        <div class="lia-gate-icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${iconSvg}</svg>
         </div>
         <div class="lia-gate-heading">${heading}</div>
         <div class="lia-gate-desc">${desc}</div>
@@ -2944,7 +2796,7 @@
       iconColor: 'rgba(167,139,250,0.9)',
       iconGlow: 'rgba(124,58,237,0.35)',
       iconSvg: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
-      heading: 'Open a Profile to Analyze',
+      heading: 'Open a profile to analyze',
       desc: 'Visit someone\'s LinkedIn profile, then click Analyze to score them and generate outreach.',
       btnId: 'lia-gate-close',
       btnLabel: 'Got it',
@@ -2963,10 +2815,10 @@
       iconColor: '#06b6d4',
       iconGlow: 'rgba(6,182,212,0.35)',
       iconSvg: '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
-      heading: 'API Key Required',
-      desc: 'Enter your OpenAI API key in Settings to enable AI-powered analysis.',
+      heading: 'Add your Anthropic API key',
+      desc: 'LinkPilot runs on your own Anthropic key. Add it in Settings to analyze profiles.',
       btnId: 'lia-open-settings',
-      btnLabel: 'Open Settings',
+      btnLabel: 'Open settings',
     });
     body.querySelector('#lia-open-settings').addEventListener('click', () => {
       chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' });
@@ -2980,10 +2832,10 @@
       iconColor: '#06b6d4',
       iconGlow: 'rgba(6,182,212,0.35)',
       iconSvg: '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
-      heading: 'API Key Required',
-      desc: 'Enter your OpenAI API key in Settings to generate AI-powered posts.',
+      heading: 'Add your Anthropic API key',
+      desc: 'LinkPilot runs on your own Anthropic key. Add it in Settings to write posts.',
       btnId: 'lia-pc-open-settings',
-      btnLabel: 'Open Settings',
+      btnLabel: 'Open settings',
     });
     body.querySelector('#lia-pc-open-settings').addEventListener('click', () => {
       chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' });
@@ -2993,7 +2845,7 @@
   function renderPcLimitReached() {
     const body = document.getElementById('lia-pc-body');
     if (!body) return;
-    _renderUpgradeGate(body, 'Monthly Limit Reached', 'You\'ve used all your free post generations this month. Upgrade to Pro for unlimited access.', 'lia-pc-upgrade-btn');
+    _renderUpgradeGate(body, 'Monthly limit reached', 'You\'ve used all your free post generations this month. Upgrade to Pro for unlimited access.', 'lia-pc-upgrade-btn');
   }
 
   function _renderUpgradeGate(bodyEl, heading, desc, btnId) {
@@ -3026,16 +2878,16 @@
     if (!body) return;
     if (message === 'NO_API_KEY') { renderNoApiKey(); return; }
     if (message === 'SIGN_IN_REQUIRED') { renderSignInRequired(); return; }
-    if (message === 'INVALID_KEY') { message = 'Your OpenAI API key is invalid. Please update it in Settings.'; }
-    if (message === 'RATE_LIMITED') { message = 'OpenAI rate limit reached. Please wait a moment and try again.'; }
-    if (message === 'API_DOWN') { message = 'OpenAI is temporarily unavailable. Please try again shortly.'; }
+    if (message === 'INVALID_KEY') { message = 'Your Anthropic API key is invalid. Please update it in Settings.'; }
+    if (message === 'RATE_LIMITED') { message = 'Anthropic rate limit reached. Please wait a moment and try again.'; }
+    if (message === 'API_DOWN') { message = 'Anthropic is temporarily unavailable. Please try again shortly.'; }
     if (message === 'TRUNCATED_RESPONSE') { message = 'The AI response was cut short. Please try again.'; }
     if (message === 'LIMIT_REACHED') {
-      _renderUpgradeGate(body, 'Monthly Limit Reached', 'You\'ve used all your free analyses this month. Upgrade to Pro for unlimited access.', 'lia-upgrade-btn');
+      _renderUpgradeGate(body, 'Monthly limit reached', 'You\'ve used all your free analyses this month. Upgrade to Pro for unlimited access.', 'lia-upgrade-btn');
       return;
     }
     if (message === 'PRO_REQUIRED') {
-      _renderUpgradeGate(body, 'Pro Feature', 'This feature requires a Pro plan. Upgrade to unlock unlimited analyses and HubSpot CRM.', 'lia-upgrade-btn');
+      _renderUpgradeGate(body, 'Pro feature', 'This feature requires a Pro plan. Upgrade for unlimited analyses and HubSpot CRM.', 'lia-upgrade-btn');
       return;
     }
 
@@ -3078,9 +2930,9 @@
   // literal text "LIMIT_REACHED") instead of translating them like the main Analyze flow does.
   const AI_ERROR_MESSAGES = {
     NO_API_KEY: 'No API key — add one in Settings → Integrations.',
-    INVALID_KEY: 'Your OpenAI API key is invalid — check it in Settings.',
-    RATE_LIMITED: 'OpenAI rate limit reached — try again in a moment.',
-    API_DOWN: 'OpenAI is temporarily unavailable — try again shortly.',
+    INVALID_KEY: 'Your Anthropic API key is invalid — check it in Settings.',
+    RATE_LIMITED: 'Anthropic rate limit reached — try again in a moment.',
+    API_DOWN: 'Anthropic is temporarily unavailable — try again shortly.',
     TRUNCATED_RESPONSE: 'The AI response was cut short — try again.',
     LIMIT_REACHED: 'Monthly free limit reached.',
     PRO_REQUIRED: 'This feature requires a Pro plan.',
@@ -3089,7 +2941,7 @@
 
   function friendlyAiErrorText(code) {
     if (AI_ERROR_MESSAGES[code]) return AI_ERROR_MESSAGES[code];
-    // Not a known code — if it looks like real sentence text (e.g. a raw OpenAI error message
+    // Not a known code — if it looks like real sentence text (e.g. a raw Anthropic error message
     // that made it through unmapped), show it as-is rather than hiding it behind a generic
     // message; only fall back to generic phrasing for unrecognized SCREAMING_SNAKE_CASE codes.
     if (code && !/^[A-Z_]+$/.test(code)) return code;
@@ -3109,14 +2961,14 @@
     const link = document.createElement('button');
     link.type = 'button';
     link.className = 'lia-inline-upgrade-link';
-    link.textContent = 'Upgrade to Pro →';
+    link.textContent = 'Upgrade to Pro';
     link.addEventListener('click', () => {
       link.disabled = true;
       link.textContent = 'Opening checkout…';
       chrome.runtime.sendMessage({ type: 'START_CHECKOUT' }, res => {
         if (chrome.runtime.lastError || !res?.url) {
           link.disabled = false;
-          link.textContent = 'Upgrade to Pro →';
+          link.textContent = 'Upgrade to Pro';
           return;
         }
         chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: res.url });
@@ -3125,7 +2977,7 @@
     el.appendChild(link);
   }
 
-  // Shared "Refine with AI" collapsible — same tone+instructions pattern the Message tab already
+  // Shared "Refine" collapsible — same tone+instructions pattern the Message tab already
   // has (renderMsgTabResult below), factored out so Connection Request and Follow-up can offer
   // targeted refinement too instead of only a full regenerate-from-scratch.
   const REFINE_TONES = [
@@ -3157,7 +3009,7 @@
           </div>
           <button class="lia-btn-primary" id="lia-${prefix}-refine-btn" style="width:100%">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-            Refine with AI
+            Refine
           </button>
           <div id="lia-${prefix}-refine-error" class="lia-error-msg" style="display:none;margin-top:6px"></div>
         </div>
@@ -3188,9 +3040,60 @@
       } catch (e) {
         renderInlineAiError(errEl, e.message);
         btn.disabled = false;
-        btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refine with AI`;
+        btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refine`;
       }
     });
+  }
+
+  // Shown on the Connection and Message tabs when the prospect scored Low or landed in an excluded
+  // industry. Generation still works — the rep may know something the score doesn't — but LinkedIn
+  // caps weekly invitations, so spending one on a non-buyer should be a conscious choice, not a
+  // default. Sales modes only: a weak hiring signal in Job Search isn't a reason to skip networking.
+  // A profile with only titles and companies can't yield a specific message without the model
+  // inventing details — the honest fix is better input, so point the rep at the field that supplies
+  // it. Same definition as background/ai.js's isThinProfile.
+  // One badge for every categorical score in the panel. Tone comes from the word itself, so a
+  // "High", "Strong" or "Yes" always reads the same way wherever it appears.
+  const BADGE_TONE = { High: 'good', Strong: 'good', Yes: 'good', Medium: 'mid', Partial: 'mid', Possible: 'mid', Likely: 'mid', Low: 'low', Poor: 'low', Unlikely: 'low', No: 'low' };
+  // Inline errors often render below a long form (e.g. under Regenerate). Bring any newly shown
+  // error into view so a failed action never looks like a silent no-op. Scoped to one drawer.
+  function keepErrorsInView(root) {
+    const SEL = '.lia-error-msg, .lia-pc-error, .lia-hs-error';
+    new MutationObserver(muts => {
+      for (const m of muts) {
+        const el = m.target.nodeType === 1 && m.target.matches?.(SEL) ? m.target : (m.addedNodes[0]?.nodeType === 1 ? (m.addedNodes[0].matches(SEL) ? m.addedNodes[0] : m.addedNodes[0].querySelector?.(SEL)) : null);
+        if (el && el.textContent.trim() && el.offsetParent) { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); return; }
+      }
+    }).observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['style'], characterData: false });
+  }
+
+  function badgeHtml(value, label) {
+    const tone = BADGE_TONE[value] || 'neutral';
+    return `<span class="lia-badge lia-badge--${tone}">${escHtml(label || value)}</span>`;
+  }
+
+  function thinProfileHintHtml() {
+    const p = extractProfile();
+    const thin = !(p.posts?.length) && !p.about && !(p.experience || []).some(e => (e.description || '').trim());
+    return thin ? `<div class="lia-optional" style="display:block;margin-top:6px">This profile shows only titles and companies, so there is little to personalize on. Paste a recent post or a note here for a much sharper message.</div>` : '';
+  }
+
+  function lowFitBannerHtml(analysis, intent) {
+    if (!analysis || intent === 'job_search') return '';
+    const excluded = intent === 'b2b_sales' && analysis.industryFit?.excluded;
+    const score = intent === 'b2c_sales' ? analysis.clientPotential?.score : analysis.potentialClient?.score;
+    if (!excluded && score !== 'Low') return '';
+    const reason = excluded ? (analysis.industryFit?.reasoning || '') : (intent === 'b2c_sales' ? analysis.clientPotential?.reasoning : analysis.potentialClient?.reasoning) || '';
+    return `
+        <div class="lia-icp-warning" style="margin-bottom:12px">
+          <div class="lia-icp-warning-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </div>
+          <div class="lia-icp-warning-body">
+            <div class="lia-icp-warning-title">${excluded ? 'Excluded by your ICP' : 'Low fit for your ICP'}</div>
+            <div class="lia-icp-warning-text">${escHtml(reason)} Consider skipping to save your weekly invites.</div>
+          </div>
+        </div>`;
   }
 
   function renderTabContent(analysis, connectionRequest, tab, intent = 'b2b_sales') {
@@ -3223,304 +3126,138 @@
 
       const reachLabel = intent === 'job_search' ? 'Reach out?' : 'Should you message?';
       const recommendationBlock = `
-        <div class="lia-reach-card ${roClass}">
-          <div class="reach-header">
-            <span class="reach-label">${reachLabel}</span>
-            <span class="reach-verdict ${roClass}">${roIcon} ${reachOut}</span>
+        <div class="lia-verdict ${roClass}">
+          <div class="lia-verdict-head">
+            <span class="lia-verdict-label">${reachLabel}</span>
+            <span class="lia-verdict-value">${roIcon}<span>${reachOut}</span></span>
           </div>
-          ${reachReason ? `<p class="reach-reason">${escHtml(reachReason)}</p>` : ''}
+          ${reachReason ? `<p class="lia-verdict-reason">${escHtml(reachReason)}</p>` : ''}
         </div>`;
 
+      // One label/value list instead of a card per fact: the same signals, scannable in one pass.
       const csVal = analysis.companySize || analysis.company?.size || 'Unknown';
-      const csClass = { Enterprise: 'cs-enterprise', 'Mid-market': 'cs-mid', SMB: 'cs-smb', Startup: 'cs-startup', Unknown: 'cs-unknown' }[csVal] || 'cs-unknown';
-
-      const erVal = analysis.engagementRate || 'Rarely';
-      const erClass = { Daily: 'er-daily', Weekly: 'er-weekly', Occasional: 'er-occasional', Rarely: 'er-rarely' }[erVal] || 'er-rarely';
-      const erDots = { Daily: 4, Weekly: 3, Occasional: 2, Rarely: 1 }[erVal] || 1;
-
-      const chips = (analysis.summaryPoints || []).slice(0, 5);
-
-      let primaryCard = '';
-      let secondaryRow = '';
-      let fitCard = '';
-      let companyCard = '';
+      const erVal = analysis.engagementRate || 'Unknown';
+      const facts = [];
       let excludedBanner = '';
+      let companyRows = [];
 
       if (intent === 'job_search') {
         const hs = analysis.hiringSignal?.score || 'Unlikely';
-        const hsClass = { Strong: 'score-high', Possible: 'score-medium', Unlikely: 'score-low' }[hs] || 'score-low';
-        const hsBarWidth = { Strong: '90%', Possible: '55%', Unlikely: '20%' }[hs] || '20%';
-        const hsBarColor = { Strong: '#16a34a', Possible: '#d97706', Unlikely: '#dc2626' }[hs] || '#dc2626';
-
-        const irVal = analysis.isRecruiter || 'No';
-        const irClass = { Yes: 'dm-yes', Likely: 'dm-likely', No: 'dm-no' }[irVal] || 'dm-no';
-
-        primaryCard = `
-          <div class="lia-indicator-card">
-            <div class="ind-label">Hiring Signal</div>
-            <div class="ind-score-bar-track">
-              <div class="ind-score-bar-fill" style="width:${hsBarWidth};background:${hsBarColor}"></div>
-            </div>
-            <div class="ind-score-badge ${hsClass}">${hs}</div>
-          </div>`;
-
-        secondaryRow = `
-          <div class="lia-indicator-row">
-            <div class="lia-indicator-card lia-ind-half">
-              <div class="ind-label">Recruiter</div>
-              <div class="ind-value ${irClass}">${irVal}</div>
-            </div>
-            <div class="lia-indicator-card lia-ind-half">
-              <div class="ind-label">Company Size</div>
-              <div class="ind-value ${csClass}">${escHtml(csVal)}</div>
-            </div>
-          </div>`;
-
-        const jsCompany = analysis.companyName;
-        if (jsCompany && jsCompany !== 'Unknown') {
-          companyCard = `
-            <div class="lia-section">
-              <div class="lia-label">Company</div>
-              <div class="lia-company-grid">
-                <div class="lia-company-cell" style="grid-column:1/-1">
-                  <span class="lia-company-key">Name</span>
-                  <span class="lia-company-val">${escHtml(jsCompany)}</span>
-                </div>
-              </div>
-            </div>`;
-        }
+        facts.push(['Hiring signal', badgeHtml(hs), analysis.hiringSignal?.reasoning]);
+        facts.push(['Recruiter', badgeHtml(analysis.isRecruiter || 'No')]);
+        facts.push(['Company size', escHtml(csVal)]);
+        if (analysis.companyName && analysis.companyName !== 'Unknown') companyRows = [['Company', analysis.companyName]];
       } else if (intent === 'b2c_sales') {
-        const score = analysis.clientPotential?.score || 'Low';
-        const scoreClass = { High: 'score-high', Medium: 'score-medium', Low: 'score-low' }[score] || 'score-low';
-        const scoreBarWidth = { High: '90%', Medium: '55%', Low: '20%' }[score] || '20%';
-        const scoreBarColor = { High: '#16a34a', Medium: '#d97706', Low: '#dc2626' }[score] || '#dc2626';
-
-        const fsVal = analysis.freelancerSignal?.signal || 'Unlikely';
-        const fsClass = { Strong: 'fit-strong', Possible: 'fit-partial', Unlikely: 'fit-poor' }[fsVal] || 'fit-poor';
-        const fsBarWidth = { Strong: '90%', Possible: '55%', Unlikely: '20%' }[fsVal] || '20%';
-        const fsBarColor = { Strong: '#16a34a', Possible: '#d97706', Unlikely: '#dc2626' }[fsVal] || '#dc2626';
-
-        const dmVal = analysis.decisionMaker || 'No';
-        const dmClass = { Yes: 'dm-yes', Likely: 'dm-likely', No: 'dm-no' }[dmVal] || 'dm-no';
-
-        primaryCard = `
-          <div class="lia-indicator-card">
-            <div class="ind-label">Client Potential</div>
-            <div class="ind-score-bar-track">
-              <div class="ind-score-bar-fill" style="width:${scoreBarWidth};background:${scoreBarColor}"></div>
-            </div>
-            <div class="ind-score-badge ${scoreClass}">${score}</div>
-          </div>`;
-
-        fitCard = `
-          <div class="lia-indicator-card">
-            <div class="ind-label">Freelancer Signal</div>
-            <div class="ind-score-bar-track">
-              <div class="ind-score-bar-fill" style="width:${fsBarWidth};background:${fsBarColor}"></div>
-            </div>
-            <div class="ind-score-badge ${fsClass}">${escHtml(fsVal)}</div>
-            <div class="ind-reasoning">${escHtml(analysis.freelancerSignal?.reasoning || '')}</div>
-          </div>`;
-
-        secondaryRow = `
-          <div class="lia-indicator-row">
-            <div class="lia-indicator-card lia-ind-half">
-              <div class="ind-label">Decision Maker</div>
-              <div class="ind-value ${dmClass}">${dmVal}</div>
-            </div>
-            <div class="lia-indicator-card lia-ind-half">
-              <div class="ind-label">Company Size</div>
-              <div class="ind-value ${csClass}">${escHtml(csVal)}</div>
-            </div>
-          </div>`;
-
-        // Company details card (B2C has size + stage instead of headcount + domain)
+        facts.push(['Client potential', badgeHtml(analysis.clientPotential?.score || 'Low')]);
+        const fs = analysis.freelancerSignal || {};
+        facts.push(['Freelancer signal', badgeHtml(fs.signal || 'Unlikely'), fs.reasoning]);
+        facts.push(['Decision maker', badgeHtml(analysis.decisionMaker || 'No')]);
+        facts.push(['Company size', escHtml(csVal)]);
         const co = analysis.company || {};
-        const coRows = [
-          ['Company', co.name],
-          ['Stage', co.stage],
-          ['Size', co.size],
-        ].filter(([, v]) => v && v !== 'Unknown');
-
-        if (coRows.length) {
-          companyCard = `
-            <div class="lia-section">
-              <div class="lia-label">Company</div>
-              <div class="lia-company-grid">
-                ${coRows.map(([k, v]) => `<div class="lia-company-cell"><span class="lia-company-key">${k}</span><span class="lia-company-val">${escHtml(v)}</span></div>`).join('')}
-              </div>
-            </div>`;
-        }
-
+        companyRows = [['Company', co.name], ['Stage', co.stage]];
       } else {
-        const score = analysis.potentialClient?.score || 'Low';
-        const scoreClass = { High: 'score-high', Medium: 'score-medium', Low: 'score-low' }[score] || 'score-low';
-        const scoreBarWidth = { High: '90%', Medium: '55%', Low: '20%' }[score] || '20%';
-        const scoreBarColor = { High: '#16a34a', Medium: '#d97706', Low: '#dc2626' }[score] || '#dc2626';
-
-        const dmVal = analysis.decisionMaker || 'No';
-        const dmClass = { Yes: 'dm-yes', Likely: 'dm-likely', No: 'dm-no' }[dmVal] || 'dm-no';
-
-        primaryCard = `
-          <div class="lia-indicator-card">
-            <div class="ind-label">Prospect Score</div>
-            <div class="ind-score-bar-track">
-              <div class="ind-score-bar-fill" style="width:${scoreBarWidth};background:${scoreBarColor}"></div>
-            </div>
-            <div class="ind-score-badge ${scoreClass}">${score}</div>
-          </div>`;
-
-        secondaryRow = `
-          <div class="lia-indicator-row">
-            <div class="lia-indicator-card lia-ind-half">
-              <div class="ind-label">Decision Maker</div>
-              <div class="ind-value ${dmClass}">${dmVal}</div>
-            </div>
-            <div class="lia-indicator-card lia-ind-half">
-              <div class="ind-label">Company Size</div>
-              <div class="ind-value ${csClass}">${escHtml(csVal)}</div>
-            </div>
-          </div>`;
-
-        // Industry Fit (ICP) — B2B sales only
+        facts.push(['Prospect score', badgeHtml(analysis.potentialClient?.score || 'Low')]);
         const fit = analysis.industryFit || {};
-        const fitLevel = fit.level || 'Partial';
-        const fitClass = { Strong: 'fit-strong', Partial: 'fit-partial', Poor: 'fit-poor' }[fitLevel] || 'fit-partial';
-        const fitBarWidth = { Strong: '90%', Partial: '55%', Poor: '20%' }[fitLevel] || '55%';
-        const fitBarColor = { Strong: '#16a34a', Partial: '#d97706', Poor: '#dc2626' }[fitLevel] || '#d97706';
-
-        fitCard = `
-          <div class="lia-indicator-card">
-            <div class="ind-label">Industry Fit</div>
-            <div class="ind-score-bar-track">
-              <div class="ind-score-bar-fill" style="width:${fitBarWidth};background:${fitBarColor}"></div>
-            </div>
-            <div class="ind-score-badge ${fitClass}">${escHtml(fitLevel)} fit</div>
-            <div class="ind-reasoning">${escHtml(fit.reasoning || '')}</div>
-          </div>`;
-
+        facts.push(['ICP fit', badgeHtml(fit.level || 'Partial', `${fit.level || 'Partial'} fit`), fit.reasoning]);
+        facts.push(['Decision maker', badgeHtml(analysis.decisionMaker || 'No')]);
+        facts.push(['Company size', escHtml(csVal)]);
         if (fit.excluded) {
           excludedBanner = `
-            <div class="lia-excluded-banner">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
-              </svg>
-              <span>Excluded industry — flagged as a poor fit for your ICP.</span>
+            <div class="lia-notice lia-notice--bad">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+              <span>Excluded industry: flagged as a poor fit for your ICP.</span>
             </div>`;
         }
-
-        // Company details card
         const co = analysis.company || {};
-        const coRows = [
-          ['Company', co.name],
-          ['Industry', co.industry],
-          ['Headcount', co.headcount],
-          ['Website', co.domain],
-        ].filter(([, v]) => v && v !== 'Unknown');
-
-        if (coRows.length) {
-          companyCard = `
-            <div class="lia-section">
-              <div class="lia-label">Company</div>
-              <div class="lia-company-grid">
-                ${coRows.map(([k, v]) => {
-                  const isDomain = k === 'Website' && /\./.test(v) && !/\s/.test(v);
-                  const valHtml = isDomain
-                    ? `<a class="lia-company-link" href="https://${escHtml(v.replace(/^https?:\/\//, ''))}" target="_blank" rel="noopener">${escHtml(v)}</a>`
-                    : escHtml(v);
-                  return `<div class="lia-company-cell"><span class="lia-company-key">${k}</span><span class="lia-company-val">${valHtml}</span></div>`;
-                }).join('')}
-              </div>
-            </div>`;
-        }
+        companyRows = [['Company', co.name], ['Headcount', co.headcount], ['Website', co.domain]];
       }
+      facts.push(['Engagement', escHtml(erVal)]);
+      facts.push(['Industry', escHtml(analysis.industry || 'Unknown')]);
+
+      const factsBlock = `
+        <dl class="lia-facts">
+          ${facts.map(([k, v, note]) => `
+            <div class="lia-fact">
+              <dt>${k}</dt>
+              <dd>${v}${note ? `<span class="lia-fact-note">${escHtml(note)}</span>` : ''}</dd>
+            </div>`).join('')}
+        </dl>`;
+
+      const companyCard = companyRows.filter(([, v]) => v && v !== 'Unknown').length ? `
+        <div class="lia-section">
+          <div class="lia-label">Company</div>
+          <dl class="lia-facts">
+            ${companyRows.filter(([, v]) => v && v !== 'Unknown').map(([k, v]) => {
+              const isDomain = k === 'Website' && /\./.test(v) && !/\s/.test(v);
+              const valHtml = isDomain
+                ? `<a class="lia-link" href="https://${escHtml(v.replace(/^https?:\/\//, ''))}" target="_blank" rel="noopener">${escHtml(v)}</a>`
+                : escHtml(v);
+              return `<div class="lia-fact"><dt>${k}</dt><dd>${valHtml}</dd></div>`;
+            }).join('')}
+          </dl>
+        </div>` : '';
+
+      const chips = (analysis.summaryPoints || []).slice(0, 5);
 
       const timingCautionBanner = analysis.timingCaution ? `
-        <div class="lia-timing-caution-banner">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <div class="lia-notice lia-notice--warn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
             <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
           <span>${escHtml(analysis.timingCaution)}</span>
         </div>` : '';
 
+      // The background caps a no-ICP "High" to "Medium" and sets icpMissing — say so on the result
+      // itself, not just on the purpose picker, since this is the screen a rep actually acts on.
+      const icpMissingBanner = analysis.icpMissing ? `
+        <div class="lia-icp-warning">
+          <div class="lia-icp-warning-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </div>
+          <div class="lia-icp-warning-body">
+            <div class="lia-icp-warning-title">Scored without your ICP</div>
+            <div class="lia-icp-warning-text">No target industries are set, so this is based on seniority only and capped at Medium. <button class="lia-icp-warning-link" id="lia-set-icp-analysis">Set your ICP</button></div>
+          </div>
+        </div>` : '';
+
+      const numberedList = items => `<ol class="lia-list">${items.map(i => `<li>${escHtml(i)}</li>`).join('')}</ol>`;
       body.innerHTML = `
         ${recommendationBlock}
+        ${icpMissingBanner}
         ${excludedBanner}
         ${timingCautionBanner}
-        <div class="lia-indicators">
-
-          ${primaryCard}
-
-          ${fitCard}
-
-          ${secondaryRow}
-
-          <div class="lia-indicator-row">
-            <div class="lia-indicator-card lia-ind-half">
-              <div class="ind-label">Engagement</div>
-              <div class="ind-dots">
-                ${[1,2,3,4].map(i => `<span class="ind-dot ${i <= erDots ? 'filled' : ''}"></span>`).join('')}
-              </div>
-              <div class="ind-value ${erClass}">${escHtml(erVal)}</div>
-            </div>
-            <div class="lia-indicator-card lia-ind-half">
-              <div class="ind-label">Industry</div>
-              <div class="ind-value ind-industry">${escHtml(analysis.industry || 'Unknown')}</div>
-            </div>
-          </div>
-
+        <div class="lia-section">
+          <div class="lia-label">Signals</div>
+          ${factsBlock}
         </div>
-
         ${companyCard}
-
         ${chips.length ? `
         <div class="lia-section">
-          <div class="lia-label">Profile Facts</div>
-          <div class="lia-chips">
-            ${chips.map(c => `<span class="lia-chip">${escHtml(c)}</span>`).join('')}
-          </div>
+          <div class="lia-label">Profile facts</div>
+          <div class="lia-chips">${chips.map(c => `<span class="lia-chip">${escHtml(c)}</span>`).join('')}</div>
         </div>` : ''}
-
         <div class="lia-section">
-          <div class="lia-label">Recent Activity</div>
+          <div class="lia-label">Recent activity</div>
           <p class="lia-text">${escHtml(analysis.recentActivity || 'No recent activity detected.')}</p>
         </div>
-
         ${intent === 'b2c_sales' && (analysis.painPoints || []).length ? `
         <div class="lia-section">
-          <div class="lia-label">Pain Points</div>
-          <div class="lia-callouts">
-            ${analysis.painPoints.map((p, i) => `
-              <div class="lia-callout">
-                <span class="callout-num">${i + 1}</span>
-                <span class="callout-text">${escHtml(p)}</span>
-              </div>
-            `).join('')}
-          </div>
+          <div class="lia-label">Pain points</div>
+          ${numberedList(analysis.painPoints)}
         </div>` : ''}
-
         ${intent === 'b2c_sales' && analysis.approachAngle ? `
         <div class="lia-section">
-          <div class="lia-label">Approach Angle</div>
+          <div class="lia-label">Approach angle</div>
           <p class="lia-text">${escHtml(analysis.approachAngle)}</p>
         </div>` : ''}
-
         ${(analysis.keyInsights || []).length ? `
         <div class="lia-section">
-          <div class="lia-label">${intent === 'job_search' ? 'Job Search Insights' : intent === 'b2c_sales' ? 'Freelance Insights' : 'Key Insights'}</div>
-          <div class="lia-callouts">
-            ${analysis.keyInsights.map((insight, i) => `
-              <div class="lia-callout">
-                <span class="callout-num">${i + 1}</span>
-                <span class="callout-text">${escHtml(insight)}</span>
-              </div>
-            `).join('')}
-          </div>
+          <div class="lia-label">${intent === 'job_search' ? 'Job search insights' : intent === 'b2c_sales' ? 'Freelance insights' : 'Key insights'}</div>
+          ${numberedList(analysis.keyInsights)}
         </div>` : ''}
-
       `;
+      body.querySelector('#lia-set-icp-analysis')?.addEventListener('click', () => chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' }));
 
     } else if (tab === 'message') {
       // ── Message Tab ─────────────────────────────────────────────────────────
@@ -3543,39 +3280,36 @@
         const dm = analysis.decisionMakerLevel || analysis.decisionMaker || '';
         const fit = analysis.icpFit?.match || analysis.industryFit?.level || '';
         const fitR = analysis.icpFit?.reasoning || analysis.industryFit?.reasoning || '';
-        const psClass = { High: 'score-high', Medium: 'score-medium', Low: 'score-low' }[ps] || 'score-low';
-        if (ps) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Prospect Score</span><span class="ind-score-badge ${psClass}" style="font-size:11px;padding:2px 8px">${ps}</span>${psR ? `<span class="lia-insight-note">${escHtml(psR)}</span>` : ''}</div>`;
-        if (dm) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Decision Maker</span><span class="lia-insight-val">${escHtml(dm)}</span></div>`;
-        if (fit) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">ICP Fit</span><span class="lia-insight-val">${escHtml(fit)}</span>${fitR ? `<span class="lia-insight-note">${escHtml(fitR)}</span>` : ''}</div>`;
+        if (ps) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Prospect score</span>${badgeHtml(ps)}${psR ? `<span class="lia-insight-note">${escHtml(psR)}</span>` : ''}</div>`;
+        if (dm) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Decision maker</span>${badgeHtml(dm)}</div>`;
+        if (fit) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">ICP fit</span>${badgeHtml(fit, `${fit} fit`)}${fitR ? `<span class="lia-insight-note">${escHtml(fitR)}</span>` : ''}</div>`;
       } else if (intent === 'b2c_sales') {
         const cp = analysis.clientPotential?.score || '';
         const cpR = analysis.clientPotential?.reasoning || '';
         const aa = analysis.approachAngle || '';
-        const cpClass = { High: 'score-high', Medium: 'score-medium', Low: 'score-low' }[cp] || 'score-low';
-        if (cp) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Client Potential</span><span class="ind-score-badge ${cpClass}" style="font-size:11px;padding:2px 8px">${cp}</span>${cpR ? `<span class="lia-insight-note">${escHtml(cpR)}</span>` : ''}</div>`;
-        if (aa) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Approach Angle</span><span class="lia-insight-note">${escHtml(aa)}</span></div>`;
+        if (cp) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Client potential</span>${badgeHtml(cp)}${cpR ? `<span class="lia-insight-note">${escHtml(cpR)}</span>` : ''}</div>`;
+        if (aa) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Approach angle</span><span class="lia-insight-note">${escHtml(aa)}</span></div>`;
         (analysis.painPoints || []).slice(0, 2).forEach(pp => {
-          insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Pain Point</span><span class="lia-insight-note">${escHtml(pp)}</span></div>`;
+          insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Pain point</span><span class="lia-insight-note">${escHtml(pp)}</span></div>`;
         });
       } else {
         const hs = analysis.hiringSignal?.score || '';
         const hsR = analysis.hiringSignal?.reasoning || '';
-        const hsClass = { Strong: 'score-high', Possible: 'score-medium', Unlikely: 'score-low' }[hs] || 'score-low';
-        if (hs) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Hiring Signal</span><span class="ind-score-badge ${hsClass}" style="font-size:11px;padding:2px 8px">${hs}</span>${hsR ? `<span class="lia-insight-note">${escHtml(hsR)}</span>` : ''}</div>`;
+        if (hs) insightRows += `<div class="lia-insight-row"><span class="lia-insight-key">Hiring signal</span>${badgeHtml(hs)}${hsR ? `<span class="lia-insight-note">${escHtml(hsR)}</span>` : ''}</div>`;
       }
       const ki = (analysis.keyInsights || []).slice(0, 3);
       const insightsSection = (insightRows || ki.length) ? `
         <div class="lia-msg-intelligence">
-          <div class="lia-label" style="margin-bottom:8px">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            Outreach Intelligence
+          <div class="lia-label">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            Outreach read
           </div>
           ${insightRows}
-          ${ki.length ? ki.map(i => `<div class="lia-insight-row lia-insight-ki"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0A66C2" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg><span class="lia-insight-note" style="color:#374151">${escHtml(i)}</span></div>`).join('') : ''}
+          ${ki.length ? ki.map(i => `<div class="lia-insight-row lia-insight-ki"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg><span class="lia-insight-note">${escHtml(i)}</span></div>`).join('') : ''}
         </div>` : '';
 
       const msgTimingCautionBanner = analysis.timingCaution ? `
-        <div class="lia-timing-caution-banner" style="margin-bottom:12px">
+        <div class="lia-notice lia-notice--warn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
             <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
@@ -3584,6 +3318,7 @@
         </div>` : '';
 
       body.innerHTML = `
+        ${lowFitBannerHtml(analysis, intent)}
         ${msgTimingCautionBanner}
         ${insightsSection}
         <div id="lia-msgtab-result" style="display:none;margin-bottom:16px"></div>
@@ -3614,6 +3349,7 @@
         <div class="lia-section">
           <div class="lia-refine-label" style="margin-bottom:6px">Context <span class="lia-optional">(optional — real material to draw from)</span></div>
           <textarea class="lia-notes-input" id="lia-msgtab-context" rows="2" placeholder="e.g. paste one of their recent posts, an article, call notes..."></textarea>
+          ${thinProfileHintHtml()}
         </div>
         <button class="lia-btn-primary" id="lia-msgtab-generate" style="width:100%;margin-bottom:4px">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -3642,7 +3378,7 @@
           <div class="lia-connection-box" style="margin-bottom:8px">
             <p id="lia-msgtab-text">${escHtml(text)}</p>
           </div>
-          <button class="lia-btn-primary lia-copy-btn" id="lia-msgtab-copy" style="margin-bottom:10px">Copy to Clipboard</button>
+          <button class="lia-btn-primary lia-copy-btn" id="lia-msgtab-copy" style="margin-bottom:10px">Copy message</button>
           <div class="lia-refine-section">
             <button class="lia-refine-toggle" id="lia-msgtab-refine-toggle">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -3656,7 +3392,7 @@
               </div>
               <button class="lia-btn-primary" id="lia-msgtab-refine-btn" style="width:100%">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                Refine with AI
+                Refine
               </button>
               <div id="lia-msgtab-refine-error" class="lia-error-msg" style="display:none;margin-top:6px"></div>
             </div>
@@ -3668,7 +3404,7 @@
           const btn = resultDiv.querySelector('#lia-msgtab-copy');
           await navigator.clipboard.writeText(msgCurrentText);
           btn.textContent = 'Copied!'; btn.classList.add('copied');
-          setTimeout(() => { btn.textContent = 'Copy to Clipboard'; btn.classList.remove('copied'); }, 2000);
+          setTimeout(() => { btn.textContent = 'Copy message'; btn.classList.remove('copied'); }, 2000);
           advanceStage(currentProfileUrl, 'messaged');
           logOutreachAction('message');
         });
@@ -3695,7 +3431,7 @@
           } catch (e) {
             if (ed) { ed.textContent = e.message; ed.style.display = ''; }
             rb.disabled = false;
-            rb.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refine with AI`;
+            rb.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refine`;
           }
         });
       }
@@ -3772,13 +3508,14 @@
       const charClass = charCount > 200 ? 'char-over' : charCount > 160 ? 'char-warn' : 'char-ok';
 
       body.innerHTML = `
+        ${lowFitBannerHtml(analysis, intent)}
         <div class="lia-section">
-          <div class="lia-label">Connection Request</div>
+          <div class="lia-label">Connection request</div>
           <div class="lia-connection-box">
             <p id="lia-connection-text">${escHtml(connectionRequest || '')}</p>
             <div class="lia-char-count ${charClass}">${charCount} / 200 chars</div>
           </div>
-          <button class="lia-btn-primary lia-copy-btn" id="lia-copy-btn">Copy to Clipboard</button>
+          <button class="lia-btn-primary lia-copy-btn" id="lia-copy-btn">Copy message</button>
         </div>
         <div class="lia-section lia-regen-section">
           <div class="lia-label">Strategy <span class="lia-optional">(optional — guides the rewrite)</span></div>
@@ -3791,6 +3528,7 @@
           </div>
           <div class="lia-label" style="margin-top:12px">Your findings <span class="lia-optional">(optional — guides the rewrite)</span></div>
           <textarea class="lia-notes-input" id="lia-conn-notes" placeholder="e.g. They just posted about hiring, recently changed roles, mentioned a budget review..." rows="3"></textarea>
+          ${thinProfileHintHtml()}
           <button class="lia-btn-secondary lia-regen-btn" id="lia-regen-btn">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="23 4 23 10 17 10"></polyline>
@@ -3808,7 +3546,7 @@
         await navigator.clipboard.writeText(connectionRequest || '');
         btn.textContent = 'Copied!';
         btn.classList.add('copied');
-        setTimeout(() => { btn.textContent = 'Copy to Clipboard'; btn.classList.remove('copied'); }, 2000);
+        setTimeout(() => { btn.textContent = 'Copy message'; btn.classList.remove('copied'); }, 2000);
         advanceStage(currentProfileUrl, 'connection_sent');
         logOutreachAction('connection');
       });
@@ -3856,7 +3594,7 @@
       const contactInfo = extractContactInfo();
       body.innerHTML = `
         <div class="lia-section">
-          <div class="lia-label">Visible Contact Info</div>
+          <div class="lia-label">Contact info on profile</div>
           ${contactInfo.length
             ? `<ul class="lia-contact-list">${contactInfo.map(c => `
                 <li>
@@ -3900,11 +3638,11 @@
     if (pipelinesResult.error) {
       if (pipelinesResult.error === 'PRO_REQUIRED') {
         document.querySelector('.lia-hs-modal-body').innerHTML = `
-          <div style="text-align:center;padding:28px 16px;">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.5" style="margin-bottom:12px;filter:drop-shadow(0 0 10px rgba(167,139,250,0.4))"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            <div style="font-size:15px;font-weight:700;color:#ffffff;margin-bottom:8px;">Pro Feature</div>
-            <div style="font-size:13px;color:rgba(196,181,253,0.7);margin-bottom:20px;">HubSpot CRM integration is available on the Pro plan.</div>
-            <button class="lia-btn-primary" id="lia-hs-upgrade-btn" style="width:100%">Upgrade to Pro</button>
+          <div class="lia-gate">
+            <div class="lia-gate-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+            <div class="lia-gate-heading">HubSpot sync is a Pro feature</div>
+            <div class="lia-gate-desc">Push contacts and deals to your HubSpot pipeline in one click on the Pro plan.</div>
+            <button class="lia-btn-primary lia-gate-btn" id="lia-hs-upgrade-btn">Upgrade to Pro</button>
           </div>
         `;
         document.getElementById('lia-hs-upgrade-btn').addEventListener('click', () => {
@@ -3969,7 +3707,7 @@
     document.querySelector('.lia-hs-modal-body').innerHTML = `
       ${pushedNotice}
       <div class="lia-hs-row">
-        <label class="lia-hs-label">Deal Name</label>
+        <label class="lia-hs-label">Deal name</label>
         <input class="lia-hs-input" id="lia-hs-dealname" value="${escHtml(profileName)}" />
       </div>
       <div class="lia-hs-row">
@@ -3982,13 +3720,13 @@
       </div>
       ${owners.length ? `
       <div class="lia-hs-row">
-        <label class="lia-hs-label">Deal Owner</label>
+        <label class="lia-hs-label">Deal owner</label>
         <select class="lia-hs-select" id="lia-hs-owner">
           <option value="">— Unassigned —</option>
           ${owners.map(o => `<option value="${escHtml(o.id)}">${escHtml(o.label)}</option>`).join('')}
         </select>
       </div>` : ownersResult.error ? `
-      <p class="lia-hs-owner-warning">⚠ Couldn't load deal owners (${escHtml(ownersResult.error)}) — you can still push the deal unassigned.</p>` : ''}
+      <p class="lia-hs-owner-warning">Couldn't load deal owners (${escHtml(ownersResult.error)}) — you can still push the deal unassigned.</p>` : ''}
       <div class="lia-hs-row">
         <label class="lia-hs-label">Remarks <span class="lia-hs-optional">(optional — goes to top of notes)</span></label>
         <textarea class="lia-hs-textarea" id="lia-hs-remarks" placeholder="Add any notes about this contact..."></textarea>
@@ -4067,7 +3805,7 @@
             <polyline points="9 12 11 14 15 10"></polyline>
           </svg>
           <p>Deal pushed to HubSpot!</p>
-          ${pushResult.warning ? `<p class="lia-hs-warning">⚠ ${escHtml(pushResult.warning)}</p>` : ''}
+          ${pushResult.warning ? `<p class="lia-hs-warning">${escHtml(pushResult.warning)}</p>` : ''}
           <button class="lia-btn-secondary" id="lia-hs-done">Done</button>
         </div>
       `;
@@ -4106,7 +3844,7 @@
     modal.innerHTML = `
       <div class="lia-hs-modal-header">
         <span class="lia-hs-modal-title">Push to HubSpot</span>
-        <button class="lia-hs-modal-close" id="lia-hs-modal-close" aria-label="Close">&times;</button>
+        <button class="lia-hs-modal-close" id="lia-hs-modal-close" aria-label="Close" title="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       </div>
       ${innerHtml}
     `;
@@ -4155,6 +3893,18 @@
 
     const mutualMatch = document.body.innerText.match(/([0-9,]+)\s+mutual connection/i);
     if (mutualMatch) profile.mutualConnections = mutualMatch[1];
+
+    // About section — usually the richest self-description on the page (what they're building,
+    // what they care about), and the analysis/message prompts never received it before. LinkedIn
+    // renders each text block twice (a visible aria-hidden copy plus a screen-reader copy), so the
+    // longest aria-hidden span is the body; falls back to the section's own text minus chrome.
+    const about = extractSection('About', node => {
+      const spans = [...node.querySelectorAll('span[aria-hidden="true"]')].map(s => s.textContent.trim());
+      const longest = spans.sort((a, b) => b.length - a.length)[0] || '';
+      const text = longest.length > 40 ? longest : (node.innerText || '').replace(/^\s*About\s*/i, '');
+      return text.replace(/…\s*see more\s*$/i, '').replace(/\s+/g, ' ').trim().slice(0, 1000);
+    });
+    if (typeof about === 'string' && about.length > 20) profile.about = about;
 
     // Experience section
     profile.experience = extractSection('Experience', node => {
@@ -4308,8 +4058,8 @@
             <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
           </svg>
         </div>
-        <div class="lia-sign-gate-title">Sign in Required</div>
-        <div class="lia-sign-gate-desc">Connect your Google account to unlock AI-powered LinkedIn intelligence.</div>
+        <div class="lia-sign-gate-title">Sign in to continue</div>
+        <div class="lia-sign-gate-desc">Sign in with Google to analyze profiles and draft outreach. Your API key and prospect data stay in this browser.</div>
         <button class="lia-sign-gate-btn" id="lia-gate-signin">
           <svg width="16" height="16" viewBox="0 0 24 24" style="flex-shrink:0">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -4371,7 +4121,7 @@
     if (panel) { panel.remove(); panel = null; }
     if (postPanel) { postPanel.remove(); postPanel = null; }
     activeTab = 'analysis';
-    pcTopics = []; pcSelected = null; pcResult = null; pcImageB64 = null; pcMode = 'personal';
+    pcTopics = []; pcSelected = null; pcResult = null; pcMode = 'personal';
   }
 
   function removeAll() {

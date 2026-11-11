@@ -114,7 +114,7 @@
           'messagePresets', 'b2cProfile', 'jobProfile',
           'b2cMessagePresets', 'jobMessagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries',
           'creatorProfile', 'companyProfile', 'reminderSettings',
-          'openaiApiKey', 'hubspotApiKey',
+          'anthropicApiKey', 'hubspotApiKey',
         ];
         const writtenKeys = ['jobProfile', 'b2cProfile', 'b2cTargetIndustries', 'icpProfiles', 'activeIcpProfileId', 'creatorProfile', 'companyProfile'];
         const { settingsFieldTimestamps } = await chrome.storage.local.get('settingsFieldTimestamps');

@@ -10,7 +10,6 @@ import {
   handleRefineMessage,
   handleSuggestPostTopics,
   handleGeneratePost,
-  handleGeneratePostImage,
 } from './ai.js';
 import { fetchHubSpotPipelines, fetchHubSpotOwners, pushHubSpotDeal } from './hubspot.js';
 import { checkFollowUpReminders, checkNewReplyNotifications, updateReminderBadge } from './reminders.js';
@@ -37,8 +36,8 @@ async function pushSettingsToCloud(settings) {
 }
 
 async function withUsageGate(eventType, fn) {
-  const { openaiApiKey, userPlan } = await chrome.storage.local.get(['openaiApiKey', 'userPlan']);
-  if (!openaiApiKey) return { error: 'NO_API_KEY' };
+  const { anthropicApiKey, userPlan } = await chrome.storage.local.get(['anthropicApiKey', 'userPlan']);
+  if (!anthropicApiKey) return { error: 'NO_API_KEY' };
   if (userPlan === 'pro') {
     // Pro users are never gated on the server round-trip — chrome.identity.getAuthToken can
     // resolve a stale/different cached Google identity than the one on file as Pro, which would
@@ -98,7 +97,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
   if (msg.type === 'GET_API_KEY_STATUS') {
-    chrome.storage.local.get('openaiApiKey').then(result => sendResponse({ hasKey: !!result.openaiApiKey }));
+    chrome.storage.local.get('anthropicApiKey').then(result => sendResponse({ hasKey: !!result.anthropicApiKey }));
     return true;
   }
   if (msg.type === 'GET_HS_KEY_STATUS') {
@@ -111,10 +110,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === 'GENERATE_POST') {
     withUsageGate('post', () => handleGeneratePost(msg)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
-    return true;
-  }
-  if (msg.type === 'GENERATE_POST_IMAGE') {
-    withProGate(() => handleGeneratePostImage(msg.prompt)).then(sendResponse).catch(err => sendResponse({ error: err.message }));
     return true;
   }
   if (msg.type === 'REFINE_MESSAGE') {

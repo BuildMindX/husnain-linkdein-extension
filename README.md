@@ -44,7 +44,7 @@ Pick **B2B Sales**, **Freelance**, or **Job Search** in Settings. Each mode chan
 - **Job Search:** Add your name, target roles, target industries, background, and years of experience
 
 ### Step 3 — Add API Keys
-- **OpenAI API key** (required) — powers all AI analysis and message generation
+- **Anthropic API key** (required) — powers all AI analysis and message generation
 - **HubSpot Private App token** (optional) — enables the "Push to HubSpot" deal creation feature
 
 ---
@@ -62,7 +62,7 @@ Pick **B2B Sales**, **Freelance**, or **Job Search** in Settings. Each mode chan
 
 - Chrome Extension Manifest V3
 - Vanilla JS (no build step, no dependencies)
-- OpenAI `gpt-4o-mini` via Chat Completions API
+- Anthropic `claude-sonnet-5-5` via the Messages API
 - HubSpot CRM v3/v4 API
 - IndexedDB for per-profile analysis caching
 
@@ -90,7 +90,7 @@ Pick **B2B Sales**, **Freelance**, or **Job Search** in Settings. Each mode chan
 
 ## Privacy
 
-- All analysis is done via your own OpenAI API key — no data is sent to any third-party server other than OpenAI and HubSpot (if configured)
+- All analysis is done via your own Anthropic API key — no data is sent to any third-party server other than Anthropic and HubSpot (if configured)
 - Profile data and analysis results are cached locally in your browser's IndexedDB
 - API keys are stored in `chrome.storage.local` and never leave your device
 

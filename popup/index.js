@@ -1,17 +1,17 @@
 const MODE_META = {
   b2b_sales: {
     label: 'B2B Sales',
-    sub: 'Score prospects & personalise outreach',
+    sub: 'Score prospects against your ICP',
     icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>`,
   },
   b2c_sales: {
     label: 'Freelance / Consulting',
-    sub: 'Find clients for your expertise',
+    sub: 'Find clients for your services',
     icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
   },
   job_search: {
     label: 'Job Search',
-    sub: 'Identify recruiters & hiring signals',
+    sub: 'Spot recruiters and hiring signals',
     icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
   },
 };
@@ -77,19 +77,19 @@ function renderMainContent(result) {
   }
 
   // ── Connections ──
-  const hasOpenAI = !!result.openaiApiKey;
+  const hasAnthropic = !!result.anthropicApiKey;
   const hasHubSpot = !!result.hubspotApiKey;
 
-  const oaiDot = document.getElementById('conn-openai-dot');
-  const oaiStatus = document.getElementById('conn-openai-status');
-  if (hasOpenAI) {
-    oaiDot.className = 'conn-dot connected';
-    oaiStatus.textContent = 'Connected';
-    oaiStatus.className = 'conn-status ok';
+  const anthropicDot = document.getElementById('conn-anthropic-dot');
+  const anthropicStatus = document.getElementById('conn-anthropic-status');
+  if (hasAnthropic) {
+    anthropicDot.className = 'conn-dot connected';
+    anthropicStatus.textContent = 'Connected';
+    anthropicStatus.className = 'conn-status ok';
   } else {
-    oaiDot.className = 'conn-dot disconnected';
-    oaiStatus.textContent = 'Not set';
-    oaiStatus.className = 'conn-status warn';
+    anthropicDot.className = 'conn-dot disconnected';
+    anthropicStatus.textContent = 'Not set';
+    anthropicStatus.className = 'conn-status warn';
   }
 
   const hsDot = document.getElementById('conn-hubspot-dot');
@@ -137,7 +137,7 @@ function renderMainContent(result) {
     : `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
 
   document.getElementById('post-mode-row').innerHTML = `
-    <span class="post-mode-label">Post as:</span>
+    <span class="post-mode-label">Posts as</span>
     <span class="post-mode-badge">${postModeIcon} ${postModeLabel}</span>`;
 }
 
@@ -153,15 +153,15 @@ function renderUsageWarning(plan, usageStats) {
   if (exhausted.length) {
     const label = exhausted.map(k => labels[k]).join(' & ');
     warning.innerHTML = `
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-      <span>Monthly ${label} limit reached. <button class="usage-warn-btn" id="usage-warn-upgrade">Upgrade to Pro →</button></span>`;
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" ><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span>Monthly ${label} limit reached. <button class="usage-warn-btn" id="usage-warn-upgrade">Upgrade to Pro</button></span>`;
     warning.className = 'usage-warning usage-warn-critical';
     warning.style.display = 'flex';
   } else if (nearLimit.length) {
     const label = nearLimit.map(k => labels[k]).join(' & ');
     warning.innerHTML = `
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-      <span>Running low on free ${label}. <button class="usage-warn-btn" id="usage-warn-upgrade">Upgrade →</button></span>`;
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" ><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span>Running low on free ${label}. <button class="usage-warn-btn" id="usage-warn-upgrade">Upgrade</button></span>`;
     warning.className = 'usage-warning usage-warn-caution';
     warning.style.display = 'flex';
   }
@@ -170,7 +170,7 @@ function renderUsageWarning(plan, usageStats) {
     if (btn) btn.textContent = '…';
     chrome.runtime.sendMessage({ type: 'START_CHECKOUT' }, res => {
       if (res?.url) { chrome.tabs.create({ url: res.url, active: true }); window.close(); }
-      else if (btn) btn.textContent = 'Upgrade →';
+      else if (btn) btn.textContent = 'Upgrade';
     });
   });
 }
@@ -192,19 +192,30 @@ function renderUsageStats(plan, usageStats) {
   const hasAnyUsage = items.some(i => (usageStats[i.key] ?? 0) > 0);
   if (!hasAnyUsage && !isPro) { section.style.display = 'none'; return; }
 
+  // Pro has no limit, so a "full" bar would be decoration, not data — show plain counts instead.
+  if (isPro) {
+    grid.className = 'usage-stats';
+    grid.innerHTML = items.map(({ key, label }) => `
+      <div class="usage-stat">
+        <span class="usage-stat-num">${usageStats[key] ?? 0}</span>
+        <span class="usage-stat-label">${label}</span>
+      </div>`).join('');
+    section.style.display = '';
+    return;
+  }
+  grid.className = 'usage-grid';
   grid.innerHTML = items.map(({ key, label }) => {
     const used = usageStats[key] ?? 0;
-    const pct = isPro ? 100 : Math.min(100, Math.round((used / FREE_LIMIT) * 100));
-    const barColor = isPro ? '#7c3aed' : pct >= 90 ? '#ef4444' : pct >= 70 ? '#f59e0b' : '#7c3aed';
-    const limitLabel = isPro ? '∞' : `/ ${FREE_LIMIT}`;
+    const pct = Math.min(100, Math.round((used / FREE_LIMIT) * 100));
+    const tone = pct >= 90 ? 'bad' : pct >= 70 ? 'warn' : 'ok';
     return `
       <div class="usage-row">
         <div class="usage-row-top">
           <span class="usage-label">${label}</span>
-          <span class="usage-count">${used} ${limitLabel}</span>
+          <span class="usage-count">${used} / ${FREE_LIMIT}</span>
         </div>
-        <div class="usage-bar-track">
-          <div class="usage-bar-fill" style="width:${pct}%;background:${barColor}"></div>
+        <div class="usage-bar-track" role="progressbar" aria-label="${label} used" aria-valuemin="0" aria-valuemax="${FREE_LIMIT}" aria-valuenow="${used}">
+          <div class="usage-bar-fill tone-${tone}" style="width:${pct}%"></div>
         </div>
       </div>`;
   }).join('');
@@ -216,15 +227,16 @@ function renderUsageStats(plan, usageStats) {
 // bundler here — same pattern already used for SETTINGS_KEYS/SYNC_KEYS between auth.js and
 // options/index.js). Order matters: it drives the <select> option order below.
 const STAGE_META = {
-  new:             { label: 'New',            color: '#94a3b8' },
-  connection_sent: { label: 'Connection Sent', color: '#38bdf8' },
-  messaged:        { label: 'Messaged',        color: '#38bdf8' },
-  followup_1:      { label: 'Follow-up 1',     color: '#d97706' },
-  followup_2:      { label: 'Follow-up 2',     color: '#d97706' },
-  followup_3plus:  { label: 'Follow-up 3+',    color: '#d97706' },
-  replied:         { label: 'Replied',         color: '#16a34a' },
-  booked:          { label: 'Booked',          color: '#16a34a' },
-  closed:          { label: 'Closed',          color: '#6b7280' },
+  // `tone` maps to a themed CSS class (tone-*) so stage colors stay AA-legible in light and dark.
+  new:             { label: 'New',             tone: 'neutral' },
+  connection_sent: { label: 'Connection sent', tone: 'info' },
+  messaged:        { label: 'Messaged',        tone: 'info' },
+  followup_1:      { label: 'Follow-up 1',     tone: 'warn' },
+  followup_2:      { label: 'Follow-up 2',     tone: 'warn' },
+  followup_3plus:  { label: 'Follow-up 3+',    tone: 'warn' },
+  replied:         { label: 'Replied',         tone: 'good' },
+  booked:          { label: 'Booked',          tone: 'good' },
+  closed:          { label: 'Closed',          tone: 'muted' },
 };
 const STAGE_ORDER = Object.keys(STAGE_META);
 // "Booked"/"Closed" are sales-deal language that don't map onto a job seeker's mental model —
@@ -253,23 +265,23 @@ function renderSavedContacts(contacts) {
     // even exists — show a short empty-state instead of hiding the section outright, same as
     // the Options Pipeline board already does.
     if (exportBtn) exportBtn.style.display = 'none';
-    list.innerHTML = `<p class="saved-empty">No saved contacts yet — click Save on a LinkedIn profile to start tracking your pipeline.</p>`;
+    list.innerHTML = `<p class="saved-empty">No saved contacts yet. Click Save on a LinkedIn profile to start your pipeline.</p>`;
     section.style.display = '';
     return;
   }
   if (exportBtn) exportBtn.style.display = '';
 
-  const SCORE_COLOR = {
-    High: '#16a34a', Medium: '#d97706', Low: '#6b7280',
-    Strong: '#16a34a', Possible: '#d97706', Unlikely: '#6b7280',
+  const SCORE_TONE = {
+    High: 'good', Medium: 'warn', Low: 'muted',
+    Strong: 'good', Possible: 'warn', Unlikely: 'muted',
   };
 
   list.innerHTML = contacts.slice(0, 10).map(c => {
-    const color = SCORE_COLOR[c.score] || '#6b7280';
+    const scoreTone = SCORE_TONE[c.score] || 'muted';
     const name = c.name ? c.name.split(' ').slice(0, 2).join(' ') : 'Unknown';
     const detail = c.company || c.headline || '';
     const stage = STAGE_META[c.stage] ? c.stage : 'new';
-    const stageColor = STAGE_META[stage].color;
+    const stageTone = STAGE_META[stage].tone;
     const days = daysInStage(c.stageUpdatedAt || c.savedAt);
     return `
       <div class="saved-contact-row">
@@ -279,14 +291,14 @@ function renderSavedContacts(contacts) {
             ${detail ? `<span class="saved-contact-detail">${escHtmlPopup(detail.slice(0, 38))}</span>` : ''}
           </div>
           <div class="saved-contact-right">
-            <span class="saved-score-badge" style="color:${color};border-color:${color}40;background:${color}12">${escHtmlPopup(c.score || '–')}</span>
-            <a href="${escHtmlPopup(c.url)}" target="_blank" class="saved-open-link" title="Open on LinkedIn">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            <span class="saved-score-badge tone-${scoreTone}">${escHtmlPopup(c.score || '–')}</span>
+            <a href="${escHtmlPopup(c.url)}" target="_blank" class="saved-open-link" title="Open on LinkedIn" aria-label="Open ${escHtmlPopup(name)} on LinkedIn">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             </a>
           </div>
         </div>
         <div class="saved-contact-bottom">
-          <select class="saved-stage-select" data-url="${escHtmlPopup(c.url)}" style="color:${stageColor};border-color:${stageColor}55">
+          <select class="saved-stage-select tone-${stageTone}" data-url="${escHtmlPopup(c.url)}" aria-label="Outreach stage for ${escHtmlPopup(name)}">
             ${STAGE_ORDER.map(s => `<option value="${s}" ${s === stage ? 'selected' : ''}>${stageLabel(s, c.intent)}</option>`).join('')}
           </select>
           ${days ? `<span class="saved-stage-days">${days}</span>` : ''}
@@ -344,7 +356,7 @@ function exportContactsCSV(contacts) {
 
 // ── Boot: check auth before rendering anything ────────────────────────────────
 chrome.storage.local.get(
-  ['googleUser', 'openaiApiKey', 'hubspotApiKey', 'analysisIntent', 'creatorProfile', 'companyProfile', 'userPlan', 'usageStats', 'savedContacts'],
+  ['googleUser', 'anthropicApiKey', 'hubspotApiKey', 'analysisIntent', 'creatorProfile', 'companyProfile', 'userPlan', 'usageStats', 'savedContacts'],
   result => {
     if (!result.googleUser) {
       showSignInGate();

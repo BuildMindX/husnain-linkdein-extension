@@ -16,7 +16,7 @@ function showOnboarding(googleUser) {
     `;
   }
 
-  // Step navigation — Welcome → Mode choice → Connect OpenAI → Pricing
+  // Step navigation — Welcome → Mode choice → Connect Anthropic → Pricing
   function goToObStep(id) {
     overlay.querySelectorAll('.ob-step').forEach(s => s.classList.add('hidden'));
     document.getElementById(id)?.classList.remove('hidden');
@@ -35,7 +35,7 @@ function showOnboarding(googleUser) {
   });
   obModeNextBtn.addEventListener('click', () => goToObStep('ob-step-apikey'));
 
-  // Connect OpenAI — the product does nothing without this key, and previously nothing in
+  // Connect Anthropic — the product does nothing without this key, and previously nothing in
   // onboarding ever said so; a user could sail through Welcome/Pricing and only discover the
   // requirement after a confusing failure back on LinkedIn.
   const obApiKeyInput = document.getElementById('ob-api-key-input');
@@ -43,8 +43,8 @@ function showOnboarding(googleUser) {
   document.getElementById('ob-apikey-save').addEventListener('click', () => {
     const key = obApiKeyInput.value.trim();
     if (!key) { showStatus(obApiKeyStatus, 'Please enter an API key.', 'error'); return; }
-    if (!key.startsWith('sk-')) { showStatus(obApiKeyStatus, 'Invalid format. OpenAI keys start with "sk-".', 'error'); return; }
-    chrome.storage.local.set({ openaiApiKey: key }, () => {
+    if (!key.startsWith('sk-ant-')) { showStatus(obApiKeyStatus, 'Invalid format. Anthropic keys start with "sk-ant-".', 'error'); return; }
+    chrome.storage.local.set({ anthropicApiKey: key }, () => {
       if (apiKeyInput) apiKeyInput.value = key; // keep the Integrations tab in sync
       goToObStep('ob-step-pricing');
     });
@@ -83,7 +83,7 @@ function showOnboarding(googleUser) {
         btn.disabled = false;
         btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Upgrade to Pro`;
         status.textContent = res?.error || 'Couldn\'t start checkout — try again in a moment.';
-        status.style.color = '#f87171';
+        status.classList.add('status-error');
       }
     });
   });
@@ -165,7 +165,7 @@ const SYNC_KEYS = [
   'messagePresets', 'b2cProfile', 'jobProfile',
   'b2cMessagePresets', 'jobMessagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries',
   'creatorProfile', 'companyProfile', 'reminderSettings',
-  'openaiApiKey', 'hubspotApiKey',
+  'anthropicApiKey', 'hubspotApiKey',
 ];
 
 let _syncDebounceTimer = null;
@@ -697,15 +697,15 @@ document.getElementById('job-save-btn')?.addEventListener('click', () => {
   chrome.storage.local.set({ jobProfile }, () => showStatus(document.getElementById('job-status'), 'Job profile saved.', 'success'));
 });
 
-// ── OpenAI API Key ────────────────────────────────────────────────────────────
+// ── Anthropic API Key ──────────────────────────────────────────────────────────
 const apiKeyInput = document.getElementById('api-key');
 const saveBtn = document.getElementById('save-btn');
 const clearBtn = document.getElementById('clear-btn');
 const toggleBtn = document.getElementById('toggle-visibility');
 const statusMsg = document.getElementById('status-msg');
 
-chrome.storage.local.get('openaiApiKey', result => {
-  if (result.openaiApiKey) { apiKeyInput.value = result.openaiApiKey; showStatus(statusMsg, 'API key is saved and active.', 'success'); }
+chrome.storage.local.get('anthropicApiKey', result => {
+  if (result.anthropicApiKey) { apiKeyInput.value = result.anthropicApiKey; showStatus(statusMsg, 'API key is saved and active.', 'success'); }
 });
 
 toggleBtn?.addEventListener('click', () => makeToggle(apiKeyInput, toggleBtn, 'eye-icon'));
@@ -713,12 +713,12 @@ toggleBtn?.addEventListener('click', () => makeToggle(apiKeyInput, toggleBtn, 'e
 saveBtn?.addEventListener('click', () => {
   const key = apiKeyInput.value.trim();
   if (!key) { showStatus(statusMsg, 'Please enter an API key.', 'error'); return; }
-  if (!key.startsWith('sk-')) { showStatus(statusMsg, 'Invalid format. OpenAI keys start with "sk-".', 'error'); return; }
-  chrome.storage.local.set({ openaiApiKey: key }, () => showStatus(statusMsg, 'API key saved.', 'success'));
+  if (!key.startsWith('sk-ant-')) { showStatus(statusMsg, 'Invalid format. Anthropic keys start with "sk-ant-".', 'error'); return; }
+  chrome.storage.local.set({ anthropicApiKey: key }, () => showStatus(statusMsg, 'API key saved.', 'success'));
 });
 
 clearBtn?.addEventListener('click', () => {
-  chrome.storage.local.remove('openaiApiKey', () => { apiKeyInput.value = ''; showStatus(statusMsg, 'API key cleared.', 'info'); });
+  chrome.storage.local.remove('anthropicApiKey', () => { apiKeyInput.value = ''; showStatus(statusMsg, 'API key cleared.', 'info'); });
 });
 
 apiKeyInput?.addEventListener('keydown', e => { if (e.key === 'Enter') saveBtn?.click(); });
@@ -858,7 +858,7 @@ function loadAllSettings() {
   chrome.storage.local.get([
     'analysisIntent', 'messagePresets', 'b2cProfile', 'jobProfile',
     'b2cMessagePresets', 'jobMessagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries',
-    'openaiApiKey', 'hubspotApiKey', 'creatorProfile', 'companyProfile', 'reminderSettings',
+    'anthropicApiKey', 'hubspotApiKey', 'creatorProfile', 'companyProfile', 'reminderSettings',
   ], r => {
     // Mode
     const intent = r.analysisIntent || 'b2b_sales';
@@ -906,8 +906,8 @@ function loadAllSettings() {
 
     // API keys
     if (apiKeyInput) {
-      apiKeyInput.value = r.openaiApiKey || '';
-      if (r.openaiApiKey) showStatus(statusMsg, 'API key is saved and active.', 'success');
+      apiKeyInput.value = r.anthropicApiKey || '';
+      if (r.anthropicApiKey) showStatus(statusMsg, 'API key is saved and active.', 'success');
     }
     if (hsKeyInput) {
       hsKeyInput.value = r.hubspotApiKey || '';
@@ -959,7 +959,7 @@ function renderAccountTab(user, plan) {
       </div>
       ${!isPro ? `
       <div class="upgrade-card">
-        <div class="upgrade-card-title">Upgrade to LinkPilot Pro</div>
+        <div class="upgrade-card-title">Upgrade to Pro</div>
         <ul class="upgrade-features">
           <li>Unlimited profile analyses</li>
           <li>Unlimited message generation</li>
@@ -974,8 +974,8 @@ function renderAccountTab(user, plan) {
         <div id="upgrade-status" class="account-status-msg" style="display:none;margin-top:8px"></div>
       </div>` : `
       <div class="pro-active-card">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-        Pro plan active — all features unlocked
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        Pro plan active
         <button type="button" id="manage-sub-btn" class="btn-manage-sub">Manage subscription</button>
         <div id="manage-sub-status" class="account-status-msg" style="display:none;margin-top:6px"></div>
       </div>`}
@@ -1084,6 +1084,113 @@ document.getElementById('open-privacy-btn')?.addEventListener('click', () => {
   chrome.tabs.create({ url: chrome.runtime.getURL('privacy.html'), active: true });
 });
 
+// ── Team Setup (share ICP + business profiles across a BD team) ───────────────
+// Every setting lives in one rep's own browser, so a team member who never typed in the ICP got
+// seniority-only scoring (measured: a construction VP scored "High" for an AI-infra seller). This
+// lets one person configure targeting once and hand it out as a paste-able code. Whitelist only:
+// API keys, the pipeline, and personal profiles (job search, personal-brand creator) never leave.
+// senderName is stripped on export and the importer's own is kept, so reps don't sign as each other.
+const TEAM_CODE_PREFIX = 'LINKPILOT-TEAM-1:';
+
+function toBase64Utf8(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin);
+}
+
+function fromBase64Utf8(b64) {
+  const bin = atob(b64);
+  return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
+}
+
+const strList = v => (Array.isArray(v) ? v.filter(x => typeof x === 'string' && x.trim()).map(x => x.trim().slice(0, 120)).slice(0, 50) : []);
+function strFields(obj, drop = []) {
+  const out = {};
+  if (!obj || typeof obj !== 'object') return out;
+  Object.entries(obj).forEach(([k, v]) => {
+    if (!drop.includes(k) && typeof v === 'string' && v.trim()) out[k] = v.slice(0, 2000);
+  });
+  return out;
+}
+
+document.getElementById('team-copy-btn')?.addEventListener('click', () => {
+  const status = document.getElementById('team-setup-status');
+  chrome.storage.local.get(['icpProfiles', 'activeIcpProfileId', 'messagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries', 'b2cProfile', 'b2cMessagePresets', 'companyProfile'], r => {
+    const data = {
+      icpProfiles: (Array.isArray(r.icpProfiles) ? r.icpProfiles : []).map(p => ({
+        id: p.id, name: p.name,
+        targetIndustries: strList(p.targetIndustries), excludeIndustries: strList(p.excludeIndustries),
+        businessProfile: strFields(p.businessProfile, ['senderName']),
+      })),
+      activeIcpProfileId: r.activeIcpProfileId,
+      messagePresets: r.messagePresets,
+      b2cTargetIndustries: strList(r.b2cTargetIndustries), b2cExcludeIndustries: strList(r.b2cExcludeIndustries),
+      b2cProfile: strFields(r.b2cProfile, ['senderName']),
+      b2cMessagePresets: r.b2cMessagePresets,
+      companyProfile: strFields(r.companyProfile),
+    };
+    if (!data.icpProfiles.length && !data.b2cTargetIndustries.length) {
+      showStatus(status, 'Nothing to share yet — set up your ICP first.', 'error');
+      return;
+    }
+    const code = TEAM_CODE_PREFIX + toBase64Utf8(JSON.stringify({ v: 1, data }));
+    navigator.clipboard.writeText(code)
+      .then(() => showStatus(status, 'Team setup code copied — paste it to your team.', 'success'))
+      .catch(() => showStatus(status, 'Could not copy to the clipboard.', 'error'));
+  });
+});
+
+document.getElementById('team-import-btn')?.addEventListener('click', () => {
+  const status = document.getElementById('team-setup-status');
+  const raw = (document.getElementById('team-import-input')?.value || '').trim();
+  if (!raw.startsWith(TEAM_CODE_PREFIX)) { showStatus(status, 'That is not a LinkPilot team setup code.', 'error'); return; }
+  let data;
+  try {
+    const parsed = JSON.parse(fromBase64Utf8(raw.slice(TEAM_CODE_PREFIX.length)));
+    if (parsed?.v !== 1 || !parsed.data) throw new Error('bad version');
+    data = parsed.data;
+  } catch {
+    showStatus(status, 'This code is damaged or incomplete — ask for a fresh copy.', 'error');
+    return;
+  }
+  if (!confirm('Replace your ICP, business profiles, and message style with this team setup? Your API keys, pipeline, and personal profiles are not affected.')) return;
+
+  chrome.storage.local.get(['icpProfiles', 'activeIcpProfileId', 'b2cProfile'], mine => {
+    const myActive = (mine.icpProfiles || []).find(p => p.id === mine.activeIcpProfileId) || (mine.icpProfiles || [])[0];
+    const mySender = myActive?.businessProfile?.senderName;
+    const icpProfiles = (Array.isArray(data.icpProfiles) ? data.icpProfiles : [])
+      .filter(p => p && typeof p.id === 'string' && typeof p.name === 'string')
+      .map(p => ({
+        id: p.id, name: p.name.slice(0, 80),
+        targetIndustries: strList(p.targetIndustries), excludeIndustries: strList(p.excludeIndustries),
+        businessProfile: { ...strFields(p.businessProfile, ['senderName']), ...(mySender ? { senderName: mySender } : {}) },
+      }));
+    const update = {
+      b2cTargetIndustries: strList(data.b2cTargetIndustries),
+      b2cExcludeIndustries: strList(data.b2cExcludeIndustries),
+      b2cProfile: { ...strFields(data.b2cProfile, ['senderName']), ...(mine.b2cProfile?.senderName ? { senderName: mine.b2cProfile.senderName } : {}) },
+      companyProfile: strFields(data.companyProfile),
+    };
+    if (icpProfiles.length) {
+      update.icpProfiles = icpProfiles;
+      update.activeIcpProfileId = icpProfiles.some(p => p.id === data.activeIcpProfileId) ? data.activeIcpProfileId : icpProfiles[0].id;
+    }
+    const presets = v => (v && typeof v === 'object') ? {
+      tone: typeof v.tone === 'string' ? v.tone.slice(0, 30) : 'warm',
+      length: v.length === 'short' ? 'short' : 'standard',
+      includeCta: !!v.includeCta,
+      ctaText: typeof v.ctaText === 'string' ? v.ctaText.slice(0, 200) : '',
+    } : null;
+    if (presets(data.messagePresets)) update.messagePresets = presets(data.messagePresets);
+    if (presets(data.b2cMessagePresets)) update.b2cMessagePresets = presets(data.b2cMessagePresets);
+    chrome.storage.local.set(update, () => {
+      showStatus(status, 'Team setup imported — reloading.', 'success');
+      setTimeout(() => location.reload(), 700);
+    });
+  });
+});
+
 // ── Clear All Data ────────────────────────────────────────────────────────────
 document.getElementById('clear-all-data-btn')?.addEventListener('click', () => {
   if (!confirm('This will permanently delete all your saved profiles, API keys, and settings. Are you sure?')) return;
@@ -1111,15 +1218,16 @@ function showStatus(el, message, type) {
 // STAGE_ORDER) — no shared-module bundler here, same pattern already used for
 // SETTINGS_KEYS/SYNC_KEYS between auth.js and options/index.js.
 const STAGE_META = {
-  new:             { label: 'New',            color: '#94a3b8' },
-  connection_sent: { label: 'Connection Sent', color: '#38bdf8' },
-  messaged:        { label: 'Messaged',        color: '#38bdf8' },
-  followup_1:      { label: 'Follow-up 1',     color: '#d97706' },
-  followup_2:      { label: 'Follow-up 2',     color: '#d97706' },
-  followup_3plus:  { label: 'Follow-up 3+',    color: '#d97706' },
-  replied:         { label: 'Replied',         color: '#16a34a' },
-  booked:          { label: 'Booked',          color: '#16a34a' },
-  closed:          { label: 'Closed',          color: '#6b7280' },
+  // `tone` maps to a themed CSS class (tone-*) so stage colors stay AA-legible in light and dark.
+  new:             { label: 'New',             tone: 'neutral' },
+  connection_sent: { label: 'Connection sent', tone: 'info' },
+  messaged:        { label: 'Messaged',        tone: 'info' },
+  followup_1:      { label: 'Follow-up 1',     tone: 'warn' },
+  followup_2:      { label: 'Follow-up 2',     tone: 'warn' },
+  followup_3plus:  { label: 'Follow-up 3+',    tone: 'warn' },
+  replied:         { label: 'Replied',         tone: 'good' },
+  booked:          { label: 'Booked',          tone: 'good' },
+  closed:          { label: 'Closed',          tone: 'muted' },
 };
 const STAGE_ORDER = Object.keys(STAGE_META);
 // "Booked"/"Closed" are sales-deal language that don't map onto a job seeker's mental model —
@@ -1146,7 +1254,7 @@ const STAGE_ENGAGEMENT_BASE = {
   followup_3plus: 40,
   replied: 80,
 };
-const ENGAGEMENT_TIER_COLOR = { Hot: '#ef4444', Warm: '#f59e0b', Cooling: '#38bdf8', Stalled: '#6b7280' };
+const ENGAGEMENT_TIER_TONE = { Hot: 'hot', Warm: 'warn', Cooling: 'info', Stalled: 'muted' };
 
 function computeEngagementScore(contact) {
   const stage = STAGE_META[contact?.stage] ? contact.stage : 'new';
@@ -1186,17 +1294,17 @@ function computeEngagementScore(contact) {
     reason = `${STAGE_META[stage].label} sent, still inside a normal reply window.`;
   }
 
-  return { score, tier, reason, color: ENGAGEMENT_TIER_COLOR[tier] };
+  return { score, tier, reason, tone: ENGAGEMENT_TIER_TONE[tier] };
 }
 
 // Groups the 9 exact stages into 5 scannable board columns, mirroring STAGE_META's
 // existing color families rather than inventing a new taxonomy.
 const PIPELINE_COLUMNS = [
-  { label: 'New',             color: '#94a3b8', stages: ['new'] },
-  { label: 'Reaching Out',    color: '#38bdf8', stages: ['connection_sent', 'messaged'] },
-  { label: 'Following Up',    color: '#d97706', stages: ['followup_1', 'followup_2', 'followup_3plus'] },
-  { label: 'Replied / Booked',jobLabel: 'Replied / Interview', color: '#16a34a', stages: ['replied', 'booked'] },
-  { label: 'Closed',          jobLabel: 'Hired',                color: '#6b7280', stages: ['closed'] },
+  { label: 'New',              tone: 'neutral', stages: ['new'] },
+  { label: 'Reaching out',     tone: 'info',    stages: ['connection_sent', 'messaged'] },
+  { label: 'Following up',     tone: 'warn',    stages: ['followup_1', 'followup_2', 'followup_3plus'] },
+  { label: 'Replied / booked', jobLabel: 'Replied / interview', tone: 'good', stages: ['replied', 'booked'] },
+  { label: 'Closed',           jobLabel: 'Hired',               tone: 'muted', stages: ['closed'] },
 ];
 
 // Only rename a column header when the board is filtered to a single intent — with mixed
@@ -1205,9 +1313,9 @@ function columnLabel(col, intentFilter) {
   return (intentFilter === 'job_search' && col.jobLabel) ? col.jobLabel : col.label;
 }
 
-const PIPELINE_SCORE_COLOR = {
-  High: '#16a34a', Medium: '#d97706', Low: '#6b7280',
-  Strong: '#16a34a', Possible: '#d97706', Unlikely: '#6b7280',
+const PIPELINE_SCORE_TONE = {
+  High: 'good', Medium: 'warn', Low: 'muted',
+  Strong: 'good', Possible: 'warn', Unlikely: 'muted',
 };
 
 function daysInStage(ts) {
@@ -1248,8 +1356,8 @@ function renderPipelineBoard() {
     const items = filtered.filter(c => col.stages.includes(STAGE_META[c.stage] ? c.stage : 'new'));
     const cards = items.map(c => {
       const stage = STAGE_META[c.stage] ? c.stage : 'new';
-      const stageColor = STAGE_META[stage].color;
-      const scoreColor = PIPELINE_SCORE_COLOR[c.score] || '#6b7280';
+      const stageTone = STAGE_META[stage].tone;
+      const scoreTone = PIPELINE_SCORE_TONE[c.score] || 'muted';
       const days = daysInStage(c.stageUpdatedAt || c.savedAt);
       const detail = c.company || c.headline || '';
       const snoozed = c.snoozedUntil && c.snoozedUntil > Date.now();
@@ -1261,30 +1369,30 @@ function renderPipelineBoard() {
           <div class="pipeline-card-top">
             <span class="pipeline-card-name">${escapeHtml(c.name || 'Unknown')}</span>
             <span class="pipeline-card-top-right">
-              <span class="pipeline-card-score" style="color:${scoreColor};border-color:${scoreColor}40;background:${scoreColor}12">${escapeHtml(c.score || '–')}</span>
-              <button type="button" class="pipeline-card-remove" data-url="${escapeHtml(c.url)}" title="Remove from pipeline" aria-label="Remove from pipeline">&times;</button>
+              <span class="pipeline-card-score tone-${scoreTone}">${escapeHtml(c.score || '–')}</span>
+              <button type="button" class="pipeline-card-remove" data-url="${escapeHtml(c.url)}" title="Remove from pipeline" aria-label="Remove from pipeline"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
             </span>
           </div>
           ${detail ? `<div class="pipeline-card-detail">${escapeHtml(detail.slice(0, 60))}</div>` : ''}
           ${engagement ? `<div class="pipeline-card-engagement" title="${escapeHtml(engagement.reason)} — based on your tracked pipeline stage.">
-            <span class="pipeline-card-engagement-dot" style="background:${engagement.color}"></span>
+            <span class="pipeline-card-engagement-dot tone-${engagement.tone}"></span>
             ${engagement.tier} · ${engagement.score}
           </div>` : ''}
           <div class="pipeline-card-bottom">
-            <select class="pipeline-card-select" data-url="${escapeHtml(c.url)}" style="color:${stageColor};border-color:${stageColor}55">
+            <select class="pipeline-card-select tone-${stageTone}" data-url="${escapeHtml(c.url)}" aria-label="Outreach stage">
               ${STAGE_ORDER.map(s => `<option value="${s}" ${s === stage ? 'selected' : ''}>${stageLabel(s, c.intent)}</option>`).join('')}
             </select>
             ${days ? `<span class="pipeline-card-days">${days}</span>` : ''}
           </div>
-          ${showSnooze ? `<button type="button" class="pipeline-card-snooze${snoozed ? ' pipeline-card-snooze-active' : ''}" data-url="${escapeHtml(c.url)}" title="${snoozed ? 'Click to cancel snooze' : ''}">${snoozed ? `😴 Snoozed ${snoozeDaysLeft}d — click to cancel` : '😴 Snooze reminder 3d'}</button>` : ''}
-          <a href="${escapeHtml(c.url)}" target="_blank" class="pipeline-card-link">Open on LinkedIn ↗</a>
+          ${showSnooze ? `<button type="button" class="pipeline-card-snooze${snoozed ? ' pipeline-card-snooze-active' : ''}" data-url="${escapeHtml(c.url)}" title="${snoozed ? 'Click to cancel snooze' : ''}">${snoozed ? `Snoozed ${snoozeDaysLeft}d · cancel` : 'Snooze reminder 3 days'}</button>` : ''}
+          <a href="${escapeHtml(c.url)}" target="_blank" class="pipeline-card-link">Open on LinkedIn</a>
         </div>`;
     }).join('');
 
     return `
       <div class="pipeline-column">
-        <div class="pipeline-column-header" style="border-color:${col.color}55">
-          <span class="pipeline-column-dot" style="background:${col.color}"></span>
+        <div class="pipeline-column-header">
+          <span class="pipeline-column-dot tone-${col.tone}"></span>
           <span>${columnLabel(col, intentFilter)}</span>
           <span class="pipeline-column-count">${items.length}</span>
         </div>
@@ -1515,7 +1623,7 @@ function renderNotificationsPanel() {
           <span class="notifications-item-name">${escapeHtml(c.name || 'Unknown')}</span>
           <span class="notifications-item-detail">${escapeHtml(c.company || c.headline || '')}</span>
         </div>
-        <a href="${escapeHtml(c.url)}" target="_blank" class="notifications-item-open" data-dismiss-url="${escapeHtml(c.url)}">Open ↗</a>
+        <a href="${escapeHtml(c.url)}" target="_blank" class="notifications-item-open" data-dismiss-url="${escapeHtml(c.url)}">Open</a>
       </div>`).join('')}` : '';
 
   const dueHtml = due.length ? `
@@ -1529,7 +1637,7 @@ function renderNotificationsPanel() {
           <span class="notifications-item-detail">${escapeHtml(c.company || c.headline || '')}</span>
         </div>
         <span class="notifications-item-days">${days}d · ${stageLabel(c.stage, c.intent)}</span>
-        <a href="${escapeHtml(c.url)}" target="_blank" class="notifications-item-open">Open ↗</a>
+        <a href="${escapeHtml(c.url)}" target="_blank" class="notifications-item-open">Open</a>
       </div>`;
     }).join('')}` : '';
 

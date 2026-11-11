@@ -10,7 +10,7 @@ export const SETTINGS_KEYS = [
   'messagePresets', 'b2cProfile', 'jobProfile',
   'b2cMessagePresets', 'jobMessagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries',
   'creatorProfile', 'companyProfile', 'reminderSettings',
-  'openaiApiKey', 'hubspotApiKey',
+  'anthropicApiKey', 'hubspotApiKey',
 ];
 
 // savedContacts (the pipeline) changes far more often than the settings above — every generated

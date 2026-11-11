@@ -1,3513 +1,725 @@
-/* ── Brand type ────────────────────────────────────────────────────────────────
-   Self-hosted (not loaded from Google's CDN) so the panel never makes a third-party
-   request at runtime — consistent with the "nothing but OpenAI/HubSpot ever leaves
-   your browser" promise made in Settings → Account. Used for headings and labels
-   only; body copy stays on the system stack for density and legibility. */
+/* ═════════════════════════════════════════════════════════════════════════════
+   LinkPilot — in-page UI (panel, drawers, dock, LinkedIn page add-ons)
+
+   One token system, two themes (light default, dark via prefers-color-scheme),
+   built on Satyron's brand palette (satyrontech.com). Every surface is scoped
+   to its own root id, which out-specifies LinkedIn's global CSS without
+   needing !important. Color pairs are checked against WCAG AA in MD/design.md.
+   ═════════════════════════════════════════════════════════════════════════════ */
+
+/* Self-hosted so the page never makes a third-party font request — consistent with
+   the "nothing but Anthropic/HubSpot ever leaves your browser" promise. Content-script
+   CSS resolves relative url()s against linkedin.com, so the pinned extension id
+   (manifest "key") is used for an absolute, stable path. */
 @font-face {
-  font-family: 'Sora';
+  font-family: 'LP Space Grotesk';
   font-style: normal;
-  font-weight: 700;
+  font-weight: 300 700;
   font-display: swap;
-  /* A relative url() here resolves against the LinkedIn page's own origin, not the
-     extension's — Chrome injects content_scripts CSS into the page's rendering
-     context. The extension ID is pinned by manifest.json's "key", so an absolute
-     chrome-extension:// URL is the correct, stable way to reference a bundled asset
-     from here (see supabase/DEPLOY.md for the same pinned-ID pattern elsewhere). */
-  src: url(chrome-extension://cidjcnappdecphoecngmnpkgcnhnmipd/assets/fonts/Sora-Bold.woff2) format('woff2');
+  src: url(chrome-extension://cidjcnappdecphoecngmnpkgcnhnmipd/assets/fonts/SpaceGrotesk-Variable.woff2) format('woff2');
 }
 
-/* ── Reset ─────────────────────────────────────────────────────────────────── */
-#lia-trigger,
-#lia-panel,
-#lia-panel * {
+/* ── Tokens ─────────────────────────────────────────────────────────────────── */
+#lia-panel, #lia-post-panel, #lia-time-panel, #lia-sidebar-dock,
+#lia-followup-bar, #lia-search-banner {
+  --lp-bg: #FFFFFF;
+  --lp-surface: #F7F4FB;
+  --lp-surface-hover: #F1ECF7;
+  --lp-border: #E7DDF4;
+  --lp-border-strong: #8F78B3;
+  --lp-text: #21152F;
+  --lp-text-2: #463453;
+  --lp-muted: #655374;
+  --lp-accent: #56318D;
+  --lp-accent-hover: #42236F;
+  --lp-on-accent: #FFFFFF;
+  --lp-accent-soft: #F1ECF7;
+  --lp-accent-line: #CDB9E6;
+  --lp-good: #1E6B47;   --lp-good-bg: #E8F5EE;  --lp-good-line: #B9DEC8;
+  --lp-mid: #7A5200;    --lp-mid-bg: #FBF2DC;   --lp-mid-line: #EAD39C;
+  --lp-bad: #B42318;    --lp-bad-bg: #FEF1EF;   --lp-bad-line: #F4C3BD;
+  --lp-shadow-drawer: -1px 0 0 #E7DDF4, -16px 0 40px rgba(33, 21, 47, 0.10);
+  --lp-shadow-pop: 0 1px 2px rgba(33, 21, 47, 0.06), 0 8px 24px rgba(33, 21, 47, 0.10);
+  --lp-focus: 0 0 0 3px rgba(86, 49, 141, 0.30);
+  --lp-r-sm: 6px;
+  --lp-r: 8px;
+  --lp-r-lg: 12px;
+  --lp-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, Helvetica, Arial, sans-serif;
+  --lp-font-display: 'LP Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --lp-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  #lia-panel, #lia-post-panel, #lia-time-panel, #lia-sidebar-dock,
+  #lia-followup-bar, #lia-search-banner {
+    --lp-bg: #171329;
+    --lp-surface: #211B3A;
+    --lp-surface-hover: #2A2350;
+    --lp-border: #2E2750;
+    --lp-border-strong: #6E62A3;
+    --lp-text: #FFFFFF;
+    --lp-text-2: #D8D4F0;
+    --lp-muted: #9A94BA;
+    --lp-accent: #9F8FD4;
+    --lp-accent-hover: #B4A7E0;
+    --lp-on-accent: #0E0B1A;
+    --lp-accent-soft: #2A2350;
+    --lp-accent-line: #4A3F7E;
+    --lp-good: #6FE8C2;   --lp-good-bg: #173328;  --lp-good-line: #24533F;
+    --lp-mid: #E8C96F;    --lp-mid-bg: #33290F;   --lp-mid-line: #5A4718;
+    --lp-bad: #FCA5A5;    --lp-bad-bg: #3A1A22;   --lp-bad-line: #64303A;
+    --lp-shadow-drawer: -1px 0 0 #2E2750, -16px 0 40px rgba(0, 0, 0, 0.45);
+    --lp-shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.4);
+    --lp-focus: 0 0 0 3px rgba(159, 143, 212, 0.40);
+  }
+}
+
+/* ── Base (scoped resets against LinkedIn's global CSS) ─────────────────────── */
+#lia-panel, #lia-post-panel, #lia-time-panel, #lia-sidebar-dock, #lia-followup-bar, #lia-search-banner,
+#lia-panel *, #lia-post-panel *, #lia-time-panel *, #lia-sidebar-dock *, #lia-followup-bar *, #lia-search-banner * {
   box-sizing: border-box;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif;
+  font-family: var(--lp-font);
+  letter-spacing: normal;
+}
+#lia-panel, #lia-post-panel, #lia-time-panel {
+  color: var(--lp-text);
+  font-size: 14px;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
-
-.lia-header-title span,
-.lia-purpose-title,
-.reach-label,
-.reach-verdict,
-.ind-label,
-.lia-label {
-  /* #lia-panel * above is an id-specificity reset — beats a plain class without !important */
-  font-family: 'Sora', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif !important;
+#lia-panel p, #lia-post-panel p, #lia-time-panel p { margin: 0; }
+#lia-panel dl, #lia-panel dd, #lia-panel ol, #lia-panel ul, #lia-panel li,
+#lia-post-panel ol, #lia-post-panel ul, #lia-post-panel li { margin: 0; padding: 0; }
+#lia-panel button, #lia-post-panel button, #lia-time-panel button, #lia-sidebar-dock button,
+#lia-followup-bar button, #lia-search-banner button {
+  font: inherit; color: inherit; background: none; border: 0; margin: 0; cursor: pointer;
+  text-transform: none; box-shadow: none; min-height: 0;
 }
-
-/* ── Trigger Button ────────────────────────────────────────────────────────── */
-#lia-trigger {
-  position: fixed;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 99998;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  background: #0A66C2;
-  color: #fff;
-  border: none;
-  border-radius: 10px 0 0 10px;
-  padding: 14px 10px;
-  cursor: pointer;
-  box-shadow: -3px 0 16px rgba(10,102,194,0.38);
-  transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
-  writing-mode: horizontal-tb;
+#lia-panel button:disabled, #lia-post-panel button:disabled, #lia-time-panel button:disabled,
+#lia-followup-bar button:disabled, #lia-search-banner button:disabled { cursor: not-allowed; opacity: 0.55; }
+#lia-panel svg, #lia-post-panel svg, #lia-time-panel svg, #lia-sidebar-dock svg,
+#lia-followup-bar svg, #lia-search-banner svg { flex-shrink: 0; display: block; }
+#lia-panel :focus-visible, #lia-post-panel :focus-visible, #lia-time-panel :focus-visible,
+#lia-sidebar-dock :focus-visible, #lia-followup-bar :focus-visible, #lia-search-banner :focus-visible {
+  outline: none; box-shadow: var(--lp-focus);
 }
+#lia-panel .hidden, #lia-post-panel .hidden { display: none; }
 
-#lia-trigger:hover {
-  background: #004182;
-  box-shadow: -4px 0 22px rgba(10,102,194,0.48);
-  transform: translateY(-50%) translateX(-2px);
-}
-
-#lia-trigger.lia-active { background: #004182; }
-#lia-trigger svg { flex-shrink: 0; }
-
-#lia-trigger span {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  transform: rotate(180deg);
-  white-space: nowrap;
-}
-
-/* ── Panel ─────────────────────────────────────────────────────────────────── */
-#lia-panel {
-  position: fixed;
-  right: 0;
-  top: 0;
-  height: 100vh;
-  width: 390px;
-  z-index: 99999;
-  background: #f8fafc;
-  box-shadow: -6px 0 36px rgba(0,0,0,0.14), -1px 0 4px rgba(0,0,0,0.05);
-  display: flex;
-  flex-direction: column;
-  transform: translateX(100%);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
-}
-
-#lia-panel.lia-open { transform: translateX(0); }
-
-/* ── Header ────────────────────────────────────────────────────────────────── */
-.lia-header {
-  background: #0A66C2;
-  color: #fff;
-  padding: 12px 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+/* Brand mark — a typeset monogram, not an icon */
+.lia-logo {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 7px;
+  background: var(--lp-accent); color: var(--lp-on-accent);
+  font-family: var(--lp-font-display) !important; font-weight: 700; font-size: 11px; letter-spacing: -0.02em;
   flex-shrink: 0;
 }
+.lia-logo--sm { width: 20px; height: 20px; border-radius: 6px; font-size: 9.5px; }
 
-.lia-header-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.1px;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
+/* ── Dock (fixed launcher on the right edge) ────────────────────────────────── */
+#lia-sidebar-dock {
+  position: fixed; right: 0; top: 50%; transform: translateY(-50%);
+  z-index: 2147483645;
+  display: flex; flex-direction: column; gap: 6px;
+  transition: right 0.28s var(--lp-ease);
+}
+/* Follow whichever drawer is open, so the other tools stay one click away. */
+body:has(#lia-panel.lia-open, #lia-post-panel.lia-pc-open, #lia-time-panel.lia-pc-open) #lia-sidebar-dock { right: 400px; }
+/* Narrow windows: the drawer takes the full width, so the dock steps aside until it closes. */
+@media (max-width: 520px) {
+  body:has(#lia-panel.lia-open, #lia-post-panel.lia-pc-open, #lia-time-panel.lia-pc-open) #lia-sidebar-dock {
+    right: 0; opacity: 0; visibility: hidden; pointer-events: none;
+  }
 }
 
-.lia-header-title svg { flex-shrink: 0; }
-
-.lia-header-title span {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.lia-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  margin-left: 8px;
-}
-
-.lia-reanalyze-btn,
-.lia-hs-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255,255,255,0.13);
-  color: rgba(255,255,255,0.9);
-  border: 1px solid rgba(255,255,255,0.2);
-  border-radius: 7px;
-  width: 30px;
-  height: 30px;
-  cursor: pointer;
+#lia-sidebar-dock > button {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  width: 60px; min-height: 52px; padding: 8px 4px;
+  background: var(--lp-bg); color: var(--lp-text-2);
+  border: 1px solid var(--lp-border); border-right: 0; border-radius: 10px 0 0 10px;
+  box-shadow: var(--lp-shadow-pop);
+  font-size: 11.5px; font-weight: 600; line-height: 1.2;
   transition: background 0.15s, color 0.15s;
-  flex-shrink: 0;
+}
+#lia-sidebar-dock > button:hover { background: var(--lp-surface-hover); color: var(--lp-text); }
+#lia-sidebar-dock > #lia-trigger { background: var(--lp-accent); color: var(--lp-on-accent); border-color: var(--lp-accent); }
+#lia-sidebar-dock > #lia-trigger:hover,
+#lia-sidebar-dock > #lia-trigger.lia-active { background: var(--lp-accent-hover); border-color: var(--lp-accent-hover); }
+#lia-sidebar-dock > #lia-save-trigger.lia-save-trigger-active { color: var(--lp-accent); }
+#lia-sidebar-dock > #lia-save-trigger.lia-save-trigger-active svg { fill: currentColor; }
+#lia-sidebar-dock > #lia-save-trigger.lia-save-trigger-error { color: var(--lp-bad); }
+
+/* ── Drawers (analysis panel, Post Creator, World Clock) ───────────────────── */
+#lia-panel, #lia-post-panel, #lia-time-panel {
+  position: fixed; top: 0; right: 0;
+  width: 400px; max-width: 100vw; height: 100vh;
+  z-index: 2147483646;
+  display: flex; flex-direction: column;
+  background: var(--lp-bg);
+  box-shadow: var(--lp-shadow-drawer);
+  transform: translateX(calc(100% + 24px));
+  visibility: hidden;
+  transition: transform 0.28s var(--lp-ease), visibility 0s linear 0.28s;
+  overflow: hidden;
+}
+#lia-panel.lia-open, #lia-post-panel.lia-pc-open, #lia-time-panel.lia-pc-open {
+  transform: translateX(0); visibility: visible;
+  transition: transform 0.28s var(--lp-ease), visibility 0s;
 }
 
-.lia-reanalyze-btn:hover,
-.lia-hs-btn:hover {
-  background: rgba(255,255,255,0.25);
-  color: #fff;
+/* ── Header ─────────────────────────────────────────────────────────────────── */
+#lia-panel .lia-header, #lia-post-panel .lia-pc-header, #lia-time-panel .lia-pc-header {
+  display: flex; align-items: center; gap: 10px;
+  height: 56px; padding: 0 12px 0 16px; flex-shrink: 0;
+  border-bottom: 1px solid var(--lp-border);
 }
-
-.lia-reanalyze-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-.lia-hs-btn.hs-pushed {
-  background: #16a34a;
-  border-color: #16a34a;
+#lia-panel .lia-header-title, #lia-post-panel .lia-pc-title, #lia-time-panel .lia-pc-title {
+  display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1;
+  font-family: var(--lp-font-display); font-size: 15.5px; font-weight: 600; color: var(--lp-text);
+  letter-spacing: -0.01em; white-space: nowrap;
 }
-
-.lia-close {
-  background: transparent;
-  border: none;
-  color: rgba(255,255,255,0.78);
-  font-size: 22px;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0;
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 7px;
-  transition: background 0.15s, color 0.15s;
-  margin-left: 1px;
+#lia-post-panel .lia-pc-title svg, #lia-time-panel .lia-pc-title svg { color: var(--lp-accent); }
+#lia-panel .lia-mode-badge:empty { display: none; }
+#lia-panel .lia-mode-badge {
+  display: inline-flex; align-items: center; height: 22px; padding: 0 8px;
+  border-radius: var(--lp-r-sm); background: var(--lp-accent-soft); color: var(--lp-accent);
+  font-family: var(--lp-font); font-size: 12px; font-weight: 600; letter-spacing: 0;
 }
+#lia-panel .lia-header-actions { display: flex; align-items: center; gap: 2px; }
 
-.lia-close:hover {
-  color: #fff;
-  background: rgba(255,255,255,0.18);
+/* Icon buttons: header actions + drawer close/history */
+#lia-panel .lia-header-actions > button, #lia-post-panel .lia-pc-close, #lia-time-panel .lia-pc-close,
+#lia-post-panel .lia-pc-history-btn, #lia-panel .lia-hs-modal-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: var(--lp-r);
+  color: var(--lp-muted); transition: background 0.15s, color 0.15s;
 }
-
-.lia-reanalyze-btn.spinning svg { animation: lia-spin 0.7s linear infinite; }
-
-/* ── Tabs ──────────────────────────────────────────────────────────────────── */
-.lia-tabs {
-  display: flex;
-  background: #fff;
-  border-bottom: 1px solid #e2e8f0;
-  flex-shrink: 0;
+#lia-panel .lia-header-actions > button:hover, #lia-post-panel .lia-pc-close:hover, #lia-time-panel .lia-pc-close:hover,
+#lia-post-panel .lia-pc-history-btn:hover, #lia-panel .lia-hs-modal-close:hover {
+  background: var(--lp-surface-hover); color: var(--lp-text);
 }
+#lia-panel .lia-save-btn.lia-save-btn-active { color: var(--lp-accent); }
+#lia-panel .lia-save-btn.lia-save-btn-active svg { fill: currentColor; }
+#lia-panel .lia-save-btn.lia-save-btn-error { color: var(--lp-bad); }
+#lia-panel .lia-hs-btn.hs-pushed { color: #E4572E; }
 
-.lia-tab {
-  flex: 1;
-  background: transparent;
-  border: none;
-  border-bottom: 2.5px solid transparent;
-  padding: 11px 6px;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: #64748b;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+/* ── Tabs ───────────────────────────────────────────────────────────────────── */
+#lia-panel .lia-tabs {
+  display: flex; gap: 4px; padding: 0 12px; flex-shrink: 0;
+  border-bottom: 1px solid var(--lp-border);
 }
-
-.lia-tab:hover { color: #0A66C2; }
-
-.lia-tab.active {
-  color: #0A66C2;
-  font-weight: 700;
-  border-bottom-color: #0A66C2;
-  background: #fff;
-}
-
-/* ── Body ──────────────────────────────────────────────────────────────────── */
-#lia-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-  background: #f8fafc;
-  scrollbar-width: thin;
-  scrollbar-color: #e2e8f0 transparent;
-}
-
-#lia-body::-webkit-scrollbar { width: 4px; }
-#lia-body::-webkit-scrollbar-thumb { background: #dde3ec; border-radius: 4px; }
-
-/* ── Purpose Picker — 2×2 grid ─────────────────────────────────────────────── */
-.lia-purpose-picker {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 9px;
-  padding: 2px 0;
-}
-
-.lia-mode-indicator {
-  grid-column: 1 / -1;
-  font-size: 11px;
-  font-weight: 600;
-  color: #0A66C2;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 20px;
-  padding: 4px 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  width: fit-content;
-  margin-bottom: 2px;
-}
-
-.lia-purpose-intro {
-  grid-column: 1 / -1;
-  font-size: 10.5px;
-  font-weight: 700;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 1px;
-}
-
-.lia-purpose-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  padding: 19px 10px 17px;
-  background: #fff;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 14px;
-  cursor: pointer;
-  text-align: center;
-  transition: border-color 0.18s, background 0.18s, box-shadow 0.18s, transform 0.15s;
-}
-
-.lia-purpose-tile:hover {
-  border-color: #0A66C2;
-  background: #eff6ff;
-  box-shadow: 0 3px 14px rgba(10,102,194,0.12);
-  transform: translateY(-2px);
-}
-
-.lia-purpose-tile:active { transform: translateY(0); }
-
-.lia-purpose-icon {
-  width: 44px;
-  height: 44px;
-  background: #dbeafe;
-  color: #0A66C2;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.18s, color 0.18s;
-  flex-shrink: 0;
-}
-
-.lia-purpose-tile:hover .lia-purpose-icon {
-  background: #0A66C2;
-  color: #fff;
-}
-
-.lia-purpose-content { width: 100%; }
-
-.lia-purpose-title {
-  display: block;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: #1e293b;
-  line-height: 1.3;
-}
-
-.lia-purpose-desc { display: none; }
-
-.lia-purpose-refresh {
-  grid-column: 1 / -1;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: transparent;
-  border: none;
-  color: #94a3b8;
-  font-size: 11.5px;
-  font-weight: 500;
-  cursor: pointer;
-  padding: 5px 0;
-  transition: color 0.15s;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  text-decoration-color: #e2e8f0;
-  width: 100%;
-  justify-content: center;
-}
-
-.lia-purpose-refresh:hover {
-  color: #0A66C2;
-  text-decoration-color: #93c5fd;
-}
-
-/* ── Back button ───────────────────────────────────────────────────────────── */
-.lia-back-row { margin-bottom: 14px; }
-
-.lia-back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: transparent;
-  border: none;
-  color: #0A66C2;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 4px 0;
-  border-radius: 4px;
+#lia-panel .lia-tab {
+  position: relative; flex: 1; height: 42px; padding: 0 4px;
+  font-size: 13.5px; font-weight: 500; color: var(--lp-muted);
   transition: color 0.15s;
 }
-
-.lia-back-btn:hover { color: #004182; }
-
-/* ── Sections ──────────────────────────────────────────────────────────────── */
-.lia-section { margin-bottom: 14px; }
-.lia-section:last-child { margin-bottom: 0; }
-
-.lia-label {
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.65px;
-  color: #94a3b8;
-  margin-bottom: 7px;
+#lia-panel .lia-tab:hover { color: var(--lp-text); }
+#lia-panel .lia-tab.active { color: var(--lp-text); font-weight: 600; }
+#lia-panel .lia-tab.active::after {
+  content: ''; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px;
+  border-radius: 2px 2px 0 0; background: var(--lp-accent);
 }
 
-.lia-text {
-  font-size: 13px;
-  color: #334155;
-  margin: 0;
-  line-height: 1.65;
+/* ── Body ───────────────────────────────────────────────────────────────────── */
+#lia-panel .lia-body, #lia-post-panel .lia-pc-body, #lia-time-panel .lia-pc-body {
+  flex: 1; overflow-y: auto; overscroll-behavior: contain;
+  padding: 16px 16px 24px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+#lia-panel .lia-body > *, #lia-post-panel .lia-pc-body > *, #lia-time-panel .lia-pc-body > * { margin-top: 0; margin-bottom: 0; }
+
+/* ── Type primitives ────────────────────────────────────────────────────────── */
+#lia-panel .lia-section, #lia-post-panel .lia-pc-section, #lia-time-panel .lia-section {
+  display: flex; flex-direction: column; gap: 8px;
+}
+#lia-panel .lia-label, #lia-post-panel .lia-label, #lia-time-panel .lia-label,
+#lia-post-panel .lia-pc-sub-label, #lia-panel .lia-refine-label {
+  font-family: var(--lp-font-display); font-size: 13px; font-weight: 600; color: var(--lp-text);
+  letter-spacing: -0.005em; line-height: 1.3; text-transform: none;
+}
+#lia-panel .lia-optional, #lia-post-panel .lia-optional {
+  font-family: var(--lp-font); font-size: 12px; font-weight: 400; color: var(--lp-muted);
+}
+#lia-panel .lia-text { font-size: 13.5px; color: var(--lp-text-2); line-height: 1.55; }
+#lia-panel .lia-muted { font-size: 13px; color: var(--lp-muted); }
+#lia-panel .lia-link, #lia-panel a { color: var(--lp-accent); text-decoration: none; font-weight: 500; }
+#lia-panel .lia-link:hover, #lia-panel a:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* ── Buttons ────────────────────────────────────────────────────────────────── */
+#lia-panel .lia-btn-primary, #lia-post-panel .lia-btn-primary, #lia-time-panel .lia-btn-primary,
+#lia-panel .lia-btn-secondary, #lia-post-panel .lia-btn-secondary, #lia-time-panel .lia-btn-secondary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 40px; padding: 0 16px; border-radius: var(--lp-r);
+  font-size: 13.5px; font-weight: 600; line-height: 1.2; text-align: center;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+#lia-panel .lia-btn-primary, #lia-post-panel .lia-btn-primary, #lia-time-panel .lia-btn-primary {
+  background: var(--lp-accent); color: var(--lp-on-accent); border: 1px solid var(--lp-accent);
+}
+#lia-panel .lia-btn-primary:hover:not(:disabled), #lia-post-panel .lia-btn-primary:hover:not(:disabled),
+#lia-time-panel .lia-btn-primary:hover:not(:disabled) { background: var(--lp-accent-hover); border-color: var(--lp-accent-hover); }
+#lia-panel .lia-btn-secondary, #lia-post-panel .lia-btn-secondary, #lia-time-panel .lia-btn-secondary {
+  background: var(--lp-bg); color: var(--lp-text); border: 1px solid var(--lp-border-strong);
+}
+#lia-panel .lia-btn-secondary:hover:not(:disabled), #lia-post-panel .lia-btn-secondary:hover:not(:disabled),
+#lia-time-panel .lia-btn-secondary:hover:not(:disabled) { background: var(--lp-surface-hover); }
+#lia-panel .lia-copy-btn, #lia-panel .lia-regen-btn, #lia-panel .lia-gate-btn,
+#lia-post-panel .lia-pc-full-btn { width: 100%; }
+#lia-panel .lia-copy-btn.copied { background: var(--lp-good); border-color: var(--lp-good); color: var(--lp-bg); }
+
+/* Quiet text-style buttons */
+#lia-panel .lia-back-btn, #lia-post-panel .lia-pc-back-btn, #lia-panel .lia-convo-refresh,
+#lia-panel .lia-icp-warning-link, #lia-panel .lia-purpose-refresh, #lia-time-panel .lia-time-zones-toggle {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 6px; margin: -4px -6px; border-radius: var(--lp-r-sm);
+  font-size: 13px; font-weight: 600; color: var(--lp-accent);
+}
+#lia-panel .lia-back-btn:hover, #lia-post-panel .lia-pc-back-btn:hover, #lia-panel .lia-convo-refresh:hover,
+#lia-panel .lia-icp-warning-link:hover, #lia-panel .lia-purpose-refresh:hover, #lia-time-panel .lia-time-zones-toggle:hover {
+  background: var(--lp-accent-soft);
+}
+#lia-panel .lia-back-row, #lia-post-panel .lia-pc-back-row { display: flex; }
+
+/* ── Form fields ────────────────────────────────────────────────────────────── */
+#lia-panel .lia-notes-input, #lia-time-panel .lia-notes-input, #lia-panel .lia-hs-input,
+#lia-panel .lia-hs-select, #lia-panel .lia-hs-textarea, #lia-post-panel .lia-pc-custom-input,
+#lia-post-panel textarea, #lia-post-panel input[type="text"] {
+  width: 100%; min-height: 40px; padding: 9px 11px;
+  background: var(--lp-bg); color: var(--lp-text);
+  border: 1px solid var(--lp-border-strong); border-radius: var(--lp-r);
+  font-size: 13.5px; line-height: 1.45; resize: vertical;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+#lia-panel select.lia-notes-input, #lia-panel .lia-hs-select { resize: none; cursor: pointer; }
+#lia-panel textarea.lia-notes-input, #lia-panel .lia-hs-textarea, #lia-post-panel textarea { min-height: 64px; }
+#lia-panel .lia-notes-input::placeholder, #lia-time-panel .lia-notes-input::placeholder, #lia-panel .lia-hs-input::placeholder,
+#lia-panel .lia-hs-textarea::placeholder, #lia-post-panel .lia-pc-custom-input::placeholder, #lia-post-panel textarea::placeholder {
+  color: var(--lp-muted); opacity: 1;
+}
+#lia-panel .lia-notes-input:focus, #lia-time-panel .lia-notes-input:focus, #lia-panel .lia-hs-input:focus,
+#lia-panel .lia-hs-select:focus, #lia-panel .lia-hs-textarea:focus, #lia-post-panel .lia-pc-custom-input:focus,
+#lia-post-panel textarea:focus, #lia-post-panel input[type="text"]:focus {
+  outline: none; border-color: var(--lp-accent); box-shadow: var(--lp-focus);
 }
 
-.lia-muted {
-  color: #94a3b8;
-  font-style: italic;
+/* ── Notices (ICP warnings, exclusions, timing) ─────────────────────────────── */
+#lia-panel .lia-notice, #lia-panel .lia-icp-warning {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px; border-radius: var(--lp-r);
+  background: var(--lp-mid-bg); color: var(--lp-mid); border: 1px solid var(--lp-mid-line);
+  font-size: 13px; line-height: 1.5;
+}
+#lia-panel .lia-notice svg, #lia-panel .lia-icp-warning svg { margin-top: 2px; }
+#lia-panel .lia-notice--bad { background: var(--lp-bad-bg); color: var(--lp-bad); border-color: var(--lp-bad-line); }
+#lia-panel .lia-icp-warning-icon { display: flex; flex-shrink: 0; margin-top: 2px; }
+#lia-panel .lia-code, #lia-panel code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  padding: 1px 5px; border-radius: 4px; background: var(--lp-surface); border: 1px solid var(--lp-border); color: var(--lp-text);
+}
+#lia-panel .lia-icp-warning-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+#lia-panel .lia-icp-warning-title { font-weight: 600; }
+#lia-panel .lia-icp-warning-text { color: inherit; }
+#lia-panel .lia-icp-warning .lia-icp-warning-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; padding: 0; margin: 0 0 0 2px; }
+
+/* ── Badges + chips ─────────────────────────────────────────────────────────── */
+#lia-panel .lia-badge {
+  display: inline-flex; align-items: center; height: 22px; padding: 0 8px;
+  border-radius: var(--lp-r-sm); border: 1px solid transparent;
+  font-size: 12px; font-weight: 600; line-height: 1; white-space: nowrap;
+}
+#lia-panel .lia-badge--good { background: var(--lp-good-bg); color: var(--lp-good); border-color: var(--lp-good-line); }
+#lia-panel .lia-badge--mid { background: var(--lp-mid-bg); color: var(--lp-mid); border-color: var(--lp-mid-line); }
+#lia-panel .lia-badge--low { background: var(--lp-surface); color: var(--lp-muted); border-color: var(--lp-border); }
+#lia-panel .lia-badge--neutral { background: var(--lp-surface); color: var(--lp-text-2); border-color: var(--lp-border); }
+#lia-panel .lia-chips, #lia-post-panel .lia-pc-domains { display: flex; flex-wrap: wrap; gap: 6px; }
+#lia-panel .lia-chip, #lia-post-panel .lia-pc-domain-chip {
+  display: inline-flex; align-items: center; min-height: 26px; padding: 3px 9px;
+  border-radius: var(--lp-r-sm); background: var(--lp-surface); border: 1px solid var(--lp-border);
+  font-size: 12.5px; color: var(--lp-text-2); line-height: 1.35;
 }
 
-/* ── Notes / Regen section ─────────────────────────────────────────────────── */
-.lia-regen-section {
-  border-top: 1px solid #e9eef5;
-  padding-top: 14px;
-  margin-top: 4px;
+/* ── Analysis: verdict + facts ──────────────────────────────────────────────── */
+#lia-panel .lia-verdict {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 14px; border-radius: var(--lp-r-lg);
+  background: var(--lp-surface); border: 1px solid var(--lp-border);
+}
+#lia-panel .lia-verdict-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+#lia-panel .lia-verdict-label { font-size: 13px; font-weight: 500; color: var(--lp-muted); }
+#lia-panel .lia-verdict-value {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--lp-font-display); font-size: 17px; font-weight: 600; letter-spacing: -0.01em;
+}
+#lia-panel .lia-verdict.ro-yes .lia-verdict-value { color: var(--lp-good); }
+#lia-panel .lia-verdict.ro-maybe .lia-verdict-value { color: var(--lp-mid); }
+#lia-panel .lia-verdict.ro-no .lia-verdict-value { color: var(--lp-muted); }
+#lia-panel .lia-verdict-reason { font-size: 13.5px; color: var(--lp-text-2); line-height: 1.55; }
+
+#lia-panel .lia-facts { display: flex; flex-direction: column; border-top: 1px solid var(--lp-border); }
+#lia-panel .lia-fact {
+  display: grid; grid-template-columns: 120px 1fr; gap: 12px; align-items: start;
+  padding: 10px 0; border-bottom: 1px solid var(--lp-border);
+}
+#lia-panel .lia-fact dt { font-size: 13px; color: var(--lp-muted); line-height: 22px; }
+#lia-panel .lia-fact dd { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; font-size: 13.5px; color: var(--lp-text); font-weight: 500; line-height: 22px; min-width: 0; word-break: break-word; }
+#lia-panel .lia-fact-note { font-size: 12.5px; font-weight: 400; color: var(--lp-muted); line-height: 1.5; }
+
+#lia-panel .lia-list {
+  list-style: none; counter-reset: lp; display: flex; flex-direction: column; gap: 10px;
+}
+#lia-panel .lia-list li {
+  counter-increment: lp; position: relative; padding: 0 0 0 26px;
+  font-size: 13.5px; color: var(--lp-text-2); line-height: 1.55;
+}
+#lia-panel .lia-list li::before {
+  content: counter(lp); position: absolute; left: 0; top: 1px;
+  width: 18px; height: 18px; border-radius: 5px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--lp-accent-soft); color: var(--lp-accent);
+  font-family: var(--lp-font-display); font-size: 11px; font-weight: 700;
 }
 
-.lia-first-msg-section {
-  border-top: 1.5px solid #e9eef5;
-  padding-top: 14px;
-  margin-top: 8px;
+/* ── Purpose picker (first screen) ──────────────────────────────────────────── */
+#lia-panel .lia-purpose-picker { display: flex; flex-direction: column; gap: 10px; }
+#lia-panel .lia-mode-indicator {
+  align-self: flex-start; display: inline-flex; align-items: center; height: 24px; padding: 0 9px;
+  border-radius: var(--lp-r-sm); background: var(--lp-accent-soft); color: var(--lp-accent);
+  font-size: 12px; font-weight: 600;
 }
-
-.lia-error-msg {
-  font-size: 12px;
-  color: #dc2626;
-  padding: 8px 10px;
-  background: #fef2f2;
-  border-radius: 8px;
-  border: 1px solid #fecaca;
-  margin: 0;
+#lia-panel .lia-purpose-intro {
+  font-family: var(--lp-font-display); font-size: 18px; font-weight: 600; letter-spacing: -0.015em;
+  color: var(--lp-text); line-height: 1.3; margin: 6px 0 2px;
 }
-
-/* ── Follow-up conversation auto-extract status ──────────────────────────── */
-.lia-convo-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  padding: 7px 10px;
-  border-radius: 8px;
-  line-height: 1.4;
-  flex-wrap: wrap;
+#lia-panel .lia-purpose-tile {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 14px; border-radius: var(--lp-r-lg); text-align: left;
+  background: var(--lp-bg); border: 1px solid var(--lp-border);
+  transition: border-color 0.15s, background 0.15s;
 }
-.lia-convo-found {
-  background: #f0fdf4;
-  color: #15803d;
-  border: 1px solid #bbf7d0;
+#lia-panel .lia-purpose-tile:hover { border-color: var(--lp-accent-line); background: var(--lp-surface); }
+#lia-panel .lia-purpose-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0;
+  background: var(--lp-accent-soft); color: var(--lp-accent);
 }
-.lia-convo-missing {
-  background: #fffbeb;
-  color: #92400e;
-  border: 1px solid #fde68a;
+#lia-panel .lia-purpose-content { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+#lia-panel .lia-purpose-title { font-family: var(--lp-font-display); font-size: 14.5px; font-weight: 600; color: var(--lp-text); }
+#lia-panel .lia-purpose-desc { font-size: 13px; color: var(--lp-muted); line-height: 1.45; }
+#lia-panel .lia-purpose-refresh { align-self: center; margin-top: 4px; }
+
+/* ── Generated message box ──────────────────────────────────────────────────── */
+#lia-panel .lia-connection-box {
+  position: relative; padding: 14px; border-radius: var(--lp-r-lg);
+  background: var(--lp-surface); border: 1px solid var(--lp-border);
 }
-.lia-convo-refresh {
-  background: none;
-  border: 1px solid currentColor;
-  border-radius: 5px;
-  padding: 2px 8px;
-  font-size: 11px;
-  cursor: pointer;
-  color: inherit;
-  margin-left: auto;
-  white-space: nowrap;
+#lia-panel .lia-connection-box p {
+  font-size: 14px; line-height: 1.6; color: var(--lp-text); white-space: pre-wrap; word-break: break-word;
 }
-.lia-convo-refresh:hover { opacity: 0.75; }
-
-.lia-notes-input {
-  width: 100%;
-  padding: 9px 12px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 10px;
-  font-size: 12.5px;
-  font-family: inherit;
-  color: #1e293b;
-  background: #fff;
-  resize: vertical;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  outline: none;
-  margin-bottom: 10px;
-  line-height: 1.5;
+#lia-panel .lia-char-count {
+  margin-top: 10px; font-size: 12px; font-weight: 500; text-align: right; font-variant-numeric: tabular-nums;
 }
+#lia-panel .lia-char-count.char-ok { color: var(--lp-muted); }
+#lia-panel .lia-char-count.char-warn { color: var(--lp-mid); }
+#lia-panel .lia-char-count.char-over { color: var(--lp-bad); font-weight: 600; }
+#lia-panel .lia-regen-section { padding-top: 16px; border-top: 1px solid var(--lp-border); }
 
-.lia-notes-input:focus {
-  border-color: #0A66C2;
-  box-shadow: 0 0 0 3px rgba(10,102,194,0.08);
+/* ── Choice grids (strategy, tone, post style) ──────────────────────────────── */
+#lia-panel .lia-strategy-grid, #lia-panel .lia-tone-grid, #lia-post-panel .lia-pc-style-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
 }
-
-.lia-notes-input::placeholder {
-  color: #b0bac9;
-  font-size: 12px;
+#lia-post-panel .lia-pc-style-grid-col { grid-template-columns: 1fr; }
+#lia-panel .lia-strategy-btn, #lia-panel .lia-tone-btn, #lia-post-panel .lia-pc-style-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  min-height: 52px; padding: 9px 11px; border-radius: var(--lp-r); text-align: left;
+  background: var(--lp-bg); border: 1px solid var(--lp-border);
+  transition: border-color 0.15s, background 0.15s;
 }
-
-.lia-regen-btn {
-  display: inline-flex !important;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  justify-content: center;
+#lia-panel .lia-tone-btn:last-child:nth-child(odd) { grid-column: 1 / -1; }
+#lia-panel .lia-strategy-btn:hover, #lia-panel .lia-tone-btn:hover, #lia-post-panel .lia-pc-style-card:hover {
+  border-color: var(--lp-accent-line);
 }
-
-.lia-optional {
-  font-weight: 400;
-  color: #b0bac9;
-  font-size: 11px;
+#lia-panel .lia-strategy-btn.active, #lia-panel .lia-tone-btn.active, #lia-post-panel .lia-pc-style-card.active {
+  background: var(--lp-accent-soft); border-color: var(--lp-accent);
 }
-
-.lia-spin { animation: lia-spin 0.8s linear infinite; }
-
-/* ── Connection Request box ────────────────────────────────────────────────── */
-.lia-connection-box {
-  background: #fff;
-  border: 1.5px solid #dbeafe;
-  border-radius: 12px;
-  padding: 14px 16px;
-  margin-bottom: 12px;
+#lia-panel .lia-strategy-name, #lia-panel .lia-tone-name, #lia-post-panel .lia-pc-style-label {
+  font-size: 13px; font-weight: 600; color: var(--lp-text); line-height: 1.3;
 }
-
-.lia-connection-box p {
-  font-size: 13.5px;
-  color: #1e293b;
-  margin: 0 0 8px;
-  line-height: 1.65;
-  white-space: pre-wrap;
-  word-break: break-word;
+#lia-panel .lia-strategy-desc, #lia-panel .lia-tone-desc, #lia-post-panel .lia-pc-style-desc {
+  font-size: 12px; color: var(--lp-muted); line-height: 1.35; text-align: left;
 }
+#lia-panel .lia-strategy-btn.active .lia-strategy-name, #lia-panel .lia-tone-btn.active .lia-tone-name,
+#lia-post-panel .lia-pc-style-card.active .lia-pc-style-label { color: var(--lp-accent); }
 
-.lia-char-count { font-size: 11px; text-align: right; margin-top: 4px; }
-.char-ok   { color: #b0bac9; }
-.char-warn { color: #d97706; font-weight: 600; }
-.char-over { color: #dc2626; font-weight: 600; }
-
-/* ── Buttons ───────────────────────────────────────────────────────────────── */
-.lia-btn-primary {
-  display: block;
-  width: 100%;
-  background: #0A66C2;
-  color: #fff;
-  border: none;
-  border-radius: 20px;
-  padding: 10px 16px;
-  font-size: 13.5px;
-  font-weight: 600;
-  cursor: pointer;
-  text-align: center;
-  transition: background 0.18s, transform 0.12s;
+/* ── Message tab: intelligence summary ──────────────────────────────────────── */
+#lia-panel .lia-msg-intelligence {
+  display: flex; flex-direction: column; gap: 0;
+  padding: 4px 14px; border-radius: var(--lp-r-lg); background: var(--lp-surface); border: 1px solid var(--lp-border);
 }
-
-.lia-btn-primary:hover { background: #004182; }
-.lia-btn-primary:active { transform: scale(0.98); }
-.lia-btn-primary.copied { background: #16a34a; }
-
-.lia-btn-secondary {
-  display: block;
-  width: 100%;
-  background: transparent;
-  color: #0A66C2;
-  border: 1.5px solid #bfdbfe;
-  border-radius: 20px;
-  padding: 9px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  text-align: center;
-  transition: background 0.18s, border-color 0.18s;
+#lia-panel .lia-msg-intelligence > .lia-label { display: flex; align-items: center; gap: 6px; padding: 10px 0 6px; }
+#lia-panel .lia-msg-intelligence > .lia-label svg { color: var(--lp-accent); }
+#lia-panel .lia-insight-row {
+  display: grid; grid-template-columns: 104px auto 1fr; gap: 8px 10px; align-items: start;
+  padding: 9px 0; border-top: 1px solid var(--lp-border);
 }
+#lia-panel .lia-insight-row.lia-insight-ki { grid-template-columns: 16px 1fr; }
+#lia-panel .lia-insight-row.lia-insight-ki svg { margin-top: 3px; stroke: var(--lp-accent); }
+#lia-panel .lia-insight-key { font-size: 12.5px; color: var(--lp-muted); line-height: 22px; }
+#lia-panel .lia-insight-val { font-size: 13px; font-weight: 600; color: var(--lp-text); line-height: 22px; }
+#lia-panel .lia-insight-note { font-size: 12.5px; color: var(--lp-text-2) !important; line-height: 1.5; grid-column: auto; }
+#lia-panel .lia-insight-row > .lia-badge + .lia-insight-note,
+#lia-panel .lia-insight-row > .lia-insight-val + .lia-insight-note { grid-column: 1 / -1; }
+#lia-panel .lia-insight-row > .lia-insight-key + .lia-insight-note { grid-column: 2 / -1; }
 
-.lia-btn-secondary:hover {
-  background: #eff6ff;
-  border-color: #0A66C2;
+/* ── Refine (collapsible) ───────────────────────────────────────────────────── */
+#lia-panel .lia-refine-section { border: 1px solid var(--lp-border); border-radius: var(--lp-r-lg); overflow: hidden; }
+#lia-panel .lia-refine-toggle {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 14px;
+  font-size: 13.5px; font-weight: 600; color: var(--lp-text); text-align: left;
 }
+#lia-panel .lia-refine-toggle:hover { background: var(--lp-surface); }
+#lia-panel .lia-refine-toggle svg:first-child { color: var(--lp-accent); }
+#lia-panel .lia-refine-arrow { margin-left: auto; color: var(--lp-muted); transition: transform 0.2s var(--lp-ease); }
+#lia-panel .lia-refine-toggle.open .lia-refine-arrow, #lia-panel .lia-refine-toggle[aria-expanded="true"] .lia-refine-arrow { transform: rotate(180deg); }
+#lia-panel .lia-refine-body { padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+#lia-panel .lia-refine-group { display: flex; flex-direction: column; gap: 6px; margin: 0 !important; }
+#lia-panel .lia-refine-group .lia-refine-label { margin: 0 !important; }
 
-.lia-btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
-
-/* ── Loading ───────────────────────────────────────────────────────────────── */
-.lia-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 56px 24px;
-  gap: 16px;
-  color: #64748b;
-  font-size: 13px;
+/* ── Follow-up tool ─────────────────────────────────────────────────────────── */
+#lia-panel .lia-convo-status {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  padding: 8px 11px; border-radius: var(--lp-r); font-size: 13px; line-height: 1.45;
 }
+#lia-panel .lia-convo-found { background: var(--lp-good-bg); color: var(--lp-good); border: 1px solid var(--lp-good-line); }
+#lia-panel .lia-convo-missing { background: var(--lp-mid-bg); color: var(--lp-mid); border: 1px solid var(--lp-mid-line); }
+#lia-panel .lia-convo-status .lia-convo-refresh { margin: 0 0 0 auto; padding: 2px 6px; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+#lia-panel .lia-followup-elapsed { font-size: 12.5px; color: var(--lp-muted); }
+#lia-panel .lia-strategist-take {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 14px; border-radius: var(--lp-r-lg); background: var(--lp-accent-soft); border: 1px solid var(--lp-accent-line);
+}
+#lia-panel .lia-strategist-row { display: grid; grid-template-columns: 64px 1fr; gap: 10px; }
+#lia-panel .lia-strategist-label { font-size: 12.5px; font-weight: 600; color: var(--lp-accent); line-height: 1.5; }
+#lia-panel .lia-strategist-text { font-size: 13px; color: var(--lp-text); line-height: 1.5; }
+#lia-panel #lia-followup-result, #lia-panel #lia-msgtab-result { display: flex; flex-direction: column; gap: 10px; }
 
-.lia-spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid #e9eef5;
-  border-top-color: #0A66C2;
-  border-radius: 50%;
+/* ── Contact tab ────────────────────────────────────────────────────────────── */
+#lia-panel .lia-contact-list { list-style: none; border-top: 1px solid var(--lp-border); }
+#lia-panel .lia-contact-list li {
+  display: flex; align-items: center; gap: 10px; padding: 11px 0; margin: 0;
+  border-bottom: 1px solid var(--lp-border); font-size: 13.5px; color: var(--lp-text); word-break: break-all;
+}
+#lia-panel .lia-contact-list li svg { color: var(--lp-muted); }
+
+/* ── Loading, errors, gates ─────────────────────────────────────────────────── */
+#lia-panel .lia-loading, #lia-post-panel .lia-pc-loading, #lia-panel .lia-hs-loading {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  padding: 56px 16px; text-align: center; color: var(--lp-muted); font-size: 13.5px;
+}
+#lia-panel .lia-spinner, #lia-post-panel .lia-spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 2.5px solid var(--lp-border); border-top-color: var(--lp-accent);
   animation: lia-spin 0.8s linear infinite;
 }
-
+.lia-spin { animation: lia-spin 0.8s linear infinite; }
 @keyframes lia-spin { to { transform: rotate(360deg); } }
 
-/* ── Empty / Error ─────────────────────────────────────────────────────────── */
-.lia-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 44px 24px;
-  gap: 10px;
-}
-
-.lia-empty h3 {
-  font-size: 16px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0;
-}
-
-.lia-empty p {
-  font-size: 13px;
-  color: #64748b;
-  margin: 0 0 8px;
-  line-height: 1.55;
-}
-
-/* ── Sign-in Gate (inside panel) ──────────────────────────────────────────── */
-.lia-sign-gate {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 48px 24px 32px;
-  gap: 0;
-}
-
-.lia-sign-gate-icon {
-  width: 64px;
-  height: 64px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 20px;
-  box-shadow: 0 8px 24px rgba(124,58,237,0.28);
-  color: #fff;
-  flex-shrink: 0;
-}
-
-.lia-sign-gate-title {
-  font-size: 17px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 8px;
-  line-height: 1.3;
-}
-
-.lia-sign-gate-desc {
-  font-size: 13px;
-  color: #64748b;
-  margin: 0 0 24px;
-  line-height: 1.55;
-  max-width: 260px;
-}
-
-.lia-sign-gate-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  width: 100%;
-  max-width: 260px;
-  background: #fff;
-  color: #1e293b;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 24px;
-  padding: 10px 18px;
-  font-size: 13.5px;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-  transition: box-shadow 0.18s, border-color 0.18s;
-  font-family: inherit;
-  margin-bottom: 20px;
-}
-
-.lia-sign-gate-btn:hover {
-  box-shadow: 0 4px 14px rgba(0,0,0,0.13);
-  border-color: #c7d2fe;
-}
-
-.lia-sign-gate-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.lia-sign-gate-footer {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 10.5px;
-  color: #94a3b8;
-  font-weight: 500;
-}
-
-/* ── Contact List ──────────────────────────────────────────────────────────── */
-.lia-contact-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-.lia-contact-list li {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  background: #fff;
-  border: 1px solid #e9eef5;
-  border-radius: 10px;
-  padding: 10px 13px;
-}
-
-.contact-type {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #94a3b8;
-}
-
-.contact-value {
-  font-size: 13px;
-  color: #1e293b;
-  word-break: break-all;
-}
-
-/* ── Indicator Cards ───────────────────────────────────────────────────────── */
-.lia-indicators {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-
-.lia-indicator-row { display: flex; gap: 8px; }
-
-.lia-indicator-card {
-  background: #fff;
-  border: 1px solid #e9eef5;
-  border-radius: 12px;
-  padding: 13px 14px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-}
-
-.lia-ind-half { flex: 1; min-width: 0; }
-
-.ind-label {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.7px;
-  color: #94a3b8;
-  margin-bottom: 9px;
-}
-
-/* Score bar */
-.ind-score-bar-track {
-  height: 7px;
-  background: #f1f5f9;
-  border-radius: 4px;
-  margin-bottom: 9px;
-  overflow: hidden;
-}
-
-.ind-score-bar-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.7s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.ind-score-badge {
-  display: inline-flex;
-  align-items: center;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 3px 10px;
-  border-radius: 20px;
-  margin-bottom: 6px;
-}
-
-.ind-reasoning {
-  font-size: 11.5px;
-  color: #64748b;
-  line-height: 1.5;
-  margin-top: 4px;
-}
-
-/* Generic value display */
-.ind-value {
-  font-size: 13px;
-  font-weight: 700;
-  padding: 3px 10px;
-  border-radius: 8px;
-  display: inline-block;
-}
-
-/* Decision maker */
-.dm-yes    { background: #dcfce7; color: #15803d; }
-.dm-likely { background: #fef3c7; color: #b45309; }
-.dm-no     { background: #fee2e2; color: #dc2626; }
-
-/* Company size — a classification, not a good/bad signal, so it doesn't get four
-   competing hues: one neutral indigo tint for every tier. */
-.cs-enterprise,
-.cs-mid,
-.cs-smb,
-.cs-startup    { background: #ede9fe; color: #6d28d9; }
-.cs-unknown    { background: #f1f5f9; color: #64748b; }
-
-/* Engagement dots */
-.ind-dots { display: flex; gap: 5px; margin-bottom: 7px; }
-
-.ind-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #e2e8f0;
-}
-
-.ind-dot.filled { background: #7c3aed; }
-
-/* Engagement rate — a real activity gradient (more active reads as a better signal),
-   so unlike company size this keeps semantic color, but as one consistent scale
-   instead of green/blue/amber/grey. */
-.er-daily      { background: #dcfce7; color: #15803d; }
-.er-weekly     { background: #ecfdf5; color: #0d9488; }
-.er-occasional { background: #fef3c7; color: #b45309; }
-.er-rarely     { background: #f1f5f9; color: #64748b; }
-
-.ind-industry { background: #ede9fe; color: #6d28d9; }
-
-/* Score badges */
-.score-high   { background: #dcfce7; color: #15803d; }
-.score-medium { background: #fef3c7; color: #b45309; }
-.score-low    { background: #fee2e2; color: #dc2626; }
-
-/* Industry / freelancer fit badges */
-.fit-strong  { background: #dcfce7; color: #15803d; }
-.fit-partial { background: #fef3c7; color: #b45309; }
-.fit-poor    { background: #fee2e2; color: #dc2626; }
-
-/* Excluded-industry banner */
-.lia-excluded-banner {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  background: #fff7ed;
-  color: #c2410c;
-  border: 1px solid #fed7aa;
-  border-radius: 10px;
-  padding: 10px 13px;
-  font-size: 12.5px;
-  font-weight: 600;
-  line-height: 1.4;
-  margin-bottom: 12px;
-}
-
-.lia-excluded-banner svg { flex-shrink: 0; }
-
-/* Distinct amber tone from .lia-excluded-banner's orange — that one is a fit problem, this one is
-   a timing problem, and the two can both be true at once so they need to read as different things. */
-.lia-timing-caution-banner {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  background: #fffbeb;
-  color: #92400e;
-  border: 1px solid #fde68a;
-  border-radius: 10px;
-  padding: 10px 13px;
-  font-size: 12.5px;
-  font-weight: 600;
-  line-height: 1.4;
-  margin-bottom: 12px;
-}
-.lia-timing-caution-banner svg { flex-shrink: 0; }
-
-/* Company details grid */
-.lia-company-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 7px;
-}
-
-.lia-company-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  background: #f8fafc;
-  border: 1px solid #e9eef5;
-  border-radius: 10px;
-  padding: 9px 11px;
-}
-
-.lia-company-key {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #94a3b8;
-}
-
-.lia-company-val {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1e293b;
-  word-break: break-word;
-}
-
-.lia-company-link { color: #0A66C2; text-decoration: none; }
-.lia-company-link:hover { text-decoration: underline; }
-
-/* ── Profile Fact Chips ────────────────────────────────────────────────────── */
-.lia-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.lia-chip {
-  display: inline-flex;
-  align-items: center;
-  background: #f0f9ff;
-  color: #0369a1;
-  border: 1px solid #bae6fd;
-  border-radius: 20px;
-  padding: 4px 11px;
-  font-size: 11.5px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-/* ── Callout Boxes ─────────────────────────────────────────────────────────── */
-.lia-callouts {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-.lia-callout {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  background: #fff;
-  border: 1px solid #e9eef5;
-  border-left: 3px solid #0A66C2;
-  border-radius: 0 10px 10px 0;
-  padding: 10px 13px;
-}
-
-.callout-num {
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  background: #0A66C2;
-  color: #fff;
-  border-radius: 50%;
-  font-size: 11px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 1px;
-}
-
-.callout-text {
-  font-size: 12.5px;
-  color: #334155;
-  line-height: 1.55;
-}
-
-/* ── HubSpot Modal ─────────────────────────────────────────────────────────── */
-#lia-hs-modal {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: #fff;
-  border-top: 2px solid #0A66C2;
-  border-radius: 16px 16px 0 0;
-  box-shadow: 0 -6px 28px rgba(0,0,0,0.13);
-  z-index: 10;
-  max-height: 82vh;
-  overflow-y: auto;
-  animation: lia-slide-up 0.22s ease;
-}
-
-@keyframes lia-slide-up {
-  from { transform: translateY(100%); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
-}
-
-.lia-hs-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 13px 16px 11px;
-  border-bottom: 1px solid #e9eef5;
-}
-
-.lia-hs-modal-title {
-  font-size: 13.5px;
-  font-weight: 700;
-  color: #1e293b;
-}
-
-.lia-hs-modal-close {
-  background: transparent;
-  border: none;
-  font-size: 20px;
-  color: #94a3b8;
-  cursor: pointer;
-  padding: 0 4px;
-  line-height: 1;
-  border-radius: 4px;
-  transition: color 0.15s;
-}
-
-.lia-hs-modal-close:hover { color: #374151; }
-
-.lia-hs-modal-body {
-  padding: 14px 16px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.lia-hs-loading {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: #64748b;
-  font-size: 13px;
-  padding: 12px 0;
-}
-
-.lia-hs-row {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.lia-hs-label {
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #94a3b8;
-}
-
-.lia-hs-optional {
-  font-size: 10px;
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: 0;
-  color: #b0bac9;
-}
-
-.lia-hs-input,
-.lia-hs-select,
-.lia-hs-textarea {
-  width: 100%;
-  padding: 8px 11px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 9px;
-  font-size: 13px;
-  font-family: inherit;
-  color: #1e293b;
-  background: #fafafa;
-  outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.lia-hs-input:focus,
-.lia-hs-select:focus,
-.lia-hs-textarea:focus {
-  border-color: #0A66C2;
-  box-shadow: 0 0 0 3px rgba(10,102,194,0.08);
-  background: #fff;
-}
-
-.lia-hs-textarea {
-  resize: vertical;
-  min-height: 68px;
-  line-height: 1.5;
-}
-
-.lia-hs-preview {
-  background: #f8fafc;
-  border: 1px solid #e9eef5;
-  border-radius: 9px;
-  padding: 10px 12px;
-}
-
-.lia-hs-preview-label {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #94a3b8;
-  margin-bottom: 6px;
-}
-
-.lia-hs-preview-text {
-  font-size: 11px;
-  color: #555;
-  white-space: pre-wrap;
-  line-height: 1.5;
-  max-height: 80px;
-  overflow-y: auto;
-}
-
-.lia-hs-error {
-  font-size: 12.5px;
-  color: #dc2626;
-  background: #fff5f5;
-  border: 1px solid #fee2e2;
-  border-radius: 8px;
-  padding: 9px 12px;
-  margin: 0;
-}
-
-.lia-hs-notice {
-  font-size: 13px;
-  color: #475569;
-  margin: 0 0 4px;
-  line-height: 1.5;
-}
-
-.lia-hs-owner-warning {
-  font-size: 11.5px;
-  color: #b45309;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 8px;
-  padding: 7px 10px;
-  margin: 0 0 4px;
-  line-height: 1.45;
-}
-
-.lia-hs-pushed-notice {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: #15803d;
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  border-radius: 10px;
-  padding: 10px 12px;
-  margin-bottom: 14px;
-  line-height: 1.4;
-}
-
-.lia-hs-pushed-notice svg { flex-shrink: 0; }
-
-.lia-hs-success {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 20px 0 8px;
-  text-align: center;
-}
-
-.lia-hs-success p {
-  font-size: 14px;
-  font-weight: 600;
-  color: #15803d;
-  margin: 0;
-}
-
-.lia-hs-warning {
-  font-size: 12px !important;
-  font-weight: 500 !important;
-  color: #b45309 !important;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 8px;
-  padding: 8px 11px;
-  line-height: 1.45;
-}
-
-/* ══════════════════════════════════════════════════════════════════════════════
-   POST CREATOR
-   ══════════════════════════════════════════════════════════════════════════════ */
-
-/* ── Post Creator Trigger Button ─────────────────────────────────────────────── */
-#lia-post-trigger {
-  position: fixed;
-  right: 0;
-  top: 50%;
-  transform: translateY(calc(-50% + 52px));
-  z-index: 2147483645;
-  background: #059669;
-  color: #fff;
-  border: none;
-  border-radius: 10px 0 0 10px;
-  padding: 9px 10px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  box-shadow: -2px 2px 10px rgba(5,150,105,0.35);
-  transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
-  writing-mode: horizontal-tb;
-}
-
-#lia-post-trigger:hover {
-  background: #047857;
-  transform: translateY(calc(-50% + 52px)) translateX(-3px);
-  box-shadow: -4px 2px 14px rgba(5,150,105,0.4);
-}
-
-#lia-time-trigger {
-  position: fixed;
-  right: 0;
-  top: 50%;
-  transform: translateY(calc(-50% + 100px));
-  z-index: 2147483645;
-  background: #d97706;
-  color: #fff;
-  border: none;
-  border-radius: 10px 0 0 10px;
-  padding: 9px 10px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  box-shadow: -2px 2px 10px rgba(217,119,6,0.35);
-  transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
-  writing-mode: horizontal-tb;
-}
-
-#lia-time-trigger:hover {
-  background: #b45309;
-  transform: translateY(calc(-50% + 100px)) translateX(-3px);
-  box-shadow: -4px 2px 14px rgba(217,119,6,0.4);
-}
-
-#lia-save-trigger {
-  position: fixed;
-  right: 0;
-  top: 50%;
-  transform: translateY(calc(-50% + 148px));
-  z-index: 2147483645;
-  background: #0891b2;
-  color: #fff;
-  border: none;
-  border-radius: 10px 0 0 10px;
-  padding: 9px 10px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  box-shadow: -2px 2px 10px rgba(8,145,178,0.35);
-  transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
-  writing-mode: horizontal-tb;
-}
-
-#lia-save-trigger:hover {
-  background: #0e7490;
-  transform: translateY(calc(-50% + 148px)) translateX(-3px);
-  box-shadow: -4px 2px 14px rgba(8,145,178,0.4);
-}
-
-#lia-save-trigger.lia-save-trigger-active {
-  background: #ca8a04;
-  box-shadow: -2px 2px 10px rgba(202,138,4,0.4);
-}
-#lia-save-trigger.lia-save-trigger-active:hover {
-  background: #a16207;
-}
-#lia-save-trigger.lia-save-trigger-active svg {
-  fill: currentColor;
-}
-
-#lia-save-trigger.lia-save-trigger-error {
-  background: #dc2626 !important;
-  box-shadow: -2px 2px 10px rgba(220,38,38,0.4) !important;
-}
-
-/* ── World Clock / Time Converter Panel ──────────────────────────────────────── */
-#lia-time-panel {
-  position: fixed;
-  top: 0;
-  right: -400px;
-  width: 340px;
-  height: 100vh;
-  background: linear-gradient(160deg, #1e1e4a 0%, #18183e 40%, #141432 100%);
-  border-left: 1px solid rgba(124,58,237,0.25);
-  box-shadow: -4px 0 28px rgba(0,0,0,0.12);
-  z-index: 2147483646;
-  display: flex;
-  flex-direction: column;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  transition: right 0.28s cubic-bezier(0.4,0,0.2,1);
-  overflow: hidden;
-}
-
-#lia-time-panel.lia-pc-open { right: 0; }
-
-.lia-time-clocks {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.lia-time-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(124,58,237,0.2);
-  border-radius: 10px;
-}
-
-.lia-time-row-label {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: #f1f5f9;
-}
-
-.lia-time-row-date {
-  font-size: 10.5px;
-  font-weight: 500;
-  color: rgba(196,181,253,0.6);
-}
-
-.lia-time-row-clock {
-  font-size: 15px;
-  font-weight: 700;
-  color: #c4b5fd;
-  font-variant-numeric: tabular-nums;
-}
-
-.lia-time-convert-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.lia-time-convert-row .lia-notes-input {
-  flex: 1;
-  min-width: 0;
-  margin-bottom: 0;
-}
-
-.lia-time-convert-row .lia-btn-primary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: auto;
-  flex-shrink: 0;
-  white-space: nowrap;
-  padding: 9px 16px;
-}
-
-.lia-time-convert-result {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.lia-time-convert-out-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 12.5px;
-  color: #e2e8f0;
-  padding: 6px 10px;
-  background: rgba(124,58,237,0.12);
-  border-radius: 8px;
-}
-
-.lia-time-convert-out-row b {
-  color: #c4b5fd;
-  font-variant-numeric: tabular-nums;
-}
-
-.lia-time-convert-err {
-  font-size: 12px;
-  color: #f87171;
-}
-
-.lia-time-zones-toggle {
-  background: transparent;
-  border: none;
-  color: rgba(196,181,253,0.85);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 4px 0;
-}
-
-.lia-time-zones-toggle:hover { color: #fff; }
-
-.lia-time-zone-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-.lia-time-zone-opt {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  color: #e2e8f0;
-  cursor: pointer;
-}
-
-/* ── Post Creator Panel ───────────────────────────────────────────────────────── */
-#lia-post-panel {
-  position: fixed;
-  top: 0;
-  right: -400px;
-  width: 360px;
-  height: 100vh;
-  background: #fff;
-  border-left: 1px solid #e2e8f0;
-  box-shadow: -4px 0 28px rgba(0,0,0,0.12);
-  z-index: 2147483646;
-  display: flex;
-  flex-direction: column;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  transition: right 0.28s cubic-bezier(0.4,0,0.2,1);
-  overflow: hidden;
-}
-
-#lia-post-panel.lia-pc-open { right: 0; }
-
-.lia-pc-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px 13px;
-  background: #7c3aed;
-  color: #fff;
-  flex-shrink: 0;
-}
-
-.lia-pc-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: -0.1px;
-}
-
-/* ── Mode Toggle ──────────────────────────────────────────────────────────────── */
-.lia-pc-mode-toggle {
-  display: flex;
-  background: rgba(255,255,255,0.15);
-  border-radius: 8px;
-  padding: 2px;
-  gap: 2px;
-}
-
-.lia-pc-mode-btn {
-  background: transparent;
-  border: none;
-  color: rgba(255,255,255,0.75);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 4px 9px;
-  border-radius: 6px;
-  transition: background 0.15s, color 0.15s;
-  white-space: nowrap;
-}
-
-.lia-pc-mode-btn:hover { color: #fff; background: rgba(255,255,255,0.15); }
-.lia-pc-mode-btn.active { background: rgba(255,255,255,0.25); color: #fff; }
-
-.lia-pc-close {
-  background: transparent;
-  border: none;
-  color: rgba(255,255,255,0.85);
-  font-size: 22px;
-  cursor: pointer;
-  line-height: 1;
-  padding: 0 2px;
-  border-radius: 4px;
-  transition: color 0.15s;
-}
-
-.lia-pc-close:hover { color: #fff; }
-
-.lia-pc-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.lia-pc-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.lia-pc-intro {
-  font-size: 13.5px;
-  color: #374151;
-  line-height: 1.5;
-  margin: 0;
-}
-
-.lia-pc-domains {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.lia-pc-domain-chip {
-  background: #f3e8ff;
-  color: #7c3aed;
-  border: 1px solid #ddd6fe;
-  border-radius: 20px;
-  padding: 3px 10px;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.lia-pc-notice {
-  font-size: 11.5px;
-  color: #64748b;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 8px 10px;
-  margin: 0;
-}
-
-.lia-pc-company-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: #fff7ed;
-  color: #c2410c;
-  border: 1px solid #fed7aa;
-  border-radius: 20px;
-  padding: 4px 12px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.lia-pc-posts-found {
-  font-size: 11px;
-  color: #0369a1;
-  background: #f0f9ff;
-  border: 1px solid #bae6fd;
-  border-radius: 8px;
-  padding: 7px 10px;
-  margin: 0;
-}
-
-.lia-pc-style-grid-col {
-  grid-template-columns: 1fr;
-}
-
-.lia-pc-full-btn {
-  width: 100%;
-  justify-content: center;
-}
-
-.lia-pc-or {
-  text-align: center;
-  font-size: 11.5px;
-  color: #94a3b8;
-  font-weight: 500;
-  margin: 2px 0;
-}
-
-.lia-pc-custom-row {
-  display: flex;
-  gap: 7px;
-}
-
-.lia-pc-custom-input {
-  flex: 1;
-  padding: 8px 11px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 9px;
-  font-size: 13px;
-  font-family: inherit;
-  color: #1e293b;
-  outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.lia-pc-custom-input:focus {
-  border-color: #7c3aed;
-  box-shadow: 0 0 0 3px rgba(124,58,237,0.1);
-}
-
-/* ── Topic Cards ──────────────────────────────────────────────────────────────── */
-.lia-pc-sub-label {
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #94a3b8;
-}
-
-.lia-pc-topic-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.lia-pc-topic-card {
-  border: 1.5px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 12px 13px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.lia-pc-topic-card:hover {
-  border-color: #7c3aed;
-  background: #faf5ff;
-  box-shadow: 0 2px 8px rgba(124,58,237,0.1);
-}
-
-.lia-pc-topic-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: #1e293b;
-  line-height: 1.35;
-}
-
-.lia-pc-topic-angle {
-  font-size: 12px;
-  color: #475569;
-  line-height: 1.4;
-}
-
-.lia-pc-topic-why {
-  font-size: 11px;
-  color: #7c3aed;
-  font-weight: 500;
-  margin-top: 2px;
-}
-
-/* ── Selected Topic + Style Picker ───────────────────────────────────────────── */
-.lia-pc-selected-topic {
-  background: #faf5ff;
-  border: 1.5px solid #ddd6fe;
-  border-radius: 10px;
-  padding: 10px 13px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.lia-pc-st-label {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #7c3aed;
-}
-
-.lia-pc-st-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1e293b;
-}
-
-.lia-pc-style-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 7px;
-}
-
-.lia-pc-style-card {
-  border: 1.5px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 10px 11px;
-  background: #fff;
-  cursor: pointer;
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+#lia-panel .lia-error-msg, #lia-post-panel .lia-pc-error {
+  padding: 10px 12px; border-radius: var(--lp-r);
+  background: var(--lp-bad-bg); color: var(--lp-bad); border: 1px solid var(--lp-bad-line);
+  font-size: 13px; line-height: 1.5;
+}
+#lia-panel .lia-error-msg, #lia-post-panel .lia-pc-error, #lia-panel .lia-hs-error { scroll-margin: 24px; }
+#lia-panel .lia-inline-upgrade-link { color: inherit; font-weight: 600; text-decoration: underline; }
+
+#lia-panel .lia-gate, #lia-panel .lia-sign-gate {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 40px 12px 24px; text-align: center;
+}
+#lia-panel .lia-gate-icon, #lia-panel .lia-sign-gate-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 56px; height: 56px; border-radius: 14px; margin-bottom: 4px;
+  background: var(--lp-accent-soft); color: var(--lp-accent);
+}
+#lia-panel .lia-gate-icon svg, #lia-panel .lia-sign-gate-icon svg { stroke: currentColor; }
+#lia-panel .lia-gate-heading, #lia-panel .lia-sign-gate-title {
+  font-family: var(--lp-font-display); font-size: 18px; font-weight: 600; color: var(--lp-text); letter-spacing: -0.015em;
+}
+#lia-panel .lia-gate-desc, #lia-panel .lia-sign-gate-desc { font-size: 13.5px; color: var(--lp-text-2); line-height: 1.55; max-width: 300px; }
+#lia-panel .lia-gate-btn, #lia-panel .lia-sign-gate-btn { margin-top: 8px; }
+/* Google's sign-in guidelines: neutral surface behind the multicolor G, never a brand fill. */
+#lia-panel .lia-sign-gate-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%;
+  min-height: 42px; border-radius: var(--lp-r); background: var(--lp-bg); color: var(--lp-text);
+  border: 1px solid var(--lp-border-strong); font-size: 14px; font-weight: 600;
+}
+#lia-panel .lia-sign-gate-btn:hover { background: var(--lp-surface-hover); }
+#lia-panel .lia-sign-gate-footer { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--lp-muted); }
+
+/* ── HubSpot modal (mounted inside the panel) ───────────────────────────────── */
+#lia-panel #lia-hs-modal {
+  position: absolute; inset: 56px 0 0 0; z-index: 5;
+  display: flex; flex-direction: column; background: var(--lp-bg); overflow-y: auto;
+}
+#lia-panel .lia-hs-modal-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 12px 12px 16px; border-bottom: 1px solid var(--lp-border);
+}
+#lia-panel .lia-hs-modal-title { font-family: var(--lp-font-display); font-size: 15px; font-weight: 600; color: var(--lp-text); }
+#lia-panel .lia-hs-modal-body { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+#lia-panel .lia-hs-row { display: flex; flex-direction: column; gap: 6px; }
+#lia-panel .lia-hs-label { font-size: 13px; font-weight: 600; color: var(--lp-text); }
+#lia-panel .lia-hs-optional { font-weight: 400; color: var(--lp-muted); }
+#lia-panel .lia-hs-preview { padding: 12px; border-radius: var(--lp-r); background: var(--lp-surface); border: 1px solid var(--lp-border); }
+#lia-panel .lia-hs-preview-label { font-size: 12px; font-weight: 600; color: var(--lp-muted); margin-bottom: 4px; }
+#lia-panel .lia-hs-preview-text { font-size: 13px; color: var(--lp-text-2); line-height: 1.5; }
+#lia-panel .lia-hs-notice { font-size: 13.5px; color: var(--lp-text-2); line-height: 1.55; }
+#lia-panel .lia-hs-error, #lia-panel .lia-hs-warning, #lia-panel .lia-hs-owner-warning {
+  padding: 9px 11px; border-radius: var(--lp-r); font-size: 13px; line-height: 1.5;
+  background: var(--lp-mid-bg); color: var(--lp-mid); border: 1px solid var(--lp-mid-line);
+}
+#lia-panel .lia-hs-error { background: var(--lp-bad-bg); color: var(--lp-bad); border-color: var(--lp-bad-line); }
+#lia-panel .lia-hs-success, #lia-panel .lia-hs-pushed-notice {
+  padding: 10px 12px; border-radius: var(--lp-r); font-size: 13.5px;
+  background: var(--lp-good-bg); color: var(--lp-good); border: 1px solid var(--lp-good-line);
+}
+
+/* ── Post Creator drawer ────────────────────────────────────────────────────── */
+#lia-post-panel .lia-pc-mode-toggle {
+  display: inline-flex; padding: 3px; gap: 2px; border-radius: var(--lp-r);
+  background: var(--lp-surface); border: 1px solid var(--lp-border);
+}
+#lia-post-panel .lia-pc-mode-btn {
+  height: 28px; padding: 0 10px; border-radius: var(--lp-r-sm);
+  font-size: 12.5px; font-weight: 600; color: var(--lp-muted);
+}
+#lia-post-panel .lia-pc-mode-btn.active { background: var(--lp-bg); color: var(--lp-text); box-shadow: 0 1px 2px rgba(33, 21, 47, 0.08); }
+#lia-post-panel .lia-pc-intro { font-family: var(--lp-font-display); font-size: 17px; font-weight: 600; color: var(--lp-text); letter-spacing: -0.015em; line-height: 1.35; }
+#lia-post-panel .lia-pc-intro strong { color: var(--lp-accent); font-weight: 600; }
+#lia-post-panel .lia-pc-notice, #lia-post-panel .lia-pc-posts-found { font-size: 13px; color: var(--lp-muted); line-height: 1.5; }
+#lia-post-panel .lia-pc-company-badge {
+  display: inline-flex; align-items: center; gap: 7px; align-self: flex-start;
+  padding: 5px 10px; border-radius: var(--lp-r-sm); background: var(--lp-surface); border: 1px solid var(--lp-border);
+  font-size: 12.5px; font-weight: 500; color: var(--lp-text-2);
+}
+#lia-post-panel .lia-pc-or {
+  display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--lp-muted);
+}
+#lia-post-panel .lia-pc-or::before, #lia-post-panel .lia-pc-or::after { content: ''; flex: 1; height: 1px; background: var(--lp-border); }
+#lia-post-panel .lia-pc-custom-row { display: flex; gap: 8px; }
+#lia-post-panel .lia-pc-custom-row .lia-btn-secondary { flex-shrink: 0; }
+#lia-post-panel .lia-pc-topic-list { display: flex; flex-direction: column; gap: 8px; }
+#lia-post-panel .lia-pc-topic-card {
+  display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; cursor: pointer;
+  border-radius: var(--lp-r-lg); border: 1px solid var(--lp-border); background: var(--lp-bg);
   transition: border-color 0.15s, background 0.15s;
 }
-
-.lia-pc-style-card:hover {
-  border-color: #7c3aed;
-  background: #faf5ff;
-}
-
-.lia-pc-style-card.active {
-  border-color: #7c3aed;
-  background: #f3e8ff;
-}
-
-.lia-pc-style-label {
-  font-size: 12px;
-  font-weight: 700;
-  color: #1e293b;
-}
-
-.lia-pc-style-desc {
-  font-size: 10.5px;
-  color: #64748b;
-}
-
-/* ── Generated Post ───────────────────────────────────────────────────────────── */
-.lia-pc-post-box {
-  background: #f8fafc;
-  border: 1px solid #e9eef5;
-  border-radius: 10px;
-  padding: 12px 14px;
-  font-size: 13px;
-  color: #1e293b;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 260px;
-  overflow-y: auto;
-}
-
-.lia-pc-hashtags {
-  font-size: 12px;
-  color: #0A66C2;
-  font-weight: 500;
-  line-height: 1.6;
-  word-break: break-word;
-}
-
-.lia-pc-post-actions {
-  display: flex;
-  gap: 7px;
-}
-
-.lia-pc-post-actions .lia-btn-primary { flex: 1; }
-.lia-pc-post-actions .lia-btn-secondary { flex-shrink: 0; }
-
-/* ── Post Creator: history ────────────────────────────────────────────────────── */
-.lia-pc-history-btn {
-  background: transparent;
-  border: none;
-  color: rgba(255,255,255,0.85);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  transition: color 0.15s, background 0.15s;
-}
-.lia-pc-history-btn:hover { color: #fff; background: rgba(255,255,255,0.15); }
-
-.lia-pc-history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.lia-pc-history-item {
-  border: 1.5px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 12px 13px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.lia-pc-history-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.lia-pc-history-topic {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: #1e293b;
-  line-height: 1.3;
-}
-
-.lia-pc-history-time {
-  font-size: 11px;
-  color: #94a3b8;
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-.lia-pc-history-preview {
-  font-size: 12px;
-  color: #475569;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.lia-pc-history-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-/* ── Post Creator: back row + image-only screen ─────────────────────────────── */
-.lia-pc-back-row {
-  display: flex;
-  align-items: center;
-  margin-bottom: 4px;
-}
-.lia-pc-back-btn {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  background: none;
-  border: none;
-  color: #0A66C2;
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 4px 0;
-}
-.lia-pc-back-btn:hover { opacity: 0.75; }
-
-.lia-pc-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: #64748b;
-}
-
-.lia-pc-imgonly-input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 10px;
-  font-size: 13px;
-  font-family: inherit;
-  color: #1e293b;
-  background: #fff;
-  resize: vertical;
-  line-height: 1.55;
-  box-sizing: border-box;
-  transition: border-color 0.18s;
-  min-height: 100px;
-}
-.lia-pc-imgonly-input:focus {
-  outline: none;
-  border-color: #0A66C2;
-}
-
-/* ── Image Section ────────────────────────────────────────────────────────────── */
-#lia-pc-image-area {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-
-.lia-pc-image-prompt {
-  font-size: 11.5px;
-  color: #64748b;
-  background: #f8fafc;
-  border: 1px solid #e9eef5;
-  border-radius: 8px;
-  padding: 9px 11px;
-  line-height: 1.5;
-  font-style: italic;
-}
-
-.lia-pc-image-note {
-  font-size: 10.5px;
-  color: #94a3b8;
-  margin: 0;
-  text-align: center;
-}
-
-.lia-pc-image-preview {
-  width: 100%;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
-  display: block;
-}
-
-.lia-pc-download-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  text-decoration: none;
-  color: inherit;
-}
-
-/* ── Loading / Error ──────────────────────────────────────────────────────────── */
-.lia-pc-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 32px 16px;
-  color: #64748b;
-  font-size: 13px;
-  text-align: center;
-}
-
-.lia-pc-loading p { margin: 0; }
-
-.lia-pc-error {
-  font-size: 12.5px;
-  color: #dc2626;
-  background: #fff5f5;
-  border: 1px solid #fee2e2;
-  border-radius: 8px;
-  padding: 9px 12px;
-  margin: 0;
-}
-
-/* ── Mode badge in panel header ──────────────────────────────────────────────── */
-.lia-mode-badge {
-  font-size: 9.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 2px 7px;
-  background: rgba(255,255,255,0.18);
-  color: rgba(255,255,255,0.92);
-  border-radius: 20px;
-  border: 1px solid rgba(255,255,255,0.25);
-  white-space: nowrap;
-  margin-left: 2px;
-}
-
-.lia-mode-badge:empty { display: none; }
-
-/* ── ICP warning banner ───────────────────────────────────────────────────────── */
-.lia-icp-warning {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  background: #fefce8;
-  border: 1px solid #fde68a;
-  border-radius: 9px;
-  padding: 8px 12px;
-  font-size: 12px;
-  color: #78350f;
-  line-height: 1.45;
-  margin-bottom: 4px;
-}
-
-.lia-icp-warning svg { flex-shrink: 0; color: #d97706; }
-
-.lia-icp-warning-link {
-  background: none;
-  border: none;
-  font-size: 12px;
-  font-weight: 700;
-  color: #0A66C2;
-  cursor: pointer;
-  text-decoration: underline;
-  padding: 0;
-}
-
-/* ── Trigger buttons — premium redesign ──────────────────────────────────────── */
-#lia-trigger {
-  padding: 16px 9px;
-  border-radius: 12px 0 0 12px;
-  box-shadow: -4px 0 20px rgba(10,102,194,0.30), -1px 0 6px rgba(0,0,0,0.08);
-}
-
-#lia-trigger span {
-  font-size: 9.5px;
-  font-weight: 800;
-  letter-spacing: 1px;
-}
-
-#lia-post-trigger {
-  border-radius: 12px 0 0 12px;
-  box-shadow: -3px 0 16px rgba(5,150,105,0.28), -1px 0 4px rgba(0,0,0,0.06);
-  padding: 12px 9px;
-}
-
-#lia-post-trigger span:last-child {
-  font-size: 9.5px;
-  font-weight: 800;
-  letter-spacing: 0.5px;
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  transform: rotate(180deg);
-  white-space: nowrap;
-}
-
-#lia-post-trigger span:first-child {
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-}
-
-/* ── Should I message recommendation ─────────────────────────────────────────── */
-.lia-reach-card {
-  border-radius: 10px;
-  padding: 11px 14px;
-  margin-bottom: 10px;
-  border: 1.5px solid;
-}
-
-.lia-reach-card.ro-yes  { background: #f0fdf4; border-color: #bbf7d0; }
-.lia-reach-card.ro-maybe { background: #fffbeb; border-color: #fde68a; }
-.lia-reach-card.ro-no   { background: #fff7ed; border-color: #fed7aa; }
-
-.reach-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 5px;
-}
-
-.reach-label {
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #64748b;
-}
-
-.reach-verdict {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 13px;
-  font-weight: 800;
-  border-radius: 20px;
-  padding: 2px 10px;
-}
-
-.reach-verdict.ro-yes  { background: #dcfce7; color: #15803d; }
-.reach-verdict.ro-maybe { background: #fef9c3; color: #854d0e; }
-.reach-verdict.ro-no   { background: #ffedd5; color: #c2410c; }
-
-.reach-reason {
-  font-size: 12px;
-  color: #374151;
-  line-height: 1.55;
-  margin: 0;
-}
-
-/* ── Refine message section ───────────────────────────────────────────────────── */
-.lia-refine-section {
-  margin-top: 10px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 10px;
-  overflow: hidden;
-  background: #fff;
-}
-
-.lia-refine-toggle {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  background: #f8fafc;
-  border: none;
-  padding: 10px 14px;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: #374151;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.15s;
-}
-
-.lia-refine-toggle:hover { background: #f1f5f9; }
-
-.lia-refine-arrow { margin-left: auto; transition: transform 0.2s; color: #94a3b8; }
-
-.lia-refine-body {
-  padding: 12px 14px 14px;
-  border-top: 1px solid #e2e8f0;
-}
-
-.lia-refine-group { margin-bottom: 12px; }
-
-.lia-refine-label {
-  font-size: 11.5px;
-  font-weight: 700;
-  color: #374151;
-  margin-bottom: 7px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-/* Tone grid / Strategy grid — identical component, two independent pickers */
-.lia-tone-grid,
-.lia-strategy-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-/* Odd option count (5 tones) — rather than let the last one wrap onto a half-empty
-   row by accident, give it the full row on purpose. The 8-option strategy grid is even, so this
-   rule is a no-op there (harmless — :last-child still resolves, just already sits in column 2). */
-.lia-tone-btn:last-child {
-  grid-column: 1 / -1;
-}
-
-.lia-tone-btn,
-.lia-strategy-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding: 7px 11px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 8px;
-  background: #fafafa;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-  min-width: 0;
-}
-
-.lia-tone-btn:hover,
-.lia-strategy-btn:hover { border-color: #93c5fd; background: #f0f9ff; }
-
-.lia-tone-btn.active,
-.lia-strategy-btn.active {
-  border-color: #0A66C2;
-  background: #eff6ff;
-}
-
-.lia-tone-name,
-.lia-strategy-name {
-  font-size: 12px;
-  font-weight: 700;
-  color: #1e293b;
-  line-height: 1.2;
-}
-
-.lia-tone-btn.active .lia-tone-name,
-.lia-strategy-btn.active .lia-strategy-name { color: #0A66C2; }
-
-.lia-tone-desc,
-.lia-strategy-desc {
-  font-size: 10.5px;
-  color: #94a3b8;
-  line-height: 1.3;
-  margin-top: 1px;
-}
-
-.lia-tone-btn.active .lia-tone-desc,
-.lia-strategy-btn.active .lia-strategy-desc { color: #3b82f6; }
-
-/* ── Sidebar dock — single fixed container prevents button overlap ───────────── */
-#lia-sidebar-dock {
-  position: fixed;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 99999;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 3px;
-  pointer-events: none;
-}
-
-#lia-sidebar-dock > * {
-  pointer-events: auto;
-}
-
-/* Override independent positioning when inside the dock */
-#lia-sidebar-dock #lia-trigger,
-#lia-sidebar-dock #lia-post-trigger,
-#lia-sidebar-dock #lia-time-trigger,
-#lia-sidebar-dock #lia-save-trigger {
-  position: relative !important;
-  right: auto !important;
-  top: auto !important;
-  bottom: auto !important;
-  transform: none !important;
-}
-
-#lia-sidebar-dock #lia-trigger:hover,
-#lia-sidebar-dock #lia-post-trigger:hover,
-#lia-sidebar-dock #lia-time-trigger:hover,
-#lia-sidebar-dock #lia-save-trigger:hover {
-  transform: translateX(-3px) !important;
-}
-
-/* ── Message tab intelligence block ──────────────────────────────────────────── */
-.lia-msg-intelligence {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 11px 14px;
-  margin-bottom: 14px;
-}
-
-.lia-msg-intelligence-title {
-  font-size: 10.5px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: #94a3b8;
-  margin-bottom: 9px;
-}
-
-.lia-insight-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 5px 0;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.lia-insight-row:last-child { border-bottom: none; }
-
-.lia-insight-key {
-  font-size: 11px;
-  font-weight: 700;
-  color: #64748b;
-  min-width: 90px;
-  flex-shrink: 0;
-  padding-top: 1px;
-}
-
-.lia-insight-val {
-  font-size: 12px;
-  font-weight: 700;
-  color: #0A66C2;
-  line-height: 1.4;
-}
-
-.lia-insight-note {
-  font-size: 11.5px;
-  color: #374151;
-  line-height: 1.5;
-  flex: 1;
-}
-
-.lia-insight-ki {
-  font-size: 11.5px;
-  color: #374151;
-  line-height: 1.5;
-}
-
-/* Refine toggle */
-.lia-refine-toggle {
-  flex: 1;
-  padding: 8px;
-  background: transparent;
-  color: #0A66C2;
-  border: 1.5px solid #bfdbfe;
-  border-radius: 7px;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  transition: background 0.15s;
-}
-
-.lia-refine-toggle:hover { background: #eff6ff; }
-
-.lia-refine-arrow {
-  display: inline-block;
-  transition: transform 0.2s;
-  font-style: normal;
-}
-
-.lia-refine-body {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #dbeafe;
-  display: none;
-}
-
-/* ══════════════════════════════════════════════════════════════════════════════
-   SATYRON DARK THEME — Full panel redesign
-   ══════════════════════════════════════════════════════════════════════════════ */
-
-/* ── Panel shell ─────────────────────────────────────────────────────────── */
-#lia-panel {
-  background: linear-gradient(160deg, #1e1e4a 0%, #18183e 40%, #141432 100%) !important;
-  box-shadow: -8px 0 40px rgba(0,0,0,0.4), -1px 0 8px rgba(0,0,0,0.15) !important;
-}
-
-/* ── Header ──────────────────────────────────────────────────────────────── */
-.lia-header {
-  background: linear-gradient(135deg, #2a1060 0%, #1c1248 60%, #16163a 100%) !important;
-  border-bottom: 1px solid rgba(124,58,237,0.3) !important;
-  position: relative !important;
-}
-
-.lia-header::before {
-  content: '';
-  position: absolute;
-  top: -30px; right: -20px;
-  width: 100px; height: 100px;
-  background: radial-gradient(circle, rgba(124,58,237,0.2) 0%, transparent 70%);
-  pointer-events: none;
-}
-
-.lia-reanalyze-btn,
-.lia-hs-btn {
-  background: rgba(124,58,237,0.15) !important;
-  border: 1px solid rgba(124,58,237,0.3) !important;
-  color: #c4b5fd !important;
-}
-
-/* HubSpot keeps its real brand orange rather than following the shared lavender icon
-   color — the same logo mark shows true-color in Settings, so this button shouldn't
-   recolor it to something unrecognizable. */
-.lia-hs-btn {
-  color: #FF7A59 !important;
-}
-.lia-hs-btn:hover {
-  background: rgba(255,122,89,0.16) !important;
-  border-color: rgba(255,122,89,0.4) !important;
-}
-
-.lia-reanalyze-btn:hover {
-  background: rgba(124,58,237,0.28) !important;
-  color: #fff !important;
-}
-
-/* ── Sign-in gate — never got a dark pass, was rendering near-black text on the dark panel ── */
-.lia-sign-gate-title {
-  color: #f1f5f9 !important;
-}
-
-.lia-sign-gate-desc {
-  color: rgba(196,181,253,0.75) !important;
-}
-
-.lia-sign-gate-footer {
-  color: rgba(196,181,253,0.45) !important;
-}
-
-/* ── Mode indicator (purpose picker) ─────────────────────────────────────── */
-.lia-mode-indicator {
-  background: rgba(124,58,237,0.15) !important;
-  color: #c4b5fd !important;
-  border: 1px solid rgba(124,58,237,0.3) !important;
-}
-
-/* ── Mode badge ──────────────────────────────────────────────────────────── */
-.lia-mode-badge {
-  background: rgba(124,58,237,0.2) !important;
-  color: #c4b5fd !important;
-  border: 1px solid rgba(124,58,237,0.3) !important;
-}
-
-/* ── Tabs ────────────────────────────────────────────────────────────────── */
-.lia-tabs {
-  background: rgba(20,20,48,0.9) !important;
-  border-bottom: 1px solid rgba(124,58,237,0.25) !important;
-}
-
-.lia-tab {
-  color: rgba(148,163,184,0.7) !important;
-  background: transparent !important;
-  border-bottom: 2px solid transparent !important;
-}
-
-.lia-tab:hover {
-  color: #c4b5fd !important;
-  background: rgba(124,58,237,0.06) !important;
-}
-
-.lia-tab.active {
-  color: #c4b5fd !important;
-  border-bottom-color: #7c3aed !important;
-  background: rgba(124,58,237,0.08) !important;
-}
-
-/* ── Body / scroll area ──────────────────────────────────────────────────── */
-#lia-body,
-.lia-body-inner,
-.lia-section,
-.lia-post-body {
-  background: transparent !important;
-  color: #ffffff !important;
-}
-
-/* ── Cards / boxes ────────────────────────────────────────────────────────── */
-.lia-connection-box,
-.lia-score-block,
-.lia-section-card,
-.lia-msg-intelligence,
-.lia-reach-card,
-.lia-msg-tab-result,
-.lia-icp-warning,
-.lia-post-card,
-.lia-follow-block {
-  background: rgba(255,255,255,0.05) !important;
-  border-color: rgba(255,255,255,0.1) !important;
-  color: #f1f5f9 !important;
-}
-
-.lia-reach-card.ro-yes  { background: rgba(34,197,94,0.07) !important; border-color: rgba(34,197,94,0.2) !important; }
-.lia-reach-card.ro-maybe { background: rgba(245,158,11,0.07) !important; border-color: rgba(245,158,11,0.2) !important; }
-.lia-reach-card.ro-no   { background: rgba(239,68,68,0.07) !important; border-color: rgba(239,68,68,0.2) !important; }
-
-.lia-msg-tab-result { background: rgba(124,58,237,0.07) !important; border-color: rgba(124,58,237,0.22) !important; }
-
-/* ── Labels / eyebrows ───────────────────────────────────────────────────── */
-.lia-label,
-.lia-section-label,
-.lia-analyzed-label {
-  color: rgba(124,58,237,0.75) !important;
-}
-
-.lia-score-label,
-.lia-msg-intelligence-title {
-  color: rgba(124,58,237,0.7) !important;
-  letter-spacing: 0.08em !important;
-}
-
-/* ── Text ─────────────────────────────────────────────────────────────────── */
-.lia-name,
-.lia-title,
-.lia-score-val,
-.lia-section-title,
-#lia-panel p,
-#lia-post-panel p,
-.lia-follow-text,
-.lia-reach-reason,
-.lia-msg-tab-text {
-  color: #ffffff !important;
-}
-
-.lia-meta,
-.lia-score-sub,
-.lia-optional,
-.lia-char-count,
-.lia-insight-key,
-.lia-tone-desc,
-.lia-strategy-desc,
-.lia-refine-label {
-  color: rgba(196,181,253,0.7) !important;
-}
-
-.lia-insight-val { color: #c4b5fd !important; }
-.lia-insight-note { color: #94a3b8 !important; }
-
-/* ── Insight rows ─────────────────────────────────────────────────────────── */
-.lia-insight-row { border-bottom-color: rgba(255,255,255,0.05) !important; }
-
-/* ── Purpose picker ───────────────────────────────────────────────────────── */
-.lia-purpose-intro {
-  color: rgba(196,181,253,0.75) !important;
-  font-size: 10px !important;
-  letter-spacing: 0.12em !important;
-}
-
-/* Base tile */
-.lia-purpose-tile {
-  background: rgba(255,255,255,0.04) !important;
-  border: 1.5px solid rgba(255,255,255,0.1) !important;
-  color: #f1f5f9 !important;
-  box-shadow: none !important;
-}
-
-/* Show descriptions inside tiles */
-.lia-purpose-desc {
-  display: block !important;
-  font-size: 10.5px !important;
-  color: rgba(148,163,184,0.75) !important;
-  line-height: 1.45 !important;
-  margin-top: 3px !important;
-  font-weight: 400 !important;
-}
-
-.lia-purpose-title {
-  color: #ffffff !important;
-  font-size: 13px !important;
-}
-
-/* Analyze — purple */
-#lia-purpose-analyze {
-  border-color: rgba(124,58,237,0.3) !important;
-}
-#lia-purpose-analyze .lia-purpose-icon {
-  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%) !important;
-  color: #fff !important;
-  box-shadow: 0 4px 12px rgba(124,58,237,0.4) !important;
-}
-#lia-purpose-analyze:hover {
-  background: rgba(124,58,237,0.1) !important;
-  border-color: rgba(124,58,237,0.55) !important;
-  box-shadow: 0 4px 20px rgba(124,58,237,0.2) !important;
-  transform: translateY(-2px) !important;
-}
-#lia-purpose-analyze:hover .lia-purpose-icon {
-  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%) !important;
-}
-
-/* Connection Request — same indigo family as Analyze, not a second brand color.
-   Differentiated by icon and copy, not hue. */
-#lia-purpose-connection {
-  border-color: rgba(124,58,237,0.3) !important;
-}
-#lia-purpose-connection .lia-purpose-icon {
-  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%) !important;
-  color: #fff !important;
-  box-shadow: 0 4px 12px rgba(124,58,237,0.4) !important;
-}
-#lia-purpose-connection:hover {
-  background: rgba(124,58,237,0.1) !important;
-  border-color: rgba(124,58,237,0.55) !important;
-  box-shadow: 0 4px 20px rgba(124,58,237,0.2) !important;
-  transform: translateY(-2px) !important;
-}
-#lia-purpose-connection:hover .lia-purpose-icon {
-  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%) !important;
-}
-
-/* Follow-up — same indigo family, third tile stays full-width by design (an
-   intentional third row, not a leftover). */
-#lia-purpose-followup {
-  grid-column: 1 / -1 !important;
-  flex-direction: row !important;
-  justify-content: flex-start !important;
-  text-align: left !important;
-  gap: 14px !important;
-  padding: 15px 16px !important;
-  border-color: rgba(124,58,237,0.3) !important;
-}
-#lia-purpose-followup .lia-purpose-icon {
-  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%) !important;
-  color: #fff !important;
-  box-shadow: 0 4px 12px rgba(124,58,237,0.4) !important;
-  flex-shrink: 0 !important;
-}
-#lia-purpose-followup .lia-purpose-content {
-  text-align: left !important;
-}
-#lia-purpose-followup:hover {
-  background: rgba(124,58,237,0.1) !important;
-  border-color: rgba(124,58,237,0.55) !important;
-  box-shadow: 0 4px 20px rgba(124,58,237,0.2) !important;
-  transform: translateY(-2px) !important;
-}
-#lia-purpose-followup:hover .lia-purpose-icon {
-  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%) !important;
-}
-
-/* ICP warning — handled by .lia-icp-warning-* rules in gate section */
-
-/* Refresh link */
-.lia-purpose-refresh {
-  color: rgba(148,163,184,0.6) !important;
-  text-decoration-color: rgba(148,163,184,0.25) !important;
-}
-.lia-purpose-refresh:hover {
-  color: #c4b5fd !important;
-  text-decoration-color: rgba(196,181,253,0.4) !important;
-}
-
-/* Post-creator mode buttons */
-.lia-purpose-btn {
-  background: rgba(255,255,255,0.05) !important;
-  border-color: rgba(255,255,255,0.12) !important;
-  color: #8b9eb8 !important;
-}
-.lia-purpose-btn:hover {
-  border-color: rgba(124,58,237,0.4) !important;
-  background: rgba(124,58,237,0.08) !important;
-  color: #c4b5fd !important;
-}
-.lia-purpose-btn.active {
-  background: rgba(124,58,237,0.15) !important;
-  border-color: #7c3aed !important;
-  color: #c4b5fd !important;
-}
-
-/* ── Primary buttons ──────────────────────────────────────────────────────── */
-.lia-btn-primary,
-.lia-analyze-btn,
-.lia-msg-gen-btn,
-.lia-msg-copy-btn {
-  background: linear-gradient(135deg, #7c3aed, #4f46e5) !important;
-  border: none !important;
-  color: #fff !important;
-  box-shadow: 0 4px 14px rgba(124,58,237,0.35) !important;
-}
-
-.lia-btn-primary:hover,
-.lia-analyze-btn:hover,
-.lia-msg-gen-btn:hover,
-.lia-msg-copy-btn:hover {
-  background: linear-gradient(135deg, #6d28d9, #4338ca) !important;
-  box-shadow: 0 4px 20px rgba(124,58,237,0.5) !important;
-}
-
-/* ── Secondary buttons ────────────────────────────────────────────────────── */
-.lia-btn-secondary,
-.lia-copy-btn,
-.lia-refine-toggle {
-  background: transparent !important;
-  border-color: rgba(124,58,237,0.3) !important;
-  color: #a78bfa !important;
-}
-
-.lia-btn-secondary:hover,
-.lia-copy-btn:hover,
-.lia-refine-toggle:hover {
-  background: rgba(124,58,237,0.12) !important;
-  border-color: rgba(124,58,237,0.5) !important;
-  color: #c4b5fd !important;
-}
-
-/* ── Connection request box ───────────────────────────────────────────────── */
-.lia-connection-box { background: rgba(124,58,237,0.06) !important; border-color: rgba(124,58,237,0.2) !important; }
-
-/* ── Char count ───────────────────────────────────────────────────────────── */
-.lia-char-count { border-top-color: rgba(255,255,255,0.06) !important; }
-.char-ok   { color: #4ade80 !important; }
-.char-warn { color: #fbbf24 !important; }
-.char-over { color: #f87171 !important; }
-
-/* ── Verdict badges ───────────────────────────────────────────────────────── */
-.reach-verdict.ro-yes  { background: rgba(34,197,94,0.15) !important; color: #4ade80 !important; }
-.reach-verdict.ro-maybe { background: rgba(245,158,11,0.15) !important; color: #fbbf24 !important; }
-.reach-verdict.ro-no   { background: rgba(239,68,68,0.15) !important; color: #f87171 !important; }
-
-/* ── Score badges ─────────────────────────────────────────────────────────── */
-.ind-score-badge.score-high   { background: rgba(34,197,94,0.15) !important; color: #4ade80 !important; border-color: rgba(34,197,94,0.25) !important; }
-.ind-score-badge.score-medium { background: rgba(245,158,11,0.15) !important; color: #fbbf24 !important; border-color: rgba(245,158,11,0.25) !important; }
-.ind-score-badge.score-low    { background: rgba(239,68,68,0.15) !important; color: #f87171 !important; border-color: rgba(239,68,68,0.25) !important; }
-
-/* ── Indicator cards, contact list, callouts, excluded banner — these never got a dark pass and
-   were rendering as solid white/light boxes on the dark panel on essentially every analysis. ── */
-.lia-indicator-card {
-  background: rgba(255,255,255,0.05) !important;
-  border-color: rgba(255,255,255,0.1) !important;
-  box-shadow: none !important;
-}
-.ind-label { color: rgba(196,181,253,0.55) !important; }
-.ind-score-bar-track { background: rgba(255,255,255,0.08) !important; }
-.ind-reasoning { color: rgba(196,181,253,0.7) !important; }
-.ind-dot { background: rgba(255,255,255,0.12) !important; }
-.ind-dot.filled { background: #a78bfa !important; }
-
-.lia-contact-list li {
-  background: rgba(255,255,255,0.05) !important;
-  border-color: rgba(255,255,255,0.1) !important;
-}
-.contact-type { color: rgba(196,181,253,0.5) !important; }
-.contact-value { color: #f1f5f9 !important; }
-
-/* Same badge concept as the score badges above (dm-/cs-/er-/fit-/ind-industry), never given the
-   equivalent dark treatment — solid pastel-on-light colors that fought the dark panel. */
-.dm-yes, .er-daily      { background: rgba(34,197,94,0.15) !important; color: #4ade80 !important; }
-.dm-likely, .er-occasional { background: rgba(245,158,11,0.15) !important; color: #fbbf24 !important; }
-.dm-no                  { background: rgba(239,68,68,0.15) !important; color: #f87171 !important; }
-.er-weekly               { background: rgba(20,184,166,0.15) !important; color: #5eead4 !important; }
-.er-rarely               { background: rgba(255,255,255,0.08) !important; color: rgba(196,181,253,0.6) !important; }
-
-/* Company size is a classification, not a signal — one indigo tint for every tier
-   instead of a different hue each (previously purple/blue/cyan/pink). */
-.cs-enterprise,
-.cs-mid,
-.cs-smb,
-.cs-startup    { background: rgba(124,58,237,0.18) !important; color: #c4b5fd !important; }
-.cs-unknown    { background: rgba(255,255,255,0.08) !important; color: rgba(196,181,253,0.6) !important; }
-
-.ind-industry { background: rgba(124,58,237,0.18) !important; color: #c4b5fd !important; }
-
-.fit-strong  { background: rgba(34,197,94,0.15) !important; color: #4ade80 !important; }
-.fit-partial { background: rgba(245,158,11,0.15) !important; color: #fbbf24 !important; }
-.fit-poor    { background: rgba(239,68,68,0.15) !important; color: #f87171 !important; }
-
-.lia-excluded-banner {
-  background: rgba(234,88,12,0.12) !important;
-  color: #fb923c !important;
-  border-color: rgba(234,88,12,0.3) !important;
-}
-
-.lia-timing-caution-banner {
-  background: rgba(245,158,11,0.12) !important;
-  color: #fbbf24 !important;
-  border-color: rgba(245,158,11,0.3) !important;
-}
-
-.lia-company-cell {
-  background: rgba(255,255,255,0.05) !important;
-  border-color: rgba(255,255,255,0.1) !important;
-}
-.lia-company-key { color: rgba(196,181,253,0.5) !important; }
-.lia-company-val { color: #f1f5f9 !important; }
-.lia-company-link { color: #c4b5fd !important; }
-
-.lia-chip {
-  background: rgba(6,182,212,0.12) !important;
-  color: #67e8f9 !important;
-  border-color: rgba(6,182,212,0.28) !important;
-}
-
-.lia-callout {
-  background: rgba(255,255,255,0.05) !important;
-  border-color: rgba(255,255,255,0.1) !important;
-  border-left-color: #7c3aed !important;
-}
-.callout-num { background: #7c3aed !important; }
-.callout-text { color: rgba(226,232,240,0.85) !important; }
-
-/* ── Inputs / textareas ───────────────────────────────────────────────────── */
-.lia-notes-input,
-.lia-follow-input,
-#lia-panel textarea,
-#lia-post-panel textarea {
-  background: rgba(255,255,255,0.06) !important;
-  border-color: rgba(255,255,255,0.12) !important;
-  color: #f1f5f9 !important;
-}
-
-.lia-notes-input::placeholder,
-.lia-follow-input::placeholder,
-#lia-panel textarea::placeholder,
-#lia-post-panel textarea::placeholder { color: rgba(148,163,184,0.4) !important; }
-
-.lia-notes-input:focus,
-.lia-follow-input:focus,
-#lia-panel textarea:focus,
-#lia-post-panel textarea:focus {
-  border-color: #7c3aed !important;
-  box-shadow: 0 0 0 3px rgba(124,58,237,0.15) !important;
-  background: #12123a !important;
-}
-
-/* ── Tone buttons / Strategy buttons ─────────────────────────────────────── */
-.lia-tone-btn,
-.lia-strategy-btn {
-  background: rgba(255,255,255,0.05) !important;
-  border-color: rgba(255,255,255,0.12) !important;
-}
-
-.lia-tone-btn:hover,
-.lia-strategy-btn:hover {
-  background: rgba(124,58,237,0.08) !important;
-  border-color: rgba(124,58,237,0.35) !important;
-}
-
-.lia-tone-btn.active,
-.lia-strategy-btn.active {
-  background: rgba(124,58,237,0.15) !important;
-  border-color: #7c3aed !important;
-}
-
-.lia-tone-name,
-.lia-strategy-name { color: #ffffff !important; }
-.lia-tone-btn.active .lia-tone-name,
-.lia-strategy-btn.active .lia-strategy-name { color: #c4b5fd !important; }
-.lia-tone-desc,
-.lia-strategy-desc { color: rgba(148,163,184,0.6) !important; }
-.lia-tone-btn.active .lia-tone-desc,
-.lia-strategy-btn.active .lia-strategy-desc { color: rgba(196,181,253,0.7) !important; }
-
-/* ── ICP warning ─────────────────────────────────────────────────────────── */
-.lia-icp-warning {
-  background: rgba(245,158,11,0.07) !important;
-  border-color: rgba(245,158,11,0.2) !important;
-  color: #fbbf24 !important;
-}
-
-.lia-icp-warning-link { color: #c4b5fd !important; }
-
-/* ── Refine section ───────────────────────────────────────────────────────── */
-.lia-refine-section { background: rgba(255,255,255,0.04) !important; border-color: rgba(255,255,255,0.1) !important; }
-.lia-refine-body { border-top-color: rgba(124,58,237,0.15) !important; }
-
-/* ── Leftover LinkedIn-blue accents — everything else in this theme uses the purple accent ── */
-.lia-back-btn { color: #c4b5fd !important; }
-.lia-back-btn:hover { color: #fff !important; }
-.lia-regen-section, .lia-first-msg-section { border-top-color: rgba(255,255,255,0.1) !important; }
-.lia-spinner { border-color: rgba(255,255,255,0.15) !important; border-top-color: #a78bfa !important; }
-.lia-text { color: rgba(226,232,240,0.85) !important; }
-.lia-muted { color: rgba(196,181,253,0.5) !important; }
-
-/* ── Error ────────────────────────────────────────────────────────────────── */
-.lia-error-msg {
-  background: rgba(239,68,68,0.1) !important;
-  border-color: rgba(239,68,68,0.2) !important;
-  color: #f87171 !important;
-}
-
-.lia-inline-upgrade-link {
-  background: none;
-  border: none;
-  padding: 0;
-  margin-left: 2px;
-  font: inherit;
-  font-weight: 700;
-  color: #c4b5fd !important;
-  text-decoration: underline;
-  cursor: pointer;
-}
-.lia-inline-upgrade-link:hover { color: #fff !important; }
-.lia-inline-upgrade-link:disabled { opacity: 0.6; cursor: default; }
-
-/* ── Trigger buttons (dock) — one coordinated jewel-tone family ─────────────── */
-/* Each of the four dock buttons keeps its own color so they stay instantly
-   distinguishable at a glance — but pulled from one deliberate palette (violet
-   through blue, teal, and pink, all the same saturation/depth) instead of the old
-   grab-bag (green/orange/cyan/purple, one of them a jarring warm note against three
-   cool ones). Same gradient direction, same shadow treatment on all four — only the
-   hue changes. */
-#lia-trigger {
-  background: linear-gradient(180deg, #7c3aed 0%, #4f46e5 100%) !important;
-  box-shadow: -4px 0 24px rgba(124,58,237,0.45), -1px 0 6px rgba(0,0,0,0.15) !important;
-  border-radius: 12px 0 0 12px !important;
-}
-#lia-trigger:hover {
-  background: linear-gradient(180deg, #6d28d9 0%, #4338ca 100%) !important;
-  box-shadow: -6px 0 28px rgba(124,58,237,0.6) !important;
-}
-#lia-trigger.lia-active {
-  background: linear-gradient(180deg, #5b21b6 0%, #3730a3 100%) !important;
-}
-
-#lia-time-trigger {
-  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%) !important;
-  box-shadow: -4px 0 24px rgba(37,99,235,0.45), -1px 0 6px rgba(0,0,0,0.15) !important;
-  border-radius: 12px 0 0 12px !important;
-}
-#lia-time-trigger:hover {
-  background: linear-gradient(180deg, #1d4ed8 0%, #1e40af 100%) !important;
-  box-shadow: -6px 0 28px rgba(37,99,235,0.6) !important;
-}
-
-#lia-save-trigger {
-  background: linear-gradient(180deg, #0891b2 0%, #0e7490 100%) !important;
-  box-shadow: -4px 0 24px rgba(8,145,178,0.45), -1px 0 6px rgba(0,0,0,0.15) !important;
-  border-radius: 12px 0 0 12px !important;
-}
-#lia-save-trigger:hover {
-  background: linear-gradient(180deg, #0e7490 0%, #155e75 100%) !important;
-  box-shadow: -6px 0 28px rgba(8,145,178,0.6) !important;
-}
-#lia-save-trigger.lia-save-trigger-active {
-  background: linear-gradient(180deg, #22d3ee 0%, #0891b2 100%) !important;
-  box-shadow: -4px 0 24px rgba(34,211,238,0.55), -1px 0 6px rgba(0,0,0,0.15) !important;
-}
-#lia-save-trigger.lia-save-trigger-active:hover {
-  background: linear-gradient(180deg, #67e8f9 0%, #0e7490 100%) !important;
-}
-
-#lia-post-trigger {
-  background: linear-gradient(180deg, #db2777 0%, #a21caf 100%) !important;
-  box-shadow: -4px 0 24px rgba(219,39,119,0.45), -1px 0 6px rgba(0,0,0,0.15) !important;
-  border-radius: 12px 0 0 12px !important;
-}
-#lia-post-trigger:hover {
-  background: linear-gradient(180deg, #be185d 0%, #86198f 100%) !important;
-  box-shadow: -6px 0 28px rgba(219,39,119,0.6) !important;
-}
-
-/* ── Post Creator panel background ───────────────────────────────────────── */
-#lia-post-panel {
-  background: linear-gradient(160deg, #1e1e4a 0%, #18183e 40%, #141432 100%) !important;
-  border-left: 1px solid rgba(124,58,237,0.25) !important;
-}
-
-.lia-post-header {
-  background: linear-gradient(135deg, #2a1060 0%, #1c1248 60%, #16163a 100%) !important;
-  border-bottom: 1px solid rgba(124,58,237,0.25) !important;
-}
-
-.lia-post-title { color: #f8fafc !important; }
-.lia-post-close { color: rgba(196,181,253,0.8) !important; }
-
-/* ── Post Creator: all elements ──────────────────────────────────────────── */
-.lia-pc-intro {
-  color: #ffffff !important;
-  font-size: 14px !important;
-  font-weight: 600 !important;
-}
-
-.lia-pc-or {
-  color: rgba(196,181,253,0.6) !important;
-}
-
-.lia-pc-sub-label {
-  color: #c4b5fd !important;
-  letter-spacing: 0.1em !important;
-}
-
-.lia-pc-label {
-  color: #c4b5fd !important;
-  letter-spacing: 0.1em !important;
-}
-
-.lia-pc-back-btn {
-  color: #c4b5fd !important;
-}
-
-.lia-pc-domain-chip {
-  background: rgba(124,58,237,0.2) !important;
-  color: #c4b5fd !important;
-  border-color: rgba(124,58,237,0.35) !important;
-}
-
-.lia-pc-notice {
-  background: rgba(255,255,255,0.06) !important;
-  border-color: rgba(255,255,255,0.12) !important;
-  color: #c4b5fd !important;
-}
-
-.lia-pc-loading { color: rgba(196,181,253,0.7) !important; }
-
-.lia-pc-image-prompt {
-  background: rgba(255,255,255,0.06) !important;
-  border-color: rgba(255,255,255,0.12) !important;
-  color: rgba(196,181,253,0.75) !important;
-}
-
-.lia-pc-image-note { color: rgba(196,181,253,0.45) !important; }
-
-.lia-pc-company-badge {
-  background: rgba(234,88,12,0.15) !important;
-  color: #fb923c !important;
-  border-color: rgba(234,88,12,0.3) !important;
-}
-
-.lia-pc-posts-found {
-  background: rgba(14,165,233,0.1) !important;
-  border-color: rgba(14,165,233,0.25) !important;
-  color: #7dd3fc !important;
-}
-
-.lia-pc-custom-input {
-  background: rgba(255,255,255,0.08) !important;
-  border-color: rgba(255,255,255,0.15) !important;
-  color: #ffffff !important;
-}
-
-.lia-pc-custom-input::placeholder {
-  color: rgba(196,181,253,0.45) !important;
-}
-
-.lia-pc-custom-input:focus {
-  border-color: rgba(124,58,237,0.7) !important;
-  box-shadow: 0 0 0 3px rgba(124,58,237,0.2) !important;
-  background: rgba(255,255,255,0.1) !important;
-}
-
-.lia-pc-topic-card {
-  background: rgba(255,255,255,0.05) !important;
-  border-color: rgba(255,255,255,0.12) !important;
-}
-
-.lia-pc-topic-card:hover {
-  border-color: rgba(124,58,237,0.5) !important;
-  background: rgba(124,58,237,0.1) !important;
-  box-shadow: 0 4px 16px rgba(124,58,237,0.2) !important;
-}
-
-.lia-pc-topic-title {
-  color: #ffffff !important;
-}
-
-.lia-pc-topic-angle {
-  color: rgba(196,181,253,0.8) !important;
-}
-
-.lia-pc-history-item {
-  background: rgba(255,255,255,0.05) !important;
-  border-color: rgba(255,255,255,0.12) !important;
-}
-
-.lia-pc-history-topic {
-  color: #ffffff !important;
-}
-
-.lia-pc-history-time {
-  color: rgba(196,181,253,0.5) !important;
-}
-
-.lia-pc-history-preview {
-  color: rgba(196,181,253,0.8) !important;
-}
-
-.lia-pc-topic-why {
-  color: #a78bfa !important;
-}
-
-.lia-pc-selected-topic {
-  background: rgba(124,58,237,0.12) !important;
-  border-color: rgba(124,58,237,0.4) !important;
-}
-
-.lia-pc-st-label {
-  color: #c4b5fd !important;
-}
-
-.lia-pc-st-title {
-  color: #ffffff !important;
-}
-
-.lia-pc-style-card {
-  background: rgba(255,255,255,0.05) !important;
-  border-color: rgba(255,255,255,0.12) !important;
-}
-
-.lia-pc-style-card:hover {
-  border-color: rgba(124,58,237,0.5) !important;
-  background: rgba(124,58,237,0.1) !important;
-}
-
-.lia-pc-style-card.active {
-  background: rgba(124,58,237,0.18) !important;
-  border-color: #7c3aed !important;
-}
-
-.lia-pc-style-label {
-  color: #ffffff !important;
-}
-
-.lia-pc-style-desc {
-  color: rgba(196,181,253,0.7) !important;
-}
-
-.lia-pc-post-box {
-  background: rgba(255,255,255,0.06) !important;
-  border-color: rgba(255,255,255,0.12) !important;
-  color: #ffffff !important;
-}
-
-.lia-pc-hashtags {
-  color: #a78bfa !important;
-}
-
-.lia-pc-imgonly-input {
-  background: rgba(255,255,255,0.08) !important;
-  border-color: rgba(255,255,255,0.15) !important;
-  color: #ffffff !important;
-}
-
-.lia-pc-imgonly-input::placeholder {
-  color: rgba(196,181,253,0.4) !important;
-}
-
-.lia-pc-error {
-  color: #f87171 !important;
-}
-
-/* ── Gate screen (API key, sign-in, errors) ──────────────────────────────── */
-.lia-gate {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 52px 24px 36px;
-  gap: 0;
-}
-
-.lia-gate-icon {
-  width: 72px;
-  height: 72px;
-  border-radius: 20px;
-  background: rgba(255,255,255,0.06);
-  border: 1.5px solid rgba(255,255,255,0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 22px;
-  box-shadow: 0 0 32px var(--glow, rgba(6,182,212,0.3)), inset 0 1px 0 rgba(255,255,255,0.1);
-  flex-shrink: 0;
-}
-
-.lia-gate-heading {
-  font-size: 16px;
-  font-weight: 700;
-  color: #c4b5fd;
-  margin-bottom: 10px;
-  letter-spacing: 0.01em;
-}
-
-.lia-gate-desc {
-  font-size: 13px;
-  color: rgba(196,181,253,0.65);
-  line-height: 1.6;
-  margin-bottom: 28px;
-  max-width: 260px;
-}
-
-.lia-gate-btn {
-  width: 100%;
-  max-width: 240px;
-}
-
-/* ── Dark-theme .lia-empty heading/para override ────────────────────────── */
-#lia-panel .lia-empty h3,
-#lia-post-panel .lia-empty h3 {
-  color: #c4b5fd !important;
-}
-
-#lia-panel .lia-empty p,
-#lia-post-panel .lia-empty p {
-  color: rgba(196,181,253,0.7) !important;
-}
-
-/* ── ICP Warning — premium card ─────────────────────────────────────────── */
-.lia-icp-warning {
-  display: flex !important;
-  align-items: flex-start !important;
-  gap: 10px !important;
-  background: rgba(245,158,11,0.08) !important;
-  border: 1px solid rgba(245,158,11,0.22) !important;
-  border-radius: 12px !important;
-  padding: 11px 13px !important;
-  color: inherit !important;
-  grid-column: 1 / -1 !important;
-}
-
-.lia-icp-warning-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: rgba(245,158,11,0.15);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fbbf24;
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-
-.lia-icp-warning-body {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.lia-icp-warning-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: #fbbf24;
-}
-
-.lia-icp-warning-text {
-  font-size: 11.5px;
-  color: rgba(251,191,36,0.75);
-  line-height: 1.5;
-}
-
-.lia-icp-warning-link {
-  color: #c4b5fd !important;
-  background: none !important;
-  border: none !important;
-  cursor: pointer !important;
-  padding: 0 !important;
-  font-size: inherit !important;
-  font-weight: 600 !important;
-  text-decoration: none !important;
-}
-
-.lia-icp-warning-link:hover {
-  color: #a78bfa !important;
-  text-decoration: underline !important;
-}
-
-/* ── Scrollbar ────────────────────────────────────────────────────────────── */
-#lia-panel ::-webkit-scrollbar { width: 5px; }
-#lia-panel ::-webkit-scrollbar-track { background: transparent; }
-#lia-panel ::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.3); border-radius: 3px; }
-#lia-panel ::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,0.5); }
-
-/* ── Save Button ─────────────────────────────────────────────────────────── */
-.lia-save-btn {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  width: 28px !important;
-  height: 28px !important;
-  border-radius: 7px !important;
-  background: rgba(255,255,255,0.06) !important;
-  border: 1px solid rgba(255,255,255,0.1) !important;
-  color: rgba(203,213,225,0.6) !important;
-  cursor: pointer !important;
-  transition: all 0.15s !important;
-  flex-shrink: 0 !important;
-  padding: 0 !important;
-}
-.lia-save-btn:hover {
-  background: rgba(234,179,8,0.15) !important;
-  border-color: rgba(234,179,8,0.3) !important;
-  color: #fbbf24 !important;
-}
-.lia-save-btn-active {
-  background: rgba(234,179,8,0.18) !important;
-  border-color: rgba(234,179,8,0.4) !important;
-  color: #fbbf24 !important;
-}
-.lia-save-btn-active svg {
-  fill: #fbbf24 !important;
-  stroke: #fbbf24 !important;
-}
-.lia-save-btn-error {
-  background: rgba(220,38,38,0.18) !important;
-  border-color: rgba(220,38,38,0.4) !important;
-  color: #f87171 !important;
-}
-
-/* ── Search Results Banner ───────────────────────────────────────────────── */
-#lia-search-banner {
-  margin: 8px 0 4px;
-  padding: 0 16px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif;
-  position: relative;
-  z-index: 1;
-}
-.lia-search-banner-inner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  background: rgba(13,13,50,0.94);
-  border: 1px solid rgba(124,58,237,0.35);
-  border-radius: 10px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.18);
-}
-.lia-search-banner-label {
-  flex: 1;
-  font-size: 12px;
-  color: rgba(196,181,253,0.85);
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.lia-search-banner-label.lia-search-banner-err {
-  color: #f87171;
-}
-.lia-search-score-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 13px;
-  background: linear-gradient(135deg, #7c3aed, #4f46e5);
-  border: none;
-  border-radius: 20px;
-  color: #fff;
-  font-size: 11.5px;
-  font-weight: 700;
-  cursor: pointer;
-  white-space: nowrap;
-  font-family: inherit;
-  box-shadow: 0 2px 8px rgba(124,58,237,0.4);
-  transition: box-shadow 0.15s, transform 0.1s, opacity 0.1s;
-  flex-shrink: 0;
-}
-.lia-search-score-btn:hover:not(:disabled) {
-  box-shadow: 0 3px 12px rgba(124,58,237,0.55);
-  transform: translateY(-1px);
-}
-.lia-search-score-btn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.lia-search-upgrade-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 13px;
-  background: rgba(245,158,11,0.15);
-  border: 1px solid rgba(245,158,11,0.4);
-  border-radius: 20px;
-  color: #fbbf24;
-  font-size: 11.5px;
-  font-weight: 700;
-  cursor: pointer;
-  white-space: nowrap;
-  font-family: inherit;
-  transition: background 0.15s, opacity 0.1s;
-  flex-shrink: 0;
-}
-.lia-search-upgrade-btn:hover:not(:disabled) {
-  background: rgba(245,158,11,0.25);
-}
-.lia-search-upgrade-btn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-/* ─── Messaging Follow-up Bar ─────────────────────────────────────────────── */
+#lia-post-panel .lia-pc-topic-card:hover { border-color: var(--lp-accent-line); background: var(--lp-surface); }
+#lia-post-panel .lia-pc-topic-title { font-family: var(--lp-font-display); font-size: 14px; font-weight: 600; color: var(--lp-text); line-height: 1.35; }
+#lia-post-panel .lia-pc-topic-angle { font-size: 13px; color: var(--lp-text-2); line-height: 1.5; }
+#lia-post-panel .lia-pc-topic-why { font-size: 12.5px; color: var(--lp-muted); line-height: 1.45; }
+#lia-post-panel .lia-pc-selected-topic {
+  display: flex; flex-direction: column; gap: 2px; padding: 12px 14px;
+  border-radius: var(--lp-r-lg); background: var(--lp-surface); border: 1px solid var(--lp-border);
+}
+#lia-post-panel .lia-pc-st-label { font-size: 12px; color: var(--lp-muted); }
+#lia-post-panel .lia-pc-st-title { font-family: var(--lp-font-display); font-size: 14px; font-weight: 600; color: var(--lp-text); }
+#lia-post-panel .lia-pc-post-box {
+  padding: 14px; border-radius: var(--lp-r-lg); background: var(--lp-surface); border: 1px solid var(--lp-border);
+  font-size: 14px; line-height: 1.6; color: var(--lp-text); word-break: break-word;
+}
+#lia-post-panel .lia-pc-hashtags { font-size: 13px; font-weight: 500; color: var(--lp-accent); line-height: 1.6; }
+#lia-post-panel .lia-pc-post-actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+#lia-post-panel .lia-pc-history-list { display: flex; flex-direction: column; gap: 8px; }
+#lia-post-panel .lia-pc-history-item { padding: 12px 14px; border-radius: var(--lp-r-lg); border: 1px solid var(--lp-border); display: flex; flex-direction: column; gap: 6px; }
+#lia-post-panel .lia-pc-history-meta { display: flex; justify-content: space-between; gap: 10px; }
+#lia-post-panel .lia-pc-history-topic { font-size: 13px; font-weight: 600; color: var(--lp-text); }
+#lia-post-panel .lia-pc-history-time { font-size: 12px; color: var(--lp-muted); white-space: nowrap; }
+#lia-post-panel .lia-pc-history-preview { font-size: 13px; color: var(--lp-text-2); line-height: 1.5; }
+#lia-post-panel .lia-pc-history-actions { display: flex; justify-content: flex-end; }
+#lia-post-panel .lia-pc-history-actions .lia-btn-secondary { min-height: 32px; padding: 0 12px; font-size: 12.5px; }
+
+/* ── World Clock drawer ─────────────────────────────────────────────────────── */
+#lia-time-panel .lia-time-clocks { display: flex; flex-direction: column; }
+#lia-time-panel .lia-time-row:last-child { border-bottom: 0; }
+#lia-time-panel .lia-time-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 0; border-bottom: 1px solid var(--lp-border);
+}
+#lia-time-panel .lia-time-row-label { display: flex; flex-direction: column; gap: 1px; font-size: 13.5px; font-weight: 600; color: var(--lp-text); }
+#lia-time-panel .lia-time-row-date { font-size: 12px; font-weight: 400; color: var(--lp-muted); }
+#lia-time-panel .lia-time-row-clock { font-family: var(--lp-font-display); font-size: 20px; font-weight: 600; color: var(--lp-text); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+#lia-time-panel .lia-time-convert-row { display: flex; gap: 8px; }
+#lia-time-panel .lia-time-convert-row .lia-btn-primary { flex-shrink: 0; }
+#lia-time-panel .lia-time-convert-result { font-size: 13.5px; color: var(--lp-text); }
+#lia-time-panel .lia-time-convert-result:empty { display: none; }
+#lia-time-panel .lia-time-convert-out-row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; }
+#lia-time-panel .lia-time-convert-err { color: var(--lp-bad); font-size: 13px; }
+#lia-time-panel .lia-time-zone-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+#lia-time-panel .lia-time-zone-opt {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--lp-r);
+  border: 1px solid var(--lp-border); font-size: 13px; color: var(--lp-text); cursor: pointer;
+}
+#lia-time-panel .lia-time-zone-opt input { accent-color: var(--lp-accent); margin: 0; }
+
+/* ── LinkedIn messaging page: follow-up bar ─────────────────────────────────── */
 #lia-followup-bar {
-  width: 100%;
-  padding: 6px 12px;
-  box-sizing: border-box;
+  margin: 8px 12px; border-radius: var(--lp-r-lg);
+  background: var(--lp-bg); border: 1px solid var(--lp-border); box-shadow: var(--lp-shadow-pop);
+  color: var(--lp-text); font-size: 13px; overflow: hidden;
 }
-.lia-followup-bar-inner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  background: rgba(13,13,50,0.94);
-  border: 1px solid rgba(124,58,237,0.35);
-  border-radius: 10px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.18);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif;
+#lia-followup-bar .lia-followup-bar-inner { display: flex; align-items: center; gap: 8px; padding: 8px 10px; flex-wrap: wrap; }
+#lia-followup-bar .lia-followup-bar-label { font-family: var(--lp-font-display); font-weight: 600; font-size: 13.5px; }
+#lia-followup-bar .lia-followup-tag, #lia-followup-bar .lia-followup-engagement {
+  display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: var(--lp-r-sm);
+  background: var(--lp-accent-soft); color: var(--lp-accent); font-size: 12px; font-weight: 600;
 }
-.lia-followup-bar-label {
-  font-size: 12px;
-  color: rgba(196,181,253,0.85);
-  font-weight: 600;
-  white-space: nowrap;
+#lia-followup-bar .lia-followup-tag:empty { display: none; }
+#lia-followup-bar .lia-followup-tag-untracked { background: var(--lp-surface); color: var(--lp-muted); }
+#lia-followup-bar .lia-followup-tag-editable { cursor: pointer; }
+#lia-followup-bar .lia-followup-tag-select {
+  height: 26px; padding: 0 6px; border-radius: var(--lp-r-sm); border: 1px solid var(--lp-border-strong);
+  background: var(--lp-bg); color: var(--lp-text); font-size: 12.5px;
 }
-.lia-followup-tag {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 20px;
-  background: rgba(124,58,237,0.28);
-  color: #c4b5fd;
-  white-space: nowrap;
-  flex-shrink: 0;
+#lia-followup-bar .lia-followup-status { flex: 1; min-width: 0; font-size: 12.5px; color: var(--lp-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#lia-followup-bar .lia-followup-status-ok { color: var(--lp-good); }
+#lia-followup-bar .lia-followup-status-err { color: var(--lp-mid); }
+#lia-followup-bar .lia-followup-instr-toggle {
+  display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+  border-radius: var(--lp-r); color: var(--lp-muted);
 }
-.lia-followup-tag:empty {
-  display: none;
+#lia-followup-bar .lia-followup-instr-toggle:hover { background: var(--lp-surface-hover); color: var(--lp-text); }
+#lia-followup-bar .lia-followup-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; margin-left: auto;
+  border-radius: var(--lp-r); background: var(--lp-accent); color: var(--lp-on-accent); font-size: 13px; font-weight: 600;
 }
-.lia-followup-tag-untracked {
-  background: rgba(148,163,184,0.15);
-  color: rgba(148,163,184,0.7);
+#lia-followup-bar .lia-followup-btn:hover { background: var(--lp-accent-hover); }
+#lia-followup-bar .lia-followup-instr-row { padding: 0 10px 10px; }
+#lia-followup-bar .lia-followup-instr-input {
+  width: 100%; padding: 8px 10px; border-radius: var(--lp-r); border: 1px solid var(--lp-border-strong);
+  background: var(--lp-bg); color: var(--lp-text); font-size: 13px; resize: vertical;
 }
-.lia-followup-tag-editable {
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.lia-followup-tag-editable:hover {
-  background: rgba(124,58,237,0.42);
-}
-.lia-followup-tag-select {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 1px 4px;
-  border-radius: 8px;
-  background: rgba(124,58,237,0.28);
-  color: #c4b5fd;
-  border: 1px solid rgba(124,58,237,0.5);
-  flex-shrink: 0;
-  cursor: pointer;
-}
-.lia-followup-engagement {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  box-shadow: 0 0 0 2px rgba(255,255,255,0.08);
-}
-.lia-followup-status {
-  flex: 1;
-  font-size: 11px;
-  font-weight: 500;
-  color: transparent;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.lia-followup-status-ok  { color: #4ade80; }
-.lia-followup-status-err { color: #f87171; }
-.lia-followup-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 13px;
-  background: linear-gradient(135deg, #7c3aed, #4f46e5);
-  border: none;
-  border-radius: 20px;
-  color: #fff;
-  font-size: 11.5px;
-  font-weight: 700;
-  cursor: pointer;
-  white-space: nowrap;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif;
-  box-shadow: 0 2px 8px rgba(124,58,237,0.4);
-  transition: box-shadow 0.15s, transform 0.1s, opacity 0.1s;
-  flex-shrink: 0;
-}
-.lia-followup-btn:hover:not(:disabled) {
-  box-shadow: 0 3px 12px rgba(124,58,237,0.55);
-  transform: translateY(-1px);
-}
-.lia-followup-btn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-  transform: none;
-}
-.lia-followup-instr-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  background: rgba(124,58,237,0.15);
-  border: 1px solid rgba(124,58,237,0.35);
-  border-radius: 6px;
-  color: rgba(196,181,253,0.85);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.15s;
-}
-.lia-followup-instr-toggle:hover {
-  background: rgba(124,58,237,0.3);
-}
-.lia-followup-instr-row {
-  padding: 6px 12px 0;
-}
-.lia-followup-instr-input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 6px 10px;
-  background: rgba(13,13,50,0.94);
-  border: 1px solid rgba(124,58,237,0.35);
-  border-radius: 8px;
-  color: #f3f0ff;
-  font-size: 11.5px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, sans-serif;
-  outline: none;
-}
-.lia-followup-instr-input::placeholder {
-  color: rgba(196,181,253,0.45);
-}
-.lia-followup-instr-input:focus {
-  border-color: rgba(124,58,237,0.6);
-}
+#lia-followup-bar .lia-followup-instr-input::placeholder { color: var(--lp-muted); opacity: 1; }
 
-.lia-followup-elapsed {
-  font-size: 11px;
-  color: rgba(148,163,184,0.6);
-  margin-top: -2px;
+/* ── LinkedIn search results: scoring banner ────────────────────────────────── */
+#lia-search-banner {
+  margin: 0 0 12px; border-radius: var(--lp-r-lg);
+  background: var(--lp-bg); border: 1px solid var(--lp-border); box-shadow: var(--lp-shadow-pop);
+  color: var(--lp-text);
 }
-
-.lia-timing-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  background: rgba(245,158,11,0.07);
-  border: 1px solid rgba(245,158,11,0.2);
-  border-radius: 9px;
-  padding: 9px 12px;
-  font-size: 12px;
-  color: #fbbf24;
-  line-height: 1.5;
-  margin-bottom: 10px;
+#lia-search-banner .lia-search-banner-inner { display: flex; align-items: center; gap: 10px; padding: 10px 12px; flex-wrap: wrap; }
+#lia-search-banner .lia-search-banner-label { flex: 1; min-width: 180px; font-size: 13.5px; font-weight: 500; color: var(--lp-text); }
+#lia-search-banner.lia-search-banner-err .lia-search-banner-label { color: var(--lp-bad); }
+#lia-search-banner .lia-search-score-btn, #lia-search-banner .lia-search-upgrade-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: var(--lp-r);
+  font-size: 13px; font-weight: 600;
 }
+#lia-search-banner .lia-search-score-btn { background: var(--lp-accent); color: var(--lp-on-accent); }
+#lia-search-banner .lia-search-score-btn:hover { background: var(--lp-accent-hover); }
+#lia-search-banner .lia-search-upgrade-btn { border: 1px solid var(--lp-border-strong); color: var(--lp-text); }
 
-.lia-strategist-take {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  background: rgba(124,58,237,0.08);
-  border: 1px solid rgba(124,58,237,0.22);
-  border-radius: 9px;
-  padding: 10px 12px;
-  margin-bottom: 10px;
-}
-
-.lia-strategist-row {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  line-height: 1.45;
-}
-
-.lia-strategist-label {
-  flex-shrink: 0;
-  font-size: 9.5px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #a78bfa;
-  min-width: 48px;
-}
-
-.lia-strategist-text {
-  font-size: 12px;
-  color: rgba(226,232,240,0.9);
-}
-
-@keyframes lia-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
+/* ── Motion preferences ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  #lia-panel, #lia-post-panel, #lia-time-panel, #lia-sidebar-dock,
+  #lia-panel *, #lia-post-panel *, #lia-time-panel *, #lia-sidebar-dock * {
+    transition-duration: 0.01ms !important; animation-duration: 0.01ms !important;
+  }
 }
