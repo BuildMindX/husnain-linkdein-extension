@@ -21,8 +21,7 @@ CREATE TABLE IF NOT EXISTS public.users (
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
 -- Service role can do everything (Edge Functions use service role)
-CREATE POLICY "service_role_all" ON public.users
-  FOR ALL USING (true) WITH CHECK (true);
+-- (No public policies: only the edge functions, using the service role, may access this table. See supabase/migrations/003.)
 
 -- ── Usage Events ──────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.usage_events (
@@ -35,8 +34,7 @@ CREATE TABLE IF NOT EXISTS public.usage_events (
 
 ALTER TABLE public.usage_events ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "service_role_all" ON public.usage_events
-  FOR ALL USING (true) WITH CHECK (true);
+-- (No public policies: only the edge functions, using the service role, may access this table. See supabase/migrations/003.)
 
 -- ── Indexes ───────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_users_google_id          ON public.users(google_id);

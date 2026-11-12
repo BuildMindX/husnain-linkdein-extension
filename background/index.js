@@ -1,5 +1,5 @@
 import { handleGoogleSignIn, handleGoogleSignOut, SETTINGS_KEYS } from './auth.js';
-import { checkAndTrackUsage, handleStartCheckout, handleOpenBillingPortal } from './billing.js';
+import { checkAndTrackUsage, verifyProPlan, handleStartCheckout, handleOpenBillingPortal } from './billing.js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 import {
   handleAnalyzeProfile,
@@ -42,27 +42,22 @@ async function pushSettingsToCloud(settings) {
   } catch (err) { return { ok: false, error: err.message }; }
 }
 
+// Every AI request is decided by the server (see background/billing.js) — the local plan value is
+// display-only and never unlocks anything.
 async function withUsageGate(eventType, fn) {
-  const { anthropicApiKey, userPlan } = await chrome.storage.local.get(['anthropicApiKey', 'userPlan']);
+  const { anthropicApiKey } = await chrome.storage.local.get('anthropicApiKey');
   if (!anthropicApiKey) return { error: 'NO_API_KEY' };
-  if (userPlan === 'pro') {
-    // Pro users are never gated on the server round-trip — chrome.identity.getAuthToken can
-    // resolve a stale/different cached Google identity than the one on file as Pro, which would
-    // otherwise incorrectly deny a paying user. Still record the event for analytics, non-blocking.
-    checkAndTrackUsage(eventType).catch(() => {});
-    return fn();
-  }
   const usage = await checkAndTrackUsage(eventType);
   if (!usage.allowed) {
     if (usage.error === 'SIGN_IN_REQUIRED') return { error: 'SIGN_IN_REQUIRED' };
+    if (usage.error === 'SERVICE_UNAVAILABLE') return { error: 'SERVICE_UNAVAILABLE' };
     return { error: 'LIMIT_REACHED', limit: usage.limit, used: usage.used };
   }
   return fn();
 }
 
 async function withProGate(fn) {
-  const { userPlan } = await chrome.storage.local.get('userPlan');
-  if (userPlan !== 'pro') return { error: 'PRO_REQUIRED' };
+  if (!(await verifyProPlan())) return { error: 'PRO_REQUIRED' };
   return fn();
 }
 
@@ -228,7 +223,11 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
   if (area !== 'local' || 'settingsFieldTimestamps' in changes) return;
   const changed = SETTINGS_KEYS.filter(k => k in changes);
   if (!changed.length) return;
-  const { settingsFieldTimestamps = {} } = await chrome.storage.local.get('settingsFieldTimestamps');
+  // Signed out: don't stamp. Sign-out clears settings and the migration then writes empty
+  // defaults; stamping those "now" made them beat the real cloud copy on the next sign-in (and the
+  // next sync then overwrote the cloud). Unstamped local values lose to the cloud in the merge.
+  const { settingsFieldTimestamps = {}, googleUser } = await chrome.storage.local.get(['settingsFieldTimestamps', 'googleUser']);
+  if (!googleUser) return;
   const now = Date.now();
   changed.forEach(k => { settingsFieldTimestamps[k] = now; });
   await chrome.storage.local.set({ settingsFieldTimestamps });

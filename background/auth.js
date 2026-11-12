@@ -11,7 +11,8 @@ export const SETTINGS_KEYS = [
   'targetIndustries', 'excludeIndustries', 'businessProfile',
   'b2cProfile', 'jobProfile', 'jobMessagePresets', 'b2cTargetIndustries', 'b2cExcludeIndustries',
   'creatorProfile', 'companyProfile', 'reminderSettings',
-  'anthropicApiKey', 'hubspotApiKey',
+  // API keys are deliberately NOT synced: they stay in this browser only, as the privacy page and
+  // the Account tab promise. The next settings push replaces the cloud blob without them.
 ];
 
 // savedContacts (the pipeline) changes far more often than the settings above — every generated
@@ -112,6 +113,6 @@ export async function handleGoogleSignOut() {
   } catch (_) { /* token may already be expired */ }
   // ownPosts / postHistory are the user's own writing (local only, never synced) — cleared too so the
   // next person on a shared browser doesn't inherit them.
-  await chrome.storage.local.remove(['googleUser', 'userPlan', 'supabaseUserId', 'savedContacts', 'settingsFieldTimestamps', 'ownPosts', 'postHistory', ...SETTINGS_KEYS]);
+  await chrome.storage.local.remove(['googleUser', 'userPlan', 'supabaseUserId', 'savedContacts', 'settingsFieldTimestamps', 'ownPosts', 'postHistory', 'anthropicApiKey', 'hubspotApiKey', 'verifiedPlan', 'planVerifiedAt', 'offlineUsage', ...SETTINGS_KEYS]);
   return { success: true };
 }

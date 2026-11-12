@@ -560,6 +560,7 @@
         RATE_LIMITED: 'Rate limited — try again shortly',
         INVALID_KEY: 'Invalid API key — check Settings',
         SIGN_IN_REQUIRED: 'Sign in required — click Analyze on a profile to sign in',
+        SERVICE_UNAVAILABLE: 'Can’t reach LinkPilot’s server — try again shortly',
       };
       if (labelEl) { labelEl.textContent = errMap[err.message] || 'Scoring failed — try again'; labelEl.classList.add('lia-search-banner-err'); }
       const upgradeBtn = document.getElementById('lia-search-upgrade-btn');
@@ -1142,6 +1143,7 @@
           RATE_LIMITED: 'Rate limited — try again shortly',
           INVALID_KEY: 'Invalid API key — check Settings',
           SIGN_IN_REQUIRED: 'Sign in required — open the LinkPilot AI panel on a profile to sign in',
+          SERVICE_UNAVAILABLE: 'Can’t reach LinkPilot’s server — try again shortly',
         };
         if (status) { status.textContent = errMap[res.error] || 'Error — try again'; status.className = 'lia-followup-status lia-followup-status-err'; }
       } else if (res.text) {
@@ -3035,6 +3037,7 @@
     LIMIT_REACHED: 'Monthly free limit reached.',
     PRO_REQUIRED: 'This feature requires a Pro plan.',
     SIGN_IN_REQUIRED: 'Sign in required — open the LinkPilot AI panel on a profile to sign in.',
+    SERVICE_UNAVAILABLE: 'LinkPilot can’t reach its server to check your plan, and today’s offline allowance is used up. Check your connection and try again shortly.',
   };
 
   function friendlyAiErrorText(code) {
