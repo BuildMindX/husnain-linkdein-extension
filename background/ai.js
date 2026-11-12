@@ -1072,8 +1072,11 @@ async function getPostContext(mode, creatorProfile, companyProfile) {
   const realPosts = isCompany ? [] : (Array.isArray(ownPosts) ? ownPosts : []).map(p => p.text).filter(Boolean);
   const generated = (Array.isArray(postHistory) ? postHistory : []).filter(h => (h.mode || 'personal') === kind);
   const voiceSample = (settings.voiceSample || '').trim();
-  const name = isCompany ? (companyProfile?.name || s.companyName || '') : (settings.name || ctx.senderName || '');
-  return { isCompany, ctx, facts, proofs, audience, pillars, ending, goal, realPosts, generated, voiceSample, name };
+  // B2B posts are written by a rep, from their own profile, about their company — so the author is
+  // always the person; the company is the subject.
+  const name = (isCompany ? ctx.senderName || creatorProfile?.name : settings.name || ctx.senderName) || '';
+  const companyName = companyProfile?.name || s.companyName || '';
+  return { isCompany, ctx, facts, proofs, audience, pillars, ending, goal, realPosts, generated, voiceSample, name, companyName };
 }
 
 function previousPostsBlock(pc, { forTopics }) {
@@ -1089,7 +1092,7 @@ export async function handleSuggestPostTopics(creatorProfile, recentPosts = [], 
   const pagePosts = (recentPosts || []).filter(p => !pc.realPosts.some(r => r.slice(0, 80) === p.slice(0, 80)));
   if (pagePosts.length) pc.realPosts = [...pagePosts, ...pc.realPosts];
 
-  const systemPrompt = `You are a LinkedIn content strategist for ${pc.isCompany ? 'a company page' : 'one professional writing as themselves'}. Suggest 5 post topics this author can write credibly and that serve their goal.
+  const systemPrompt = `You are a LinkedIn content strategist for ${pc.isCompany ? `a member of ${pc.companyName || 'a company'}'s team who posts about the company's work from their own personal profile` : 'one professional writing as themselves'}. Suggest 5 post topics this author can write credibly and that serve their goal.
 
 Respond ONLY with valid JSON — no markdown, no explanation:
 {
@@ -1137,7 +1140,7 @@ export async function handleGeneratePost({ topic, angle, hook, style, creatorPro
       product_spotlight: 'Product Spotlight: Open with the pain point the product solves (not the product itself), introduce the solution naturally, show the outcome',
     };
     styleGuide = coStyleGuides[style] || coStyleGuides.thought_leadership;
-    systemContext = `You write LinkedIn posts for ${pc.name || 'a company'}'s company page. Write in a confident, insightful company voice — specific, never salesy or corporate.`;
+    systemContext = `You are a LinkedIn ghostwriter writing as ${pc.name || 'a team member'}, who works at ${pc.companyName || 'the company'} and is posting about the company's work from their OWN personal profile — not the company page. First person: "I" for their own view and experience, "we" for what the team does. It should read like a practitioner sharing what their team is seeing and doing, never like a press release, an ad, or company-page copy. Mention the company by name at most once, only where it's natural.`;
   } else {
     const personalStyleGuides = {
       educational: 'Educational/Insight: Open with a sharp, true claim, explain the concept in plain terms, give a concrete example or analogy, close with the key takeaway',

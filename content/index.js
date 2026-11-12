@@ -1312,7 +1312,7 @@
         </div>
         <div class="lia-pc-mode-toggle" id="lia-pc-mode-toggle">
           <button class="lia-pc-mode-btn active" data-mode="personal" title="Post as yourself">Personal</button>
-          <button class="lia-pc-mode-btn" data-mode="company" title="Post for your company">Company</button>
+          <button class="lia-pc-mode-btn" data-mode="company" title="Post about your company from your own profile">Company</button>
         </div>
         <button class="lia-pc-history-btn" id="lia-pc-history-btn" title="Post history" aria-label="Post history"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></button>
         <button class="lia-pc-close" aria-label="Close" title="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
@@ -1384,7 +1384,7 @@
 
     body.innerHTML = `
       <div class="lia-pc-section">
-        <p class="lia-pc-intro">${isCompany ? 'Generate a professional B2B post for your company.' : `Generate a post tailored to your niche${cp.name ? `, <strong>${escHtml(cp.name)}</strong>` : ''}.`}</p>
+        <p class="lia-pc-intro">${isCompany ? 'Write a post about your company’s work, from your own profile.' : `Generate a post tailored to your niche${cp.name ? `, <strong>${escHtml(cp.name)}</strong>` : ''}.`}</p>
         ${infoHtml}
         ${postsCard}
       </div>
@@ -1435,7 +1435,7 @@
     body.innerHTML = `
       <div class="lia-pc-loading">
         <div class="lia-spinner"></div>
-        <p>${isCompany ? 'Finding topics for your company…' : 'Finding topics only you can write…'}</p>
+        <p>${isCompany ? 'Finding topics about your team’s work…' : 'Finding topics only you can write…'}</p>
       </div>
     `;
     const result = await new Promise(resolve => {
