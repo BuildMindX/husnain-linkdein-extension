@@ -1,4 +1,5 @@
-import { handleGoogleSignIn, handleGoogleSignOut, SETTINGS_KEYS } from './auth.js';
+import { handleGoogleSignIn, handleGoogleSignOut, handlePasswordSignIn, SETTINGS_KEYS } from './auth.js';
+import { getCredential, passwordSignUp, sendPasswordReset } from './session.js';
 import { checkAndTrackUsage, verifyProPlan, handleStartCheckout, handleOpenBillingPortal } from './billing.js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 import {
@@ -23,13 +24,12 @@ ensureMigrated();
 
 async function pushSettingsToCloud(settings) {
   try {
-    const authResult = await chrome.identity.getAuthToken({ interactive: false });
-    const token = typeof authResult === 'string' ? authResult : authResult?.token;
-    if (!token) return { ok: false, error: 'NO_AUTH_TOKEN' };
+    const credential = await getCredential();
+    if (!credential) return { ok: false, error: 'NO_AUTH_TOKEN' };
     const resp = await fetch(`${SUPABASE_URL}/functions/v1/save-settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-      body: JSON.stringify({ googleToken: token, settings }),
+      body: JSON.stringify({ ...credential, settings }),
     });
     // Surface the actual failure reason instead of a bare boolean — a silent {ok:false} here
     // previously made a real sync failure indistinguishable from "everything's fine", which is
@@ -149,23 +149,33 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === 'SYNC_PLAN') {
     (async () => {
-      try {
-        const authResult = await chrome.identity.getAuthToken({ interactive: false });
-        const token = typeof authResult === 'string' ? authResult : authResult?.token;
-        if (!token) { sendResponse({ plan: 'free' }); return; }
-        const resp = await fetch(`${SUPABASE_URL}/functions/v1/sync-user`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-          body: JSON.stringify({ googleToken: token }),
-        });
-        if (!resp.ok) { sendResponse({ plan: 'free' }); return; }
-        const data = await resp.json();
-        const plan = data.user?.plan || 'free';
-        await chrome.storage.local.set({ userPlan: plan });
-        if (plan === 'pro') await chrome.storage.local.remove('pendingOnboarding');
-        sendResponse({ plan });
-      } catch (_) { sendResponse({ plan: 'free' }); }
+      const isPro = await verifyProPlan(); // asks the server; records the answer for display
+      if (isPro) await chrome.storage.local.remove('pendingOnboarding');
+      sendResponse({ plan: isPro ? 'pro' : 'free' });
     })();
+    return true;
+  }
+  // Email + password sign-in (only from extension pages — never typed into the LinkedIn panel).
+  if (msg.type === 'EMAIL_SIGN_IN') {
+    handlePasswordSignIn(msg.email, msg.password).then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+  if (msg.type === 'EMAIL_SIGN_UP') {
+    passwordSignUp(msg.email, msg.password, msg.name).then(sendResponse).catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (msg.type === 'PASSWORD_RESET') {
+    sendPasswordReset(msg.email).then(sendResponse).catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  // Signed in with Google and want a password too: same email, so it becomes the same account
+  // once the confirmation link is opened.
+  if (msg.type === 'ADD_PASSWORD') {
+    (async () => {
+      const { googleUser } = await chrome.storage.local.get('googleUser');
+      if (!googleUser?.email) { sendResponse({ ok: false, error: 'Sign in with Google first.' }); return; }
+      sendResponse(await passwordSignUp(googleUser.email, msg.password, googleUser.name || ''));
+    })().catch(err => sendResponse({ ok: false, error: err.message }));
     return true;
   }
   sendResponse({ error: 'UNKNOWN_TYPE' });
@@ -181,17 +191,7 @@ chrome.alarms.get('followup-reminder-check', existing => {
 chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === 'followup-reminder-check') { checkFollowUpReminders(); checkNewReplyNotifications(); updateReminderBadge(); return; }
   if (alarm.name !== 'daily-plan-sync') return;
-  chrome.identity.getAuthToken({ interactive: false }, token => {
-    if (chrome.runtime.lastError || !token) return;
-    fetch(`${SUPABASE_URL}/functions/v1/sync-user`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-      body: JSON.stringify({ googleToken: token }),
-    }).then(r => r.ok ? r.json() : null).then(data => {
-      if (!data?.user?.plan) return;
-      chrome.storage.local.set({ userPlan: data.user.plan });
-    }).catch(() => {});
-  });
+  verifyProPlan().catch(() => {});
 });
 
 chrome.notifications.onClicked.addListener(notifId => {

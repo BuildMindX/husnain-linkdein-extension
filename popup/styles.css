@@ -211,6 +211,27 @@ a { color: var(--accent); }
 .sig-powered-label { font-size: 11.5px; color: var(--muted); }
 .sig-powered-name { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
 
+/* Email + password sign-in (shared/email-auth.js) */
+.lp-auth-or { display: flex; align-items: center; gap: 10px; width: 100%; margin: 12px 0 4px; font-size: 12px; color: var(--muted); }
+.lp-auth-or::before, .lp-auth-or::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.sig-email-mount { width: 100%; text-align: left; }
+.lp-auth { display: flex; flex-direction: column; gap: 8px; }
+.lp-auth-title { font-family: var(--font-display); font-size: 14px; font-weight: 600; color: var(--text); text-align: center; }
+.lp-auth-field { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; font-weight: 600; color: var(--text); }
+.lp-auth-field input {
+  height: 36px; padding: 0 10px; border-radius: var(--r); border: 1px solid var(--border-strong);
+  background: var(--bg); color: var(--text); font: inherit; font-size: 13.5px; font-weight: 400;
+}
+.lp-auth-field input:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus); }
+.lp-auth-submit { height: 38px; border-radius: var(--r); background: var(--accent); color: var(--on-accent); font-size: 13.5px; font-weight: 600; }
+.lp-auth-submit:hover:not(:disabled) { background: var(--accent-hover); }
+.lp-auth-status { font-size: 12.5px; color: var(--text-2); }
+.lp-auth-status:empty { display: none; }
+.lp-auth-status[data-kind="error"] { color: var(--bad); }
+.lp-auth-status[data-kind="success"] { color: var(--good); }
+.lp-auth-links { display: flex; justify-content: space-between; gap: 8px; }
+.lp-auth-links button { padding: 2px 0; font-size: 12.5px; font-weight: 600; color: var(--accent); }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }

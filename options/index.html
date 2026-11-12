@@ -512,8 +512,8 @@
         </div>
 
         <div class="card">
-          <h3>Google account</h3>
-          <p class="card-desc">Signing in lets LinkPilot AI sync your profiles and preferences across all your devices via your Google account.</p>
+          <h3>Your account</h3>
+          <p class="card-desc">Sign in with Google or with your email and a password. Your setup and pipeline sync to this account across your devices.</p>
           <div id="google-auth-section">
             <!-- Populated by JS -->
           </div>
@@ -522,7 +522,7 @@
 
         <div class="card">
           <h3>Privacy and data</h3>
-          <p class="card-desc">All your profile data (API keys, ICPs, business profiles) is stored locally in your browser using Chrome's secure storage. Your Anthropic key is sent directly to Anthropic — never via any third-party server.</p>
+          <p class="card-desc">Your API keys stay in this browser. LinkedIn profiles you analyze are read in your browser and sent straight to Anthropic. When you’re signed in, your setup and the contacts you save to your pipeline sync to your account.</p>
           <div class="privacy-points">
             <div class="privacy-point">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -530,7 +530,7 @@
             </div>
             <div class="privacy-point">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span>LinkedIn data scraped locally — no server-side storage</span>
+              <span>Profiles are analyzed in your browser; only contacts you save sync</span>
             </div>
             <div class="privacy-point">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -566,6 +566,7 @@
 
   <script src="../shared/taxonomy.js"></script>
   <script src="../shared/schema.js"></script>
+  <script src="../shared/email-auth.js"></script>
   <script src="index.js"></script>
   <script src="setup.js"></script>
 </body>

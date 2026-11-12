@@ -546,6 +546,25 @@ input[type="search"]::-webkit-search-cancel-button { cursor: pointer; }
 .about-link-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 .about-link-sep { color: var(--muted); }
 
+/* ── Email + password sign-in (shared/email-auth.js) ───────────────────────── */
+.lp-auth-or { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 380px; font-size: 12.5px; color: var(--muted); }
+.lp-auth-or::before, .lp-auth-or::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.email-auth-mount, .add-password-card { width: 100%; max-width: 380px; }
+.add-password-card { padding: 16px; border-radius: var(--r-lg); border: 1px solid var(--border); background: var(--surface); }
+.lp-auth { display: flex; flex-direction: column; gap: 10px; }
+.lp-auth-title { font-family: var(--font-display); font-size: 15px; font-weight: 600; color: var(--text); }
+.lp-auth-hint { font-size: 13px; color: var(--text-2); }
+.lp-auth-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--text); }
+.lp-auth-submit { min-height: 40px; border-radius: var(--r); border: 1px solid var(--accent); background: var(--accent); color: var(--on-accent); font-size: 14px; font-weight: 600; }
+.lp-auth-submit:hover:not(:disabled) { background: var(--accent-hover); }
+.lp-auth-status { font-size: 13px; color: var(--text-2); min-height: 0; }
+.lp-auth-status:empty { display: none; }
+.lp-auth-status[data-kind="error"] { color: var(--bad); }
+.lp-auth-status[data-kind="success"] { color: var(--good); }
+.lp-auth-links { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.lp-auth-links button { border: 0; background: none; padding: 2px 0; font-size: 13px; font-weight: 600; color: var(--accent); }
+.lp-auth-links button:hover { text-decoration: underline; text-underline-offset: 2px; }
+
 /* ── Onboarding overlay ─────────────────────────────────────────────────────── */
 .onboarding-overlay {
   position: fixed; inset: 0; z-index: 100; align-items: center; justify-content: center;

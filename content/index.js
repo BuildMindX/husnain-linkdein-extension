@@ -4147,7 +4147,7 @@
           </svg>
         </div>
         <div class="lia-sign-gate-title">Sign in to continue</div>
-        <div class="lia-sign-gate-desc">Sign in with Google to analyze profiles and draft outreach. Your API key and prospect data stay in this browser.</div>
+        <div class="lia-sign-gate-desc">Sign in to analyze profiles and draft outreach. Your API key stays in this browser.</div>
         <button class="lia-sign-gate-btn" id="lia-gate-signin">
           <svg width="16" height="16" viewBox="0 0 24 24" style="flex-shrink:0">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -4157,12 +4157,17 @@
           </svg>
           Sign in with Google
         </button>
+        <button class="lia-sign-gate-alt" id="lia-gate-email">Sign in with email and password</button>
         <div class="lia-sign-gate-footer">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           Secured by Satyron Private Limited
         </div>
       </div>
     `;
+    // Opens the extension's own Settings page: a password must never be typed into linkedin.com.
+    body.querySelector('#lia-gate-email').addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: chrome.runtime.getURL('options/index.html#account') });
+    });
     body.querySelector('#lia-gate-signin').addEventListener('click', async function() {
       this.textContent = 'Signing in…';
       this.disabled = true;

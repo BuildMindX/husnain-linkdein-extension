@@ -1,4 +1,5 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+import { passwordSignIn, passwordSignOut } from './session.js';
 
 export const SETTINGS_KEYS = [
   'analysisIntent',
@@ -56,43 +57,44 @@ function mergeSettingsByField(localTimestamps, cloudSettings) {
   return { merged, mergedTimestamps };
 }
 
-export async function handleGoogleSignIn() {
-  const authResult = await chrome.identity.getAuthToken({ interactive: true });
-  const token = typeof authResult === 'string' ? authResult : authResult?.token;
-  if (!token) throw new Error('Authentication cancelled.');
-
-  const resp = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!resp.ok) throw new Error('Failed to fetch Google profile.');
-  const googleUser = await resp.json();
+// After either sign-in method: load the account from the server (creating it on first sign-in),
+// then restore cloud settings field by field. Google and password sign-in for the same email reach
+// the same account (supabase/functions/_shared/identity.ts).
+async function completeSignIn(credential, fallbackProfile) {
+  const syncResp = await fetch(`${SUPABASE_URL}/functions/v1/sync-user`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+    body: JSON.stringify(credential),
+  }).catch(() => null);
 
   let plan = 'free';
   let supabaseUserId = null;
   let isNew = false;
   let cloudSettings = {};
-  try {
-    const syncResp = await fetch(`${SUPABASE_URL}/functions/v1/sync-user`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify({ googleToken: token }),
-    });
-    if (syncResp.ok) {
-      const data = await syncResp.json();
-      plan = data.user?.plan || 'free';
-      supabaseUserId = data.user?.id || null;
-      isNew = !!data.isNew;
-      cloudSettings = data.settings || {};
-    }
-  } catch (_) { /* Supabase unavailable — continue offline */ }
+  let account = null;
+  if (syncResp && syncResp.ok) {
+    const data = await syncResp.json();
+    account = data.user || null;
+    plan = account?.plan === 'pro' && (!account.plan_expires_at || new Date(account.plan_expires_at) > new Date()) ? 'pro' : 'free';
+    supabaseUserId = account?.id || null;
+    isNew = !!data.isNew;
+    cloudSettings = data.settings || {};
+  } else if (syncResp && syncResp.status !== 500) {
+    // The server rejected the sign-in (e.g. unconfirmed email) — say why instead of signing in.
+    const body = await syncResp.json().catch(() => ({}));
+    throw new Error(body.error || 'Sign-in failed.');
+  }
+  // else: server unreachable — continue signed in locally; the plan gate rechecks later.
 
+  const googleUser = {
+    name: account?.name || fallbackProfile.name || (fallbackProfile.email || '').split('@')[0],
+    email: account?.email || fallbackProfile.email || '',
+    picture: account?.avatar_url || fallbackProfile.picture || '',
+    provider: fallbackProfile.provider,
+  };
   const storagePayload = { googleUser, userPlan: plan, supabaseUserId };
+  if (account) Object.assign(storagePayload, { verifiedPlan: plan, planVerifiedAt: Date.now() });
   if (isNew) storagePayload.pendingOnboarding = true;
-  // Restore settings from cloud onto local storage, merged field-by-field rather than one
-  // wholesale overwrite — see mergeSettingsByField above.
   const { settingsFieldTimestamps: localTimestamps } = await chrome.storage.local.get('settingsFieldTimestamps');
   const { merged, mergedTimestamps } = mergeSettingsByField(localTimestamps || {}, cloudSettings);
   Object.assign(storagePayload, merged);
@@ -105,7 +107,37 @@ export async function handleGoogleSignIn() {
   return { success: true, user: googleUser, plan, isNew };
 }
 
+export async function handleGoogleSignIn() {
+  const authResult = await chrome.identity.getAuthToken({ interactive: true });
+  const token = typeof authResult === 'string' ? authResult : authResult?.token;
+  if (!token) throw new Error('Authentication cancelled.');
+  // A Google sign-in replaces any password session on this browser.
+  await chrome.storage.local.remove('authSession');
+
+  const resp = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!resp.ok) throw new Error('Failed to fetch Google profile.');
+  const g = await resp.json();
+  return completeSignIn({ googleToken: token }, { name: g.name, email: g.email, picture: g.picture, provider: 'google' });
+}
+
+export async function handlePasswordSignIn(email, password) {
+  const r = await passwordSignIn(email, password);
+  if (!r.ok) return { success: false, error: r.error };
+  try {
+    const { authSession } = await chrome.storage.local.get('authSession');
+    return await completeSignIn({ accessToken: authSession.access_token }, {
+      name: r.user?.user_metadata?.name, email: r.user?.email, picture: '', provider: 'password',
+    });
+  } catch (err) {
+    await passwordSignOut();
+    return { success: false, error: err.message };
+  }
+}
+
 export async function handleGoogleSignOut() {
+  await passwordSignOut();
   try {
     const authResult = await chrome.identity.getAuthToken({ interactive: false });
     const tokenResult = typeof authResult === 'string' ? authResult : authResult?.token;
@@ -113,6 +145,6 @@ export async function handleGoogleSignOut() {
   } catch (_) { /* token may already be expired */ }
   // ownPosts / postHistory are the user's own writing (local only, never synced) — cleared too so the
   // next person on a shared browser doesn't inherit them.
-  await chrome.storage.local.remove(['googleUser', 'userPlan', 'supabaseUserId', 'savedContacts', 'settingsFieldTimestamps', 'ownPosts', 'postHistory', 'anthropicApiKey', 'hubspotApiKey', 'verifiedPlan', 'planVerifiedAt', 'offlineUsage', ...SETTINGS_KEYS]);
+  await chrome.storage.local.remove(['googleUser', 'userPlan', 'supabaseUserId', 'savedContacts', 'settingsFieldTimestamps', 'ownPosts', 'postHistory', 'anthropicApiKey', 'hubspotApiKey', 'verifiedPlan', 'planVerifiedAt', 'offlineUsage', 'authSession', ...SETTINGS_KEYS]);
   return { success: true };
 }

@@ -92,6 +92,9 @@ chrome.storage.local.get(['pendingOnboarding', 'googleUser'], r => {
 let _signedIn = false;
 
 let _pipelineHashHandled = false;
+// options/index.html#account — the LinkedIn panel's "Sign in with email" lands here.
+if (location.hash === '#account') setTimeout(() => switchTab('account'), 0);
+
 function maybeOpenPipelineFromHash() {
   if (_pipelineHashHandled || !_signedIn || location.hash !== '#pipeline') return;
   _pipelineHashHandled = true;
@@ -429,7 +432,7 @@ function renderAccountTab(user, plan) {
   if (subEl) {
     subEl.textContent = user
       ? `Signed in as ${user.name || user.email || 'your Google account'} — manage your account and subscription below.`
-      : 'Sign in with Google to sync your settings across devices and enable personalized features.';
+      : 'Sign in with Google or with your email and a password. Either way it is one account that syncs your setup across devices.';
   }
 
   if (user) {
@@ -468,8 +471,13 @@ function renderAccountTab(user, plan) {
         <button type="button" id="manage-sub-btn" class="btn-manage-sub">Manage subscription</button>
         <div id="manage-sub-status" class="account-status-msg" style="display:none;margin-top:6px"></div>
       </div>`}
-      <button type="button" id="view-plans-btn" class="btn-view-plans">View plans &amp; pricing</button>`;
+      <button type="button" id="view-plans-btn" class="btn-view-plans">View plans &amp; pricing</button>
+      ${user.provider === 'password'
+        ? `<p class="hint">Signed in with email and password. To change your password, sign out and use “Forgot password?”.</p>`
+        : `<div class="add-password-card" id="add-password-mount"></div>`}`;
 
+    const addPw = document.getElementById('add-password-mount');
+    if (addPw && globalThis.LPEmailAuth) LPEmailAuth.mountAddPassword(addPw, { email: user.email, idPrefix: 'opt-addpw' });
     document.getElementById('sign-out-btn')?.addEventListener('click', handleGoogleSignOut);
     document.getElementById('upgrade-btn')?.addEventListener('click', handleUpgrade);
     document.getElementById('manage-sub-btn')?.addEventListener('click', handleManageSubscription);
@@ -487,8 +495,22 @@ function renderAccountTab(user, plan) {
           <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
         </svg>
         Continue with Google
-      </button>`;
+      </button>
+      <div class="lp-auth-or"><span>or</span></div>
+      <div id="email-auth-mount" class="email-auth-mount"></div>`;
     document.getElementById('google-sign-in-btn')?.addEventListener('click', handleGoogleSignIn);
+    const emailMount = document.getElementById('email-auth-mount');
+    if (emailMount && globalThis.LPEmailAuth) {
+      LPEmailAuth.mount(emailMount, {
+        idPrefix: 'opt-auth',
+        onSignedIn: r => {
+          renderAccountTab(r.user, r.plan || 'free');
+          showStatus(document.getElementById('account-status'), `Signed in as ${r.user.email}`, 'success');
+          loadAllSettings();
+          if (r.isNew) showOnboarding(r.user);
+        },
+      });
+    }
   }
 }
 

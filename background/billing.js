@@ -1,4 +1,5 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+import { getCredential } from './session.js';
 
 // ─── Plan + usage gate (server-decided) ─────────────────────────────────────────
 // The server (track-usage / sync-user edge functions) verifies the Google token and reads the plan
@@ -18,12 +19,6 @@ const PRO_CACHE_MS = 60 * 60 * 1000;
 const OFFLINE_FREE_PER_DAY = 3;
 const SERVER_TIMEOUT_MS = 10000;
 
-async function getGoogleToken() {
-  try {
-    const authResult = await chrome.identity.getAuthToken({ interactive: false });
-    return typeof authResult === 'string' ? authResult : authResult?.token || null;
-  } catch (_) { return null; }
-}
 
 async function postFunction(name, body) {
   const ctrl = new AbortController();
@@ -58,11 +53,11 @@ async function outageDecision() {
 // Check limit AND record usage atomically on the server. Returns { allowed, plan, limit, used } or
 // { allowed: false, error }.
 export async function checkAndTrackUsage(eventType, metadata = {}) {
-  const token = await getGoogleToken();
-  if (!token) return { allowed: false, error: 'SIGN_IN_REQUIRED' };
+  const credential = await getCredential();
+  if (!credential) return { allowed: false, error: 'SIGN_IN_REQUIRED' };
   let resp;
   try {
-    resp = await postFunction('track-usage', { googleToken: token, eventType, metadata });
+    resp = await postFunction('track-usage', { ...credential, eventType, metadata });
   } catch (_) {
     return outageDecision();
   }
@@ -89,10 +84,10 @@ export async function checkAndTrackUsage(eventType, metadata = {}) {
 export async function verifyProPlan() {
   const { verifiedPlan, planVerifiedAt } = await chrome.storage.local.get(['verifiedPlan', 'planVerifiedAt']);
   if (verifiedPlan === 'pro' && Date.now() - (planVerifiedAt || 0) < PRO_CACHE_MS) return true;
-  const token = await getGoogleToken();
-  if (!token) return false;
+  const credential = await getCredential();
+  if (!credential) return false;
   try {
-    const resp = await postFunction('sync-user', { googleToken: token });
+    const resp = await postFunction('sync-user', credential);
     if (resp.status === 401 || resp.status === 404) return false;
     if (!resp.ok) throw new Error('server');
     const { user } = await resp.json();
@@ -133,9 +128,8 @@ function maybeFireUsageNotification(eventType, used, notified) {
 }
 
 export async function handleOpenBillingPortal() {
-  const authResult = await chrome.identity.getAuthToken({ interactive: false });
-  const token = typeof authResult === 'string' ? authResult : authResult?.token;
-  if (!token) throw new Error('Sign in first to manage your subscription.');
+  const credential = await getCredential();
+  if (!credential) throw new Error('Sign in first to manage your subscription.');
 
   const resp = await fetch(`${SUPABASE_URL}/functions/v1/create-portal-session`, {
     method: 'POST',
@@ -143,7 +137,7 @@ export async function handleOpenBillingPortal() {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
     },
-    body: JSON.stringify({ googleToken: token }),
+    body: JSON.stringify(credential),
   });
   const data = await resp.json();
   if (!resp.ok || data.error) throw new Error(data.error || 'Could not open billing portal.');
@@ -151,9 +145,8 @@ export async function handleOpenBillingPortal() {
 }
 
 export async function handleStartCheckout() {
-  const authResult = await chrome.identity.getAuthToken({ interactive: true });
-  const token = typeof authResult === 'string' ? authResult : authResult?.token;
-  if (!token) throw new Error('Sign in first to upgrade.');
+  const credential = await getCredential();
+  if (!credential) throw new Error('Sign in first to upgrade.');
 
   const resp = await fetch(`${SUPABASE_URL}/functions/v1/create-checkout`, {
     method: 'POST',
@@ -161,7 +154,7 @@ export async function handleStartCheckout() {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
     },
-    body: JSON.stringify({ googleToken: token }),
+    body: JSON.stringify(credential),
   });
   const data = await resp.json();
   if (!resp.ok || data.error) throw new Error(data.error || 'Checkout failed.');

@@ -16,6 +16,16 @@ const normIntent = i => (i === 'b2b_sales' ? 'b2b_sales' : 'b2c_sales');
 function showSignInGate() {
   document.getElementById('sign-in-gate').style.display = 'flex';
   document.getElementById('popup-main').style.display = 'none';
+  const emailMount = document.getElementById('sig-email-mount');
+  if (emailMount && globalThis.LPEmailAuth) {
+    LPEmailAuth.mount(emailMount, {
+      idPrefix: 'pop-auth',
+      onSignedIn: r => {
+        if (r.isNew) chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' });
+        window.location.reload();
+      },
+    });
+  }
 
   const btn = document.getElementById('sig-google-btn');
   const status = document.getElementById('sig-status');

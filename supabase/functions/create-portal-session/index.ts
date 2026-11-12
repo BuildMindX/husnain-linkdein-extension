@@ -1,36 +1,22 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { verifyIdentity, findUser, corsHeaders, json } from '../_shared/identity.ts'
 import Stripe from 'https://esm.sh/stripe@14?target=deno'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { googleToken } = await req.json()
-    if (!googleToken) return json({ error: 'Missing googleToken' }, 400)
-
-    const gRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: { Authorization: `Bearer ${googleToken}` },
-    })
-    if (!gRes.ok) return json({ error: 'Invalid token' }, 401)
-    const g = await gRes.json()
-
+    const body = await req.json()
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
       { auth: { persistSession: false } }
     )
-
-    const { data: user } = await supabase
-      .from('users')
-      .select('id, stripe_customer_id, plan')
-      .eq('google_id', g.id)
-      .single()
-
+    const v = await verifyIdentity(body, supabase)
+    if ('error' in v) return json({ error: v.error }, v.status)
+    const ident = v.identity
+    const { user } = await findUser(supabase, ident)
     if (!user) return json({ error: 'User not found' }, 404)
     if (!user.stripe_customer_id) return json({ error: 'No billing account found. Please upgrade first.' }, 400)
 
@@ -47,9 +33,3 @@ Deno.serve(async (req: Request) => {
   }
 })
 
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  })
-}
