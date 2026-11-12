@@ -21,7 +21,7 @@
 
 /* ── Tokens ─────────────────────────────────────────────────────────────────── */
 #lia-panel, #lia-post-panel, #lia-time-panel, #lia-sidebar-dock,
-#lia-followup-bar, #lia-search-banner {
+#lia-followup-bar, #lia-search-banner, #lia-stale-notice {
   --lp-bg: #FFFFFF;
   --lp-surface: #F7F4FB;
   --lp-surface-hover: #F1ECF7;
@@ -51,7 +51,7 @@
 
 @media (prefers-color-scheme: dark) {
   #lia-panel, #lia-post-panel, #lia-time-panel, #lia-sidebar-dock,
-  #lia-followup-bar, #lia-search-banner {
+  #lia-followup-bar, #lia-search-banner, #lia-stale-notice {
     --lp-bg: #171329;
     --lp-surface: #211B3A;
     --lp-surface-hover: #2A2350;
@@ -147,6 +147,21 @@ body:has(#lia-panel.lia-open, #lia-post-panel.lia-pc-open, #lia-time-panel.lia-p
 #lia-sidebar-dock > #lia-save-trigger.lia-save-trigger-active { color: var(--lp-accent); }
 #lia-sidebar-dock > #lia-save-trigger.lia-save-trigger-active svg { fill: currentColor; }
 #lia-sidebar-dock > #lia-save-trigger.lia-save-trigger-error { color: var(--lp-bad); }
+
+/* Shown when a tab still runs a copy of LinkPilot from before an update/reload. */
+#lia-stale-notice {
+  position: fixed; right: 72px; top: 50%; transform: translateY(-50%);
+  z-index: 2147483646; max-width: min(320px, calc(100vw - 88px));
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  background: var(--lp-bg); color: var(--lp-text);
+  border: 1px solid var(--lp-border); border-radius: var(--lp-r-lg); box-shadow: var(--lp-shadow-pop);
+  font: 500 13px/1.4 var(--lp-font);
+}
+#lia-stale-notice button {
+  flex-shrink: 0; padding: 7px 12px; border: 0; border-radius: var(--lp-r);
+  background: var(--lp-accent); color: var(--lp-on-accent); font: 600 13px/1 var(--lp-font); cursor: pointer;
+}
+#lia-stale-notice button:focus-visible { outline: none; box-shadow: var(--lp-focus); }
 
 /* ── Drawers (analysis panel, Post Creator, World Clock) ───────────────────── */
 #lia-panel, #lia-post-panel, #lia-time-panel {
@@ -535,6 +550,10 @@ body:has(#lia-panel.lia-open, #lia-post-panel.lia-pc-open, #lia-time-panel.lia-p
   font-size: 13px; line-height: 1.5;
 }
 #lia-panel .lia-error-msg, #lia-post-panel .lia-pc-error, #lia-panel .lia-hs-error { scroll-margin: 24px; }
+#lia-panel .lia-muted-note {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 12px;
+  color: var(--lp-text-2); font-size: 13px; line-height: 1.5;
+}
 #lia-panel .lia-inline-upgrade-link { color: inherit; font-weight: 600; text-decoration: underline; }
 
 #lia-panel .lia-gate, #lia-panel .lia-sign-gate {

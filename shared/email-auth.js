@@ -3,7 +3,13 @@
 // it). The actual auth calls run in the background worker (background/session.js).
 (function () {
   const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const send = msg => new Promise(resolve => chrome.runtime.sendMessage(msg, r => resolve(chrome.runtime.lastError ? { error: chrome.runtime.lastError.message } : r)));
+  // UNKNOWN_TYPE = the background worker is still running a version from before email sign-in
+  // existed (Chrome only swaps it on reload / update).
+  const STALE = 'LinkPilot was just updated. Reload it in chrome://extensions (or restart Chrome), then try again.';
+  const send = msg => new Promise(resolve => chrome.runtime.sendMessage(msg, r => {
+    if (chrome.runtime.lastError) { resolve({ error: chrome.runtime.lastError.message }); return; }
+    resolve(r?.error === 'UNKNOWN_TYPE' ? { ...r, error: STALE } : r);
+  }));
 
   // mount(container, { onSignedIn(response), idPrefix }) — sign in / create account / reset password.
   function mount(container, { onSignedIn, idPrefix = 'lp-auth' } = {}) {

@@ -204,6 +204,7 @@
   async function init() {
     await ensureDockButtons();
     maybeFinishOwnPostCapture();
+    maybeFillPendingComposer();
     if (isProfilePage()) {
       currentProfileUrl = location.href.split('?')[0];
       syncSaveButtons();
@@ -283,8 +284,32 @@
     if (sidebarDock && document.contains(sidebarDock)) return sidebarDock;
     sidebarDock = document.createElement('div');
     sidebarDock.id = 'lia-sidebar-dock';
+    // After LinkPilot is updated or reloaded, tabs that were already open keep this old script,
+    // cut off from the extension: every button would silently do nothing (and the Post button,
+    // which appears on sign-in, never shows). Catch the click and say what to do instead.
+    sidebarDock.addEventListener('click', e => {
+      if (chrome.runtime?.id) return;
+      e.stopImmediatePropagation(); e.preventDefault();
+      showStaleTabNotice();
+    }, true);
     document.body.appendChild(sidebarDock);
     return sidebarDock;
+  }
+  function showStaleTabNotice() {
+    showDockNotice('LinkPilot was updated. Refresh this page to keep using it.', 'Refresh', () => location.reload());
+  }
+  // A short message beside the dock, for when no LinkPilot drawer is open.
+  function showDockNotice(text, actionLabel, onAction) {
+    document.getElementById('lia-stale-notice')?.remove();
+    const n = document.createElement('div');
+    n.id = 'lia-stale-notice'; n.setAttribute('role', 'status');
+    const span = document.createElement('span'); span.textContent = text; n.appendChild(span);
+    if (actionLabel) {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = actionLabel;
+      b.addEventListener('click', onAction); n.appendChild(b);
+    }
+    document.body.appendChild(n);
+    setTimeout(() => n.remove(), 9000);
   }
 
   // ─── Search Results Scoring ───────────────────────────────────────────────────
@@ -686,9 +711,58 @@
     return 'followup_3plus';
   }
 
+  // LinkedIn loads a thread's newest messages first; older ones only appear when the list is
+  // scrolled up. A follow-up written without the start of the conversation repeats things that
+  // were already said, so scroll to the top (bounded) before reading. User-triggered only.
+  async function loadFullThread(maxRounds = 6) {
+    const list = findActiveThreadRoot().querySelector('.msg-s-message-list');
+    if (!list) return;
+    const keepAt = list.scrollTop;
+    for (let i = 0; i < maxRounds; i++) {
+      const before = list.querySelectorAll('li.msg-s-message-list__event').length;
+      list.scrollTop = 0;
+      await new Promise(r => setTimeout(r, 700));
+      if (list.querySelectorAll('li.msg-s-message-list__event').length === before) break;
+    }
+    list.scrollTop = list.scrollHeight || keepAt;
+  }
+
+  // Current LinkedIn thread markup (checked live Nov 2026): one li.msg-s-message-list__event per
+  // message group, an optional date heading (time.msg-s-message-list__time-heading: "Today",
+  // "Nov 3"), a hidden "<Name> sent the following messages at 6:58 PM" label, and the bodies.
+  // The "--outbound" class older code relied on no longer exists, so the sender is the label's
+  // name compared with the user's own. Each message keeps its date so the follow-up can see gaps.
+  function scrapeThreadEvents(root, contactName, myName) {
+    const events = root.querySelectorAll('li.msg-s-message-list__event');
+    if (!events.length) return [];
+    const msgs = [];
+    const me = String(myName || '').trim().toLowerCase();
+    let day = '', sender = '';
+    events.forEach(li => {
+      const heading = li.querySelector('time.msg-s-message-list__time-heading')?.textContent.trim();
+      if (heading) day = heading;
+      // LinkedIn pads this label with newlines and indentation.
+      const label = (li.querySelector('.msg-s-event-listitem--group-a11y-heading')?.textContent || '').replace(/\s+/g, ' ').trim();
+      const name = label.match(/^(.+?)\s+sent\s+the\s+following/i)?.[1]?.trim()
+        || li.querySelector('.msg-s-message-group__name')?.textContent.trim() || '';
+      if (name) sender = name;
+      const time = li.querySelector('time.msg-s-message-group__timestamp')?.textContent.trim() || '';
+      const who = !sender ? 'Them' : (me && sender.toLowerCase() === me) ? 'You' : (contactName || sender);
+      li.querySelectorAll('.msg-s-event-listitem__body').forEach(bodyEl => {
+        const text = _stripUiChrome((bodyEl.innerText || bodyEl.textContent || '').trim());
+        if (text && !_isReactionOnly(text)) msgs.push({ sender: who, text, when: [day, time].filter(Boolean).join(', ') });
+      });
+    });
+    return msgs;
+  }
+
   function scrapeThreadMessages(contactName, myName) {
     const root = findActiveThreadRoot();
     const msgs = [];
+
+    // ── Strategy 0: current markup, with dates ─────────────────────────────────
+    const dated = scrapeThreadEvents(root, contactName, myName);
+    if (dated.length) return dated;
 
     // ── Strategy 1: structured message groups ──────────────────────────────────
     const groups = root.querySelectorAll('.msg-s-message-group');
@@ -863,22 +937,61 @@
   // to LinkedIn's own "Start a post" composer (a Quill editor) instead — same insertText technique
   // as insertIntoChat above. Only works if the composer modal is already open; the caller falls
   // back to clipboard + instructions when it isn't found.
-  function insertIntoPostComposer(text) {
-    const editor = document.querySelector(
+  // LinkedIn's "Start a post" box. Current LinkedIn (Nov 2026): a native <dialog> holding a
+  // tiptap/ProseMirror editor. Older layout: a Quill editor (.ql-editor) in .share-creation-state.
+  // Only ever an editor inside the post dialog — never a comment or message box on the page.
+  function findPostComposer() {
+    for (const ed of document.querySelectorAll('dialog[open] .ProseMirror[contenteditable="true"]')) {
+      if (/post to|share your thoughts|what do you want to talk about/i.test(ed.closest('dialog').innerText + ' ' + (ed.getAttribute('aria-placeholder') || ''))) return ed;
+    }
+    return document.querySelector(
       '.share-creation-state .ql-editor[contenteditable="true"], ' +
-      '.share-box_actor .ql-editor[contenteditable="true"], ' +
-      '.ql-editor[contenteditable="true"]'
+      '.share-box_actor .ql-editor[contenteditable="true"]'
     );
+  }
+
+  function insertIntoPostComposer(text) {
+    const editor = findPostComposer();
     if (!editor) return false;
     editor.focus();
-    const sel = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(editor);
-    sel.removeAllRanges();
-    sel.addRange(range);
-    document.execCommand('insertText', false, text);
+    document.execCommand('selectAll');
+    document.execCommand('delete');
+    // Line by line: one insertText with "\n\n" makes ProseMirror drop the blank lines between
+    // paragraphs; insertParagraph keeps them exactly as written. (Checked on the live composer.)
+    String(text).split('\n').forEach((line, i) => {
+      if (i) document.execCommand('insertParagraph');
+      if (line) document.execCommand('insertText', false, line);
+    });
     editor.dispatchEvent(new Event('input', { bubbles: true }));
     return true;
+  }
+
+  // "Paste into LinkedIn composer" from a page with no post box open: open LinkedIn's own box on
+  // the feed (?shareActive=true) and fill it there. The text waits in this tab's sessionStorage —
+  // never in the URL. Nothing is ever posted; the user reviews and presses LinkedIn's Post.
+  const PENDING_POST_KEY = 'lpPendingComposerText';
+  function openComposerWithText(text) {
+    sessionStorage.setItem(PENDING_POST_KEY, JSON.stringify({ text, at: Date.now() }));
+    location.href = 'https://www.linkedin.com/feed/?shareActive=true';
+  }
+  async function maybeFillPendingComposer() {
+    const raw = sessionStorage.getItem(PENDING_POST_KEY);
+    if (!raw) return;
+    sessionStorage.removeItem(PENDING_POST_KEY);
+    let pending; try { pending = JSON.parse(raw); } catch (_) { return; }
+    if (!pending?.text || Date.now() - pending.at > 120000) return;
+    for (let waited = 0; waited < 15000; waited += 500) {
+      if (findPostComposer()) {
+        await new Promise(r => setTimeout(r, 300)); // let the editor finish mounting
+        if (insertIntoPostComposer(pending.text)) {
+          showDockNotice('Your draft is in the post box. Review it, then press Post on LinkedIn.');
+          return;
+        }
+      }
+      await new Promise(r => setTimeout(r, 500));
+    }
+    await navigator.clipboard.writeText(pending.text).catch(() => {});
+    showDockNotice('LinkedIn’s post box didn’t open. Your draft is copied: click “Start a post” and paste it.');
   }
 
   function resetFollowupBtn(btn) {
@@ -1069,13 +1182,14 @@
         return;
       }
       const myName = googleUser?.name || googleUser?.given_name || '';
+      await loadFullThread();
       const msgs = scrapeThreadMessages(contactName, myName);
       const isRaw = msgs.length === 1 && msgs[0].sender === '__raw__';
       const conversationText = !msgs.length
         ? '(no messages found in thread)'
         : isRaw
         ? msgs[0].text
-        : msgs.map(m => `${m.sender}: ${m.text}`).join('\n\n');
+        : msgs.map(m => `${m.when ? `[${m.when}] ` : ''}${m.sender}: ${m.text}`).join('\n\n');
       const userInstructions = document.getElementById('lia-followup-instr-input')?.value.trim() || '';
       const contextMaterial = document.getElementById('lia-followup-context-input')?.value.trim() || '';
 
@@ -1244,14 +1358,28 @@
     const parts = location.pathname.toLowerCase().split('/').filter(Boolean); // in, slug, recent-activity, …
     return parts[0] === 'in' && decodeURIComponent(parts[1] || '') === base.slug && parts[2] === 'recent-activity';
   }
+  // Two LinkedIn layouts are live: the newer one (Nov 2026) has hashed class names, so it's read
+  // through its stable hooks — componentkey="update-card-focus…" per post and
+  // data-testid="expandable-text-box" for the text. The older class-based layout is the fallback.
+  const NOT_AUTHORED = /\b(reposted|commented|likes?|celebrates|loves|supports|finds|replied)\b/i;
   function scrapeOwnPosts() {
     const out = [];
+    const keep = raw => {
+      const text = String(raw || '').replace(/…\s*(see )?more\s*$/i, '').trim();
+      if (text.length > 60 && !out.some(t => t.slice(0, 120) === text.slice(0, 120))) out.push(text.slice(0, 1500));
+    };
+    document.querySelectorAll('[componentkey^="update-card-focus"]').forEach(card => {
+      const head = (card.innerText || '').split('\n').slice(0, 5).join(' ');
+      if (NOT_AUTHORED.test(head)) return; // "<Name> reposted this" etc.
+      // A quote-post holds the user's words first, then the quoted post's — keep only the first.
+      keep(card.querySelector('[data-testid="expandable-text-box"]')?.innerText);
+    });
+    if (out.length) return out;
     document.querySelectorAll('.feed-shared-update-v2, [data-urn^="urn:li:activity"]').forEach(card => {
       const header = card.querySelector('.update-components-header, .feed-shared-header')?.textContent || '';
-      if (/\b(reposted|commented|likes?|celebrates|loves|supports|finds)\b/i.test(header)) return; // not authored
+      if (NOT_AUTHORED.test(header)) return; // not authored
       const textEl = card.querySelector('.update-components-text, .feed-shared-update-v2__description, .feed-shared-text');
-      const text = (textEl?.innerText || textEl?.textContent || '').replace(/…\s*(see )?more\s*$/i, '').trim();
-      if (text.length > 60 && !out.some(t => t.slice(0, 120) === text.slice(0, 120))) out.push(text.slice(0, 1500));
+      keep(textEl?.innerText || textEl?.textContent);
     });
     return out;
   }
@@ -1410,7 +1538,9 @@
       } else {
         // Go to the user's own posts; the content script finishes the capture there.
         sessionStorage.setItem('lpCaptureOwnPosts', String(Date.now()));
-        location.href = `${ownProfileBase(cp.linkedinUrl).url}recent-activity/shares/`;
+        // /recent-activity/shares/ now crashes LinkedIn's router (stuck on the loading screen);
+        // /all/ opens on the Posts tab.
+        location.href = `${ownProfileBase(cp.linkedinUrl).url}recent-activity/all/`;
       }
     });
     body.querySelector('#lia-pc-open-settings-url')?.addEventListener('click', () => chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' }));
@@ -1696,11 +1826,13 @@
       const orig = btn.textContent;
       if (insertIntoPostComposer(fullText)) {
         btn.textContent = 'Pasted into the composer';
-      } else {
-        await navigator.clipboard.writeText(fullText).catch(() => {});
-        btn.textContent = 'Copied — open "Start a post" on your feed, then paste';
+        setTimeout(() => { btn.textContent = orig; }, 3000);
+        return;
       }
-      setTimeout(() => { btn.textContent = orig; }, 3000);
+      await navigator.clipboard.writeText(fullText).catch(() => {}); // backup if the page can't open it
+      btn.textContent = 'Opening LinkedIn’s post box…';
+      btn.disabled = true;
+      openComposerWithText(fullText);
     });
     body.querySelector('#lia-pc-new-post').addEventListener('click', () => {
       pcSelected = null; pcTopics = []; pcResult = null;
@@ -2482,33 +2614,51 @@
     const intent = await getIntent();
 
     try {
-      // Settled (not Promise.all) on purpose: a failed connection-request generation shouldn't
-      // discard a successful analysis — that used to throw away real work and cost a second
-      // usage credit on "Try Again" for something that had already succeeded once. Only a failed
-      // *analysis* is fatal here; a failed connection request just renders empty, and the
-      // Connection tab offers its own retry for that piece alone.
-      const [analysisSettled, connectionSettled] = await Promise.allSettled([
-        sendMessage('ANALYZE_PROFILE', profileData, { intent }),
-        sendMessage('GENERATE_CONNECTION_REQUEST', profileData, { intent }),
-      ]);
+      // The analysis comes first and renders on its own. The connection note is written after it,
+      // in the background, and only when the analysis says the person is worth connecting with —
+      // writing one for an excluded or Low-fit profile (seen live: a competitor's agency) costs an
+      // AI call for a note the panel itself says to skip. A failed note never discards the
+      // analysis; the Connection tab offers a retry for that piece alone.
+      const analysis = await sendMessage('ANALYZE_PROFILE', profileData, { intent });
+      if (!analysis || analysis.error) throw new Error(analysis?.error || 'Analysis failed');
 
-      const analysis = analysisSettled.status === 'fulfilled' ? analysisSettled.value : null;
-      if (!analysis || analysis.error) {
-        throw new Error(analysis?.error || analysisSettled.reason?.message || 'Analysis failed');
-      }
-
-      const connectionValue = connectionSettled.status === 'fulfilled' ? connectionSettled.value : null;
-      const connectionText = (connectionValue && !connectionValue.error) ? (connectionValue.text || '') : '';
-
-      const prevRec = await dbGet(currentProfileUrl).catch(() => null);
-      const record = { ...(prevRec || {}), analysis, connectionRequest: connectionText, intent };
-      await dbPut(currentProfileUrl, record).catch(() => {});
-      renderResults(record.analysis, record.connectionRequest, Date.now(), intent);
+      const url = currentProfileUrl;
+      const prevRec = await dbGet(url).catch(() => null);
+      const record = { ...(prevRec || {}), analysis, connectionRequest: '', intent };
+      await dbPut(url, record).catch(() => {});
+      const writeNote = worthAutoNote(analysis, intent);
+      _connNotePendingFor = writeNote ? url : '';
+      renderResults(record.analysis, '', Date.now(), intent);
+      if (writeNote) writeConnectionNoteInBackground(profileData, intent, url);
     } catch (err) {
       renderError(err.message);
     } finally {
       _analyzing = false;
     }
+  }
+
+  // ─── Connection note, written after the analysis ─────────────────────────────
+  let _connNotePendingFor = ''; // profile URL whose note is being written right now
+  function worthAutoNote(analysis, intent) {
+    return !analysis?.industryFit?.excluded && scoreOf(analysis, intent) !== 'Low';
+  }
+  async function writeConnectionNoteInBackground(profileData, intent, url) {
+    let text = '';
+    try {
+      const r = await sendMessage('GENERATE_CONNECTION_REQUEST', profileData, { intent });
+      if (r && !r.error) text = r.text || '';
+    } catch (_) { /* shown as a retry on the Connection tab */ }
+    if (_connNotePendingFor === url) _connNotePendingFor = '';
+    if (text) {
+      const stored = await dbGet(url).catch(() => null);
+      if (stored) await dbPut(url, { ...stored, connectionRequest: text }).catch(() => {});
+    }
+    if (url !== currentProfileUrl) return; // they've moved on; the note is saved for when they return
+    const body = document.getElementById('lia-body');
+    const r = body?._rendered;
+    if (!r) return;
+    r.connectionRequest = text;
+    if (activeTab === 'connection') renderTabContent(r.analysis, text, 'connection', normIntent(r.intent));
   }
 
   // ─── Panel ────────────────────────────────────────────────────────────────────
@@ -3542,7 +3692,9 @@
           const daysSinceLastTouch = (entry && entry.stage && entry.stage !== 'new')
             ? Math.floor((Date.now() - (entry.stageUpdatedAt || entry.savedAt || Date.now())) / 86400000)
             : null;
-          const result = await sendMessage('GENERATE_FIRST_MESSAGE', extractProfile(), { intent, analysis, tone: msgSelectedTone, strategy: msgSelectedStrategy, userInstructions, contextMaterial, stage, daysSinceLastTouch, previousAttempt: msgCurrentText || undefined });
+          // The connection note for this person, so the first message doesn't repeat its angle.
+          const connectionNote = document.getElementById('lia-body')?._rendered?.connectionRequest || connectionRequest || '';
+          const result = await sendMessage('GENERATE_FIRST_MESSAGE', extractProfile(), { intent, analysis, tone: msgSelectedTone, strategy: msgSelectedStrategy, userInstructions, contextMaterial, stage, daysSinceLastTouch, previousAttempt: msgCurrentText || undefined, connectionNote });
           if (result.error) throw new Error(result.error);
           renderMsgTabResult(result.text || '');
           genBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Regenerate`;
@@ -3562,8 +3714,23 @@
 
     } else if (tab === 'connection') {
       let connSelectedStrategy = 'smart_pick';
-      if (!connectionRequest) {
+      if (!connectionRequest && _connNotePendingFor && _connNotePendingFor === currentProfileUrl) {
         body.innerHTML = `
+          <div class="lia-section">
+            <p class="lia-muted-note" role="status"><svg width="13" height="13" class="lia-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Writing your connection note…</p>
+          </div>`;
+        return;
+      }
+      if (!connectionRequest) {
+        const skipped = !worthAutoNote(analysis, intent);
+        body.innerHTML = skipped ? `
+          ${lowFitBannerHtml(analysis, intent)}
+          <div class="lia-section">
+            <p class="lia-muted-note">No note written yet, since this profile looks like a poor fit. You can still write one.</p>
+            <button class="lia-btn-secondary" id="lia-conn-retry-btn">Write a note anyway</button>
+            <div id="lia-conn-retry-error" class="lia-error-msg" style="display:none;margin-top:8px"></div>
+          </div>
+        ` : `
           <div class="lia-section">
             <p class="lia-error-msg">Couldn't generate a connection request for this profile — the analysis above is still good, this piece alone failed.</p>
             <button class="lia-btn-primary" id="lia-conn-retry-btn">Retry</button>
@@ -3573,7 +3740,8 @@
         body.querySelector('#lia-conn-retry-btn').addEventListener('click', async () => {
           const btn = body.querySelector('#lia-conn-retry-btn');
           const errEl = body.querySelector('#lia-conn-retry-error');
-          btn.textContent = 'Retrying...';
+          const label = btn.textContent;
+          btn.textContent = skipped ? 'Writing…' : 'Retrying...';
           btn.disabled = true;
           if (errEl) errEl.style.display = 'none';
           try {
@@ -3586,7 +3754,7 @@
             renderTabContent(analysis, result.text, 'connection', intent);
           } catch (e) {
             renderInlineAiError(errEl, e.message);
-            btn.textContent = 'Retry';
+            btn.textContent = label;
             btn.disabled = false;
           }
         });

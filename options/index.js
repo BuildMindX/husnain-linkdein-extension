@@ -679,11 +679,13 @@ document.getElementById('team-import-btn')?.addEventListener('click', async () =
   }
   if (!confirm('Replace your B2C and B2B targeting profiles and message style with this team setup? Your API keys, pipeline and name are not affected.')) return;
 
-  const mine = await chrome.storage.local.get(['icpProfiles', 'activeIcpProfileId', 'b2cProfiles', 'activeB2cProfileId']);
+  const mine = await chrome.storage.local.get(['icpProfiles', 'activeIcpProfileId', 'b2cProfiles', 'activeB2cProfileId', 'googleUser']);
   const myB2b = (mine.icpProfiles || []).find(p => p.id === mine.activeIcpProfileId) || (mine.icpProfiles || [])[0];
   const myB2c = (mine.b2cProfiles || []).find(p => p.id === mine.activeB2cProfileId) || (mine.b2cProfiles || [])[0];
-  const b2bName = myB2b?.businessProfile?.senderName || '';
-  const b2cName = myB2c?.pitch?.senderName || '';
+  // A rep who never typed a name gets their account's first name, not a blank.
+  const accountName = String(mine.googleUser?.name || '').trim().split(/\s+/)[0] || '';
+  const b2bName = myB2b?.businessProfile?.senderName || myB2c?.pitch?.senderName || accountName;
+  const b2cName = myB2c?.pitch?.senderName || myB2b?.businessProfile?.senderName || accountName;
 
   const update = { companyProfile: companyFields(data.companyProfile) };
   const icpProfiles = (Array.isArray(data.icpProfiles) ? data.icpProfiles : []).map(p => S.sanitizeB2bProfile(p, b2bName));
@@ -995,6 +997,34 @@ chrome.storage.onChanged.addListener((changes, area) => {
   renderPipelineBoard();
   renderNotificationsPanel();
 });
+
+// Delete the whole pipeline. Emptying savedContacts locally is enough to clear the account copy
+// too: the background worker pushes the full settings snapshot (now with an empty pipeline) to
+// save-settings, which replaces the stored blob.
+(function wirePipelineClear() {
+  const $ = id => document.getElementById(id);
+  const btn = $('pipeline-clear-btn'), box = $('pipeline-clear-confirm'), status = $('pipeline-clear-status');
+  if (!btn) return;
+  const close = () => { box.classList.add('hidden'); btn.classList.remove('hidden'); };
+  btn.addEventListener('click', () => {
+    const n = _pipelineContacts.length;
+    if (!n) { status.textContent = 'Your pipeline is already empty.'; return; }
+    $('pipeline-clear-q').textContent = `Delete all ${n} saved contact${n === 1 ? '' : 's'}? This can’t be undone.`;
+    status.textContent = '';
+    btn.classList.add('hidden'); box.classList.remove('hidden');
+    $('pipeline-clear-no').focus();
+  });
+  $('pipeline-clear-no').addEventListener('click', () => { close(); btn.focus(); });
+  $('pipeline-clear-export').addEventListener('click', exportPipelineCSV);
+  $('pipeline-clear-yes').addEventListener('click', async () => {
+    const n = _pipelineContacts.length;
+    await chrome.storage.local.set({ savedContacts: [] });
+    _pipelineContacts = [];
+    renderPipelineBoard(); renderNotificationsPanel();
+    close();
+    status.textContent = `Deleted ${n} contact${n === 1 ? '' : 's'}.`;
+  });
+})();
 
 document.getElementById('pipeline-search')?.addEventListener('input', renderPipelineBoard);
 document.getElementById('pipeline-intent-filter')?.addEventListener('change', renderPipelineBoard);

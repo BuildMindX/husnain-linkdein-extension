@@ -251,6 +251,22 @@
         </div>
         <div id="pipeline-board" class="pipeline-board"></div>
         <div id="pipeline-empty" class="pipeline-empty hidden">No saved contacts yet — save a profile from LinkedIn to start tracking your pipeline.</div>
+        <div class="pipeline-clear" id="pipeline-clear">
+          <div class="pipeline-clear-text">
+            <strong>Start a fresh pipeline</strong>
+            <span>Deletes every saved contact from this browser and from your LinkPilot account. Your setup, posts and plan stay.</span>
+          </div>
+          <button type="button" id="pipeline-clear-btn" class="btn-danger">Delete all contacts</button>
+          <div class="pipeline-clear-confirm hidden" id="pipeline-clear-confirm" role="alertdialog" aria-labelledby="pipeline-clear-q">
+            <p id="pipeline-clear-q"></p>
+            <div class="pipeline-clear-actions">
+              <button type="button" id="pipeline-clear-export" class="btn-secondary">Export CSV first</button>
+              <button type="button" id="pipeline-clear-yes" class="btn-danger btn-danger-solid">Delete all</button>
+              <button type="button" id="pipeline-clear-no" class="btn-secondary">Cancel</button>
+            </div>
+          </div>
+          <span id="pipeline-clear-status" class="status-msg" aria-live="polite"></span>
+        </div>
       </div><!-- end panel-pipeline -->
 
       <!-- ── Tab: Post Creator ──────────────────────────────────────────────── -->

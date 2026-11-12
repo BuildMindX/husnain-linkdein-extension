@@ -1,6 +1,7 @@
 import { ANTHROPIC_API_URL, ANTHROPIC_VERSION, ANTHROPIC_MODEL } from './config.js';
 import '../shared/taxonomy.js';
 import '../shared/schema.js';
+import { HUMAN_VOICE, AI_TELLS_PROMPT, examplesBlock, FOLLOWUP_HISTORY_RULES, FOLLOWUP_PLAYBOOK, findAiTells, cleanPunctuation, recentOpenersNote, rememberOpener } from './writing.js';
 
 const TX = globalThis.LP_TAXONOMY;
 const S = globalThis.LP_SCHEMA;
@@ -18,23 +19,18 @@ async function getApiKey() {
 // reported messages reading as visibly AI-generated — these rules target the actual tells (not
 // just banned phrases): restating what the other person said before responding, formulaic
 // acknowledge-plus-value-plus-question structure, corporate jargon, and uniform sentence rhythm.
-const AUTHENTICITY_RULES = `- No em dashes, zero hyphens used as dashes
-- No emojis
-- Do not start with "Hi [Name]" or "Hey [Name]"
-- Never use generic filler openers: "I hope you're doing well", "I hope this finds you well", "I hope all is well"
-- Never say "I came across your profile", "I noticed from your profile", or "impressive background"
-- Never say "would love to connect"
-- Never restate, summarize, or sympathize with what the other person just said before responding — this includes positive recaps ("It's great to hear that...", "I see you mentioned...", "Thanks for sharing that...") AND sympathetic ones ("That sounds frustrating...", "That must be tough...", "That delay must be annoying..."). Both are the same tell: reacting before contributing. The first sentence should jump straight into your own next point, idea, or question — not comment on theirs first.
-- No corporate or marketing language: "synergies", "circle back", "touch base", "leverage", "unlock", "elevate", "seamless", "value proposition", "reach out", "excited to explore"
-- No generic enthusiasm ("That's amazing!", "Impressive!", "Love this!") — if something is genuinely worth reacting to, react to the specific detail, not with a generic exclamation
-- Do not follow a fixed acknowledge-then-pitch-then-question template every time — real conversation doesn't have a formula, and back-to-back messages that all end in a question read as scripted
-- Vary sentence length and rhythm like a real person typing quickly, not evenly-structured prose
-- Contractions are normal ("I'm", "it's", "don't") — avoid stiff, fully-spelled-out phrasing
-- Never read their profile back to them. Opening with their own title, company, tenure, team size, or stats followed by a judgment ("14 crews across Ohio is a lot of moving parts", "five years at Stripe, now VP at Brex, great arc", "says a lot about your priorities") is the single most recognizable sign of automated outreach. They know their own résumé. If you use a profile detail, it is evidence for something you say about it — what it implies, what it makes hard, or a question it raises — never the point itself
-- No stock outreach phrases: "a lot of moving parts/pieces", "no small thing", "refreshingly honest", "says a lot about", "is where X gets real", "the lesson most teams learn late", "I'd value having you in my network", "hoping to follow along", "must be interesting", "great arc", "right in my lane"
-- Do not default to an either/or question ("what's harder: X or Y?", "is it A or B?"). Across a rep's outbox it is an obvious template. Use it only when those two options genuinely are the crux for this person; otherwise ask one direct, open, specific question
-- Do not smuggle assumptions into questions: never ask about something they haven't said is true (e.g. how their agents are performing when nothing says they run agents)
-- If you mention how long they've been somewhere, compute it from today's date in the profile data — or leave it out; a wrong number destroys credibility`;
+// The voice spec, the AI-tells list and the examples live in writing.js (with the research behind
+// them). These few rules are kept from earlier rounds because each fixed a real, observed failure.
+const AUTHENTICITY_RULES = `${HUMAN_VOICE}
+
+${AI_TELLS_PROMPT}
+
+ALSO:
+- Never read their profile back to them (their title, tenure, team size or stats followed by a judgment). They know their own résumé. A detail is only worth mentioning as the reason you're writing.
+- Never assume something they haven't said is true (don't ask how their agents perform if nothing says they run agents).
+- If you mention how long they've been somewhere, compute it from today's date in the profile data or leave it out.
+- Mutual connections are people you're both connected to, not people you know. Say "we're both connected to Simon", never "we both know Simon".
+- Never restate or sympathise with what they just said before answering ("Thanks for sharing", "That sounds frustrating"). Answer.`;
 
 // Shared by handleGenerateConnectionRequest and handleGenerateFirstMessage — both are
 // pre-conversation one-shots (no thread to ground against yet), so this is scoped to the
@@ -77,92 +73,51 @@ function buildVarietyNote(previousAttempt, strategy) {
   return `\n\nPREVIOUS ATTEMPT — DO NOT REPEAT ITS ANGLE:\n"${trimmed}"\nThis is being regenerated because the user wants something different, not a rewording. ${varietyOptions} If the previous attempt already used the one obvious hook, find a second real detail rather than manufacturing variety through synonyms.`;
 }
 
-// Internal reasoning gate — never surfaced to the user, no trailing-line UI change (unlike the
-// follow-up engine's NEED_ID/LEAD_READ lines): a connection request and a first message are
-// pre-relationship one-shots, not a tracked sequence, so there's no "is this worth pursuing"
-// signal to report back the way there is mid-conversation. This exists purely to shape which
-// detail the model leads with before it starts writing.
-const WHY_THEM_WHY_NOW_GATE = `BEFORE YOU WRITE — WHY THEM / WHY NOW: silently answer three questions before drafting (never write the answers into the message, never label or restate them, never let them show up as meta-commentary):
-1. Why THIS person — what's actually specific to their situation, not just their job title in general, makes them worth reaching out to?
-2. Why NOW — is there a real, current reason this outreach makes sense at this moment (their role, their company's stage, a live signal in their profile), or is the timing arbitrary? If it's arbitrary, don't manufacture urgency — write a message that doesn't lean on false timeliness.
-3. Why THIS angle — of everything you could open with, why does the specific detail or question you're about to use matter to THEM, not just to the sender's own goal?
-Let the answers decide which detail you lead with and what you ask. The message itself should read like the natural product of that thinking, not like the reasoning was skipped.`;
-
 // Shared by handleGenerateConnectionRequest and handleGenerateFirstMessage only — a user-selectable
 // structural pattern for *how* to open a pre-relationship message, same "pick a named instructional
-// block by key" shape as STAGE_TO_ANGLE below, just chosen by the user up front instead of derived
-// from tracked stage. CONNECTION_REQUEST_FRAMEWORK/buildFirstMessageFramework() still govern length/
+// block by key" shape as STAGE_TO_SITUATION below, just chosen by the user up front instead of derived
+// from tracked stage. CONNECTION_REQUEST_FRAMEWORK/FIRST_MESSAGE_FRAMEWORK still govern length/
 // no-pitch/grounding; a strategy only decides which kind of opening detail to lead with.
 const STRATEGY_PLAYBOOK = {
-  smart_pick: `STRATEGY — SMART PICK: no strategy was chosen, so you choose one. Before writing, privately judge which of the approaches below best fits what you actually know about this person: a recent post or specific activity available → lead with CURIOSITY GAP or SHARP QUESTION; a senior/time-poor title with little other signal → DIRECT & CLEAR; almost no usable signal at all → GIVE FIRST or DIRECT & CLEAR (never force a different one just to seem personalized when the data isn't there); a genuine mutual connection or shared context visible in the data → SHARED GROUND. Pick exactly one, commit to it fully, and do not mention or hint that you made this choice.`,
-  curiosity_gap: `STRATEGY — CURIOSITY GAP: open with one concrete, specific, slightly unexpected observation about this person or their recent activity — not a compliment, not a restatement of their title. The observation should create a genuine open loop (something the reader wants to know more about), not just state a fact. Close with a question that only they, specifically, could answer — never a generic one that could go to anyone.`,
-  direct_value: `STRATEGY — DIRECT & CLEAR: skip any warm-up, scene-setting, or compliment. The first sentence must name the concrete reason for this message — the specific thing about them you're writing about and why it matters — so it could not be mistaken for flattery. Then stop. This does not mean pitching: "clear" means the reader instantly understands why you're messaging them, not what you're selling. Best suited to senior or clearly time-poor recipients; still follows every no-pitch rule elsewhere in this prompt.`,
-  problem_first: `STRATEGY — PROBLEM-FIRST: name one specific challenge or friction point that someone in their actual role, industry, or company stage plausibly deals with right now — grounded in their real profile data, not a generic industry template that could apply to anyone in that field. State it as an observation, then ask directly whether it resonates for them. Never follow it with a solution, a pitch, or any hint of what the sender offers — that conversation only happens if they reply.`,
-  shared_ground: `STRATEGY — SHARED GROUND: reference a real mutual connection, shared context, or overlap that is ACTUALLY present in the profile data below (a stated mutual-connections count, an overlapping employer in their experience history, a shared group or interest literally visible in the data) — never one you infer or assume. A mutual-connections count in the data is real and usable: mentioning it plainly (e.g. the number you share) is a valid shared-ground opener. If nothing genuine like this exists in the data, do not force it: silently switch to the DIRECT & CLEAR approach instead and write that kind of message, without mentioning the switch.`,
-  sharp_question: `STRATEGY — SHARP QUESTION: the message IS the question — there is no separate observation before it. Ask one specific, well-researched question that references a real, concrete detail from their profile or activity, proving you actually looked. Never a generic conversation-starter question ("How's business?", "What are you working on these days?") — if the question could be sent to 1,000 other people unchanged, it is not specific enough.`,
-  give_first: `STRATEGY — GIVE FIRST: share one genuinely specific insight, observation, or useful point relevant to their actual situation — something that gives them something, not something that asks for their time. No ask at the end, or at most one extremely soft, easy-to-ignore one. Works especially well written peer-to-peer rather than vendor-to-prospect.`,
-  relevant_pattern: `STRATEGY — RELEVANT PATTERN: briefly mention a pattern or trend the SENDER has genuinely noticed, drawn only from the sender's own stated background/expertise provided below (never invented client names, counts, or testimonials) — phrase it as an honest observation ("I've noticed...", "A few people in [X]...") not a credential or a pitch. If no real sender background is available to draw from, do not invent one — fall back to DIRECT & CLEAR instead.`,
+  smart_pick: `STRATEGY: pick the opening yourself from what's actually in the data. Something they posted or a recent change (new role, funding, a hire, a launch) is the best reason to write. A mutual connection or shared employer is next. With little else, say plainly who you are and why them. Don't mention that you chose.`,
+  curiosity_gap: `STRATEGY: open with one specific thing about their work you noticed, in plain words, and ask the one thing about it you'd actually want to know.`,
+  direct_value: `STRATEGY: first sentence says plainly who you are and why you're writing to them. No warm-up. Then stop or ask one easy question.`,
+  problem_first: `STRATEGY: name one problem people in their exact situation usually hit (grounded in their profile, not a generic industry line), then ask plainly if it's true for them. No solution, no pitch.`,
+  shared_ground: `STRATEGY: start from something you really share that's in the data (mutual connections, a past employer, a group). If nothing real is there, write a plain direct message instead and don't mention it.`,
+  sharp_question: `STRATEGY: the message is one specific question about a real detail in their profile or posts. A question you could send to anyone doesn't count.`,
+  give_first: `STRATEGY: give one useful, specific thing (a tip, a number, a fix) that fits their situation, from the sender's real experience. No ask, or a very soft one.`,
+  relevant_pattern: `STRATEGY: share one thing the sender has seen in their own work (only from the sender context, never invented) that applies to this person, then ask if it matches what they see.`,
 };
 
 function buildStrategyGuidance(strategyId) {
   return STRATEGY_PLAYBOOK[strategyId] || STRATEGY_PLAYBOOK.smart_pick;
 }
 
-// Stage values come from content/index.js's saved-contact pipeline tracking (STAGE_ORDER).
-// When a tracked stage is available it gives the model ground truth instead of asking it to
-// count messages in scraped conversation text — a heuristic that's proven noisy in practice.
-const STAGE_TO_ANGLE = {
-  messaged:      { n: '1st', angle: 'INSIGHT/CURIOSITY angle — surface a new observation, thought, or question. Do not repeat the opener\'s ask.' },
-  followup_1:    { n: '2nd', angle: 'RESOURCE/REFERRAL angle — offer something specific and low-friction (a relevant point, a useful angle, an easy specific question).' },
-  followup_2:    { n: '3rd+', angle: 'DIRECT angle — either a specific, concrete ask, or a low-pressure graceful exit (e.g. acknowledging the timing might be off) — pick whichever fits the conversation\'s tone.' },
-  followup_3plus:{ n: '3rd+', angle: 'DIRECT angle — either a specific, concrete ask, or a low-pressure graceful exit (e.g. acknowledging the timing might be off) — pick whichever fits the conversation\'s tone.' },
+// Stage values come from content/index.js's saved-contact pipeline (STAGE_ORDER). They point at
+// the likely playbook situation (writing.js FOLLOWUP_PLAYBOOK); the thread itself has the final say.
+const STAGE_TO_SITUATION = {
+  connection_sent: 'D (connected, no reply yet) unless the thread shows otherwise',
+  messaged: 'A (no reply yet, 1st follow-up)',
+  followup_1: 'B (no reply yet, 2nd follow-up)',
+  followup_2: 'C (no reply yet, final message)',
+  followup_3plus: 'C (no reply yet, final message), or nothing more should be sent',
 };
 
 function buildFollowupAngleRules(stage, daysSinceLastTouch, recipient) {
   const who = recipient || 'the recipient';
-  const grounding = `GROUNDING — read this first: only reference things that are literally present in the conversation text below, or in the ADDITIONAL CONTEXT FROM THE USER section if one is present. Never invent, assume, or imply that the recipient said, shared, replied with, or asked something that isn't actually there. If the recipient has not sent any message at all yet, the follow-up must not thank them, react to something they said, or reference any input from them — it is a continuation of the sender's own outreach, not a reply to one. When in doubt, keep it generic rather than fabricating a specific detail.`;
+  const sections = [];
+  sections.push(`GROUNDING: only use what is literally in the conversation, the sender context, or the ADDITIONAL CONTEXT section. Never invent that ${who} said, asked or shared something. If ${who} hasn't written anything yet, don't thank them or react to anything from them.`);
 
-  // Real LinkedIn outreach data: the follow-ups that actually get replies are the ones built
-  // around what the prospect specifically needs, not a template nudge that could go to anyone.
-  // This runs BEFORE angle selection — decide what to write toward before deciding how.
-  const needFirst = `BEFORE YOU WRITE — IDENTIFY THE NEED: read the conversation and figure out what ${who} actually needs, wants, or is concerned about right now — their situation, any pain or friction they've named or implied, and what's actually at stake for them if it goes unaddressed. This is about ${who}'s situation, not the sender's pitch. If ${who} has sent a real reply in the thread, ground this in what they specifically said. If there's no reply yet (a cold sequence), ground it in what's reasonably inferable from their role, their company, or the sender's own stated reason for reaching out — never invent a need that isn't supportable from what's actually there. Then write the follow-up so it visibly moves toward that identified need — it should read like the one natural next thing to say to THIS specific person, not a generic nudge.`;
-
-  // A contact who replied once and then went quiet for weeks isn't mid-conversation anymore —
-  // treating it as thread continuation reads as oblivious to the silence. Checked before the
-  // normal stage lookup since 'replied' has no entry in STAGE_TO_ANGLE.
-  const WENT_COLD_THRESHOLD_DAYS = 14;
-  const wentCold = stage === 'replied' && Number.isFinite(daysSinceLastTouch) && daysSinceLastTouch >= WENT_COLD_THRESHOLD_DAYS;
-
-  const known = STAGE_TO_ANGLE[stage];
-  const angleSection = wentCold
-    ? `${who} replied before, but it's been ${daysSinceLastTouch} days of silence since — this is a genuine re-engagement, not a continuation of a live thread, even though the topic below is the only thing you have to go on. Concretely: do NOT ask another question that digs deeper into the same specific detail ${who} raised last time (e.g. do not keep probing the same pain point, tool gap, or process they described) — that is what a live-thread reply looks like, and it is wrong here. Instead, either (a) bring something adjacent but new — a different angle on the same broad topic, a relevant idea or resource, a question about how things have evolved since — or (b) keep it short and open-ended about whether it's still worth talking, without re-litigating the old specifics. Acknowledge the gap only if it helps rather than drawing attention to it, and keep the ask low-pressure — the goal is to see if the door is still open, not to push for a decision.`
-    : known
-    ? `This is the ${known.n} follow-up in this outreach (tracked from the sender's saved pipeline stage, not guessed) — use the ${known.angle}\nNever repeat the angle, ask, or phrasing of an earlier message in the thread.`
-    : `Determine which follow-up this is by counting how many messages the sender has already sent in this thread, then pick the angle accordingly — never repeat the angle, ask, or phrasing of an earlier message in the thread:
-- 1st follow-up: INSIGHT/CURIOSITY angle — surface a new observation, thought, or question. Do not repeat the opener's ask.
-- 2nd follow-up: RESOURCE/REFERRAL angle — offer something specific and low-friction (a relevant point, a useful angle, an easy specific question).
-- 3rd+ follow-up: DIRECT angle — either a specific, concrete ask, or a low-pressure graceful exit (e.g. acknowledging the timing might be off) — pick whichever fits the conversation's tone.`;
-
-  const newReasonRule = `Don't just avoid repeating the previous angle — actively find a NEW, distinct reason this specific message is worth ${who}'s time right now. If you can't articulate a genuinely new reason beyond "checking in again," that itself is a signal: lean toward the graceful-exit half of the DIRECT angle instead of sending another content-free nudge.`;
-
-  // Grounded in real outreach data, not just style preference: 55% of replies on LinkedIn come
-  // from follow-ups, not the first message, and reply rates keep climbing through the 2nd-3rd
-  // well-spaced follow-up before falling off — so every touch has to earn its place, not just
-  // exist.
-  const goalFraming = `The goal of this outreach sequence is to earn a real next step (a reply, a call, a closed opportunity) — every follow-up should feel like a deliberate step toward that, not a random check-in. Most replies come from a good 2nd or 3rd follow-up, not the first message — this touch matters as much as the opener did.`;
-  const formatting = `Write the message as two short paragraphs separated by a blank line — never one dense block. Each paragraph carries one idea.`;
-  const closing = `Never use dead follow-up phrases: "just following up", "just checking in", "wanted to circle back", "touching base", "bumping this to the top of your inbox".
-End with exactly one CTA, placed as the final sentence.`;
-
-  const sections = [grounding, needFirst, angleSection, newReasonRule, goalFraming, formatting, closing];
+  const wentCold = stage === 'replied' && Number.isFinite(daysSinceLastTouch) && daysSinceLastTouch >= 14;
+  if (wentCold) sections.push(`PIPELINE: ${who} replied before, then ${daysSinceLastTouch} days of silence. Most likely situation N (went quiet after a good exchange). Don't keep digging into the same detail as last time.`);
+  else if (STAGE_TO_SITUATION[stage]) sections.push(`PIPELINE: tracked stage points to situation ${STAGE_TO_SITUATION[stage]}. If the thread shows ${who} has replied since, follow the thread instead.`);
+  if (stage === 'followup_3plus') sections.push(`Three or more messages have gone out with no reply. More follow-ups do worse than none. Write only a short, graceful last message (situation C).`);
 
   if (Number.isFinite(daysSinceLastTouch)) {
-    sections.push(`It has been ${daysSinceLastTouch} day${daysSinceLastTouch === 1 ? '' : 's'} since the last message was sent to this person — this is real tracked elapsed time, not a guess. Use it to judge tone (a follow-up after 2 days reads differently than one after 6 weeks).`);
-    sections.push(`TIMING CHECK: if it has been fewer than 2 days since the last message with no reply, still write the follow-up exactly as instructed above, then add one final line starting with exactly "TIMING_NOTE: " briefly explaining why the user may want to hold off a few more days before sending — this note is for the user only, never part of the message itself. If the elapsed time is reasonable, do not include a TIMING_NOTE line at all; most of the time there should be no note.`);
+    sections.push(`It has been ${daysSinceLastTouch} day${daysSinceLastTouch === 1 ? '' : 's'} since the last message to ${who} (tracked, not a guess).`);
+    sections.push(`TIMING_NOTE: if it has been fewer than 3 days since the sender's last message and ${who} hasn't replied, still write the message, then add one line starting exactly "TIMING_NOTE: " telling the user to wait a few days before sending (for the user only). Otherwise no TIMING_NOTE line.`);
   }
-
-  sections.push(`NEED_ID LINE: after the message, on its own new line, add exactly one line starting with "NEED_ID: " stating in one sentence the specific need you identified and wrote toward. Omit this line entirely only if the thread has zero replies and zero usable signal to infer a need from (a true cold first touch with nothing to go on) — in every other case, include it.`);
-
+  sections.push(`NEED_ID: after the message, add one line starting exactly "NEED_ID: " with, in one sentence, what ${who} actually needs or cares about that this message moves toward. Leave it out only on a cold thread with nothing to infer from.`);
   return sections.join('\n\n');
 }
 
@@ -184,18 +139,22 @@ async function getModeContext(intent) {
   await ensureMigrated();
   const mode = S.normalizeIntent(intent);
   if (mode === 'b2b_sales') {
-    const r = await chrome.storage.local.get(['icpProfiles', 'activeIcpProfileId', 'messagePresets']);
+    const r = await chrome.storage.local.get(['icpProfiles', 'activeIcpProfileId', 'messagePresets', 'googleUser']);
     const list = Array.isArray(r.icpProfiles) ? r.icpProfiles : [];
     const profile = list.find(p => p.id === r.activeIcpProfileId) || list[0] || S.emptyB2bProfile();
-    return finishContext(mode, profile, r.messagePresets);
+    return finishContext(mode, profile, r.messagePresets, r.googleUser);
   }
-  const r = await chrome.storage.local.get(['b2cProfiles', 'activeB2cProfileId', 'b2cMessagePresets']);
+  const r = await chrome.storage.local.get(['b2cProfiles', 'activeB2cProfileId', 'b2cMessagePresets', 'googleUser']);
   const list = Array.isArray(r.b2cProfiles) ? r.b2cProfiles : [];
   const profile = list.find(p => p.id === r.activeB2cProfileId) || list[0] || S.emptyB2cProfile();
-  return finishContext(mode, profile, r.b2cMessagePresets);
+  return finishContext(mode, profile, r.b2cMessagePresets, r.googleUser);
 }
 
-function finishContext(mode, profile, presets) {
+// First name of the signed-in account — the fallback when "Your first name" was left blank
+// (e.g. a rep who imported a team setup, which never carries anyone's name).
+const accountFirstName = user => String(user?.name || '').trim().split(/\s+/)[0] || '';
+
+function finishContext(mode, profile, presets, googleUser) {
   const icp = { ...S.emptyIcp(), ...(profile.icp || {}) };
   const isB2b = mode === 'b2b_sales';
   const sender = isB2b ? (profile.businessProfile || {}) : (profile.pitch || {});
@@ -205,7 +164,7 @@ function finishContext(mode, profile, presets) {
   const hasSender = isB2b
     ? !!(sender.offer || sender.expertise || (sender.proofPoints || []).some(Boolean))
     : !!(sender.oneLiner || sender.services || sender.background || sender.currentTitle || (sender.skills || []).length);
-  return { mode, isB2b, profile, icp, sender, seeking: profile.seeking || {}, presets: S.sanitizePresets(presets, mode), hasTargets, hasSender, senderName: sender.senderName || '' };
+  return { mode, isB2b, profile, icp, sender, seeking: profile.seeking || {}, presets: S.sanitizePresets(presets, mode), hasTargets, hasSender, senderName: sender.senderName || accountFirstName(googleUser) };
 }
 
 const optLabel = (list, id) => (list.find(o => o.id === id) || {}).label || '';
@@ -301,18 +260,18 @@ function buildSenderContext(ctx) {
 // meeting ask on a first touch, which is why "ask if it's relevant" is the default ending.
 const ENDING_RULES = {
   b2b_sales: {
-    ask_relevant: 'End with one low-friction interest question — whether this is a priority or relevant for them right now. Never ask for a call or meeting.',
-    offer_value: 'End by offering one small, specific, useful thing (an idea, an example, a short teardown) they can accept with a one-word reply — phrased as a question.',
-    ask_right_person: 'End by asking, as a question, who the right person to talk to about this would be.',
-    suggest_call: 'End with a light suggestion of a short call, phrased as an easy-to-decline question.',
-    no_ask: 'No ask at all — end on a genuine question about their work.',
+    ask_relevant: 'End with one easy, low-pressure check on whether this is relevant for them right now. A question or a plain sentence. Never ask for a call or meeting.',
+    offer_value: 'End by offering one small, specific, useful thing (an example, a short teardown, a schema) they can accept with one word.',
+    ask_right_person: 'End by asking who the right person to talk to about this would be.',
+    suggest_call: 'End with a light, easy-to-decline suggestion of a short call.',
+    no_ask: 'No ask. End on a normal remark or question about their work.',
   },
   b2c_sales: {
-    ask_relevant: 'End with one low-friction question about whether they are building or hiring in this area, or could use help with it. Never ask for a job outright and never sound like an application.',
-    offer_value: 'End by offering one small, specific, useful thing (a quick idea, a sample, a short teardown of something they posted) they can accept with a one-word reply — phrased as a question.',
-    ask_right_person: 'End by asking, as a question, who the right person on their team would be to talk to about this kind of work.',
-    suggest_call: 'End with a light suggestion of a short call, phrased as an easy-to-decline question.',
-    no_ask: 'No ask at all — end on a genuine question about their work.',
+    ask_relevant: 'End with one easy check on whether they are hiring or bringing in help for this kind of work, or an honest line that you\'d be up for it. Never ask for a job outright.',
+    offer_value: 'End by offering one small, specific, useful thing (a quick idea, a sample, a short note on what you\'d check) they can accept with one word.',
+    ask_right_person: 'End by asking who on their team would be the right person to talk to about this kind of work.',
+    suggest_call: 'End with a light, easy-to-decline suggestion of a short call.',
+    no_ask: 'No ask. End on a normal remark or question about their work.',
   },
 };
 const TONE_RULES = {
@@ -420,7 +379,19 @@ function isThinProfile(p) {
 // No `temperature` is sent: the configured model (claude-sonnet-5-5) rejects the parameter as
 // deprecated, so sampling is left to the API and output consistency comes from the prompts plus
 // the retry guard in callAIWithBannedPhraseGuard.
+// Text is trimmed with .slice() in many places (post excerpts, profile sections). A cut through
+// the middle of an emoji leaves half a UTF-16 surrogate pair; JSON.stringify writes it as a lone
+// "\ud83d" escape and Anthropic rejects the whole request ("unexpected end of hex escape"). Seen
+// live on a real profile whose posts used emoji. Repair every prompt here, once, for all callers.
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+export function wellFormed(text) {
+  const s = String(text ?? '');
+  return typeof s.toWellFormed === 'function' ? s.toWellFormed() : s.replace(LONE_SURROGATE, '�');
+}
+
 async function callAI(systemPrompt, userPrompt) {
+  systemPrompt = wellFormed(systemPrompt);
+  userPrompt = wellFormed(userPrompt);
   const apiKey = await getApiKey();
   const response = await fetch(ANTHROPIC_API_URL, {
     method: 'POST',
@@ -507,30 +478,52 @@ function findBannedPhrase(text) {
 // equally crisp, unambiguous signature (e.g. "no pitch" or "grounded in real data" can't be
 // verified by a string check) — better to leave those to the instructions
 // than add a brittle heuristic that could false-positive on a genuinely good message.
-function violatesStrategyShape(text, strategy, requireQuestion) {
+function violatesStrategyShape(text, strategy) {
   const trimmed = (text || '').trim();
-  const endsInQuestion = /[?？]\s*$/.test(trimmed);
-  if (strategy === 'sharp_question' && trimmed && !endsInQuestion) return 'was written as the Sharp Question strategy but doesn\'t end in a question';
-  // First messages must close on one low-friction question (the framework's rule 3) — measured: ~1
-  // in 10 ended on a statement instead. Give First is exempt: it deliberately may carry no ask.
-  if (requireQuestion && strategy !== 'give_first' && trimmed && !endsInQuestion) return 'did not end with the one low-friction question the framework requires';
+  if (strategy === 'sharp_question' && trimmed && !/[?？]\s*$/.test(trimmed)) return 'was written as the Sharp Question strategy but doesn\'t end in a question';
   return null;
 }
 
-async function callAIWithBannedPhraseGuard(systemPrompt, userPrompt, maxChars, strategy, { requireQuestion = false } = {}) {
-  const first = await callAI(systemPrompt, userPrompt);
-  const hit = findBannedPhrase(first);
-  const overLength = typeof maxChars === 'number' && first.length > maxChars;
-  const shapeViolation = violatesStrategyShape(first, strategy, requireQuestion);
-  if (!hit && !overLength && !shapeViolation) return first;
-
-  const violations = [];
-  if (hit) violations.push(`used a banned phrase: "${hit}"`);
-  if (overLength) violations.push(`ran ${first.length} characters, over the ${maxChars}-character limit`);
-  if (shapeViolation) violations.push(shapeViolation);
-  const retryPrompt = `${systemPrompt}\n\nYour previous attempt ${violations.join(' and ')}. Rewrite from scratch fixing this — don't just trim or swap words, write a genuinely tighter version that respects every rule above.`;
-  return callAI(retryPrompt, userPrompt);
+// Every outreach message goes through here: the banned list above, the AI-tells check from
+// writing.js, length, question count and strategy shape. One rewrite with the exact problems
+// named, never a loop; then punctuation-only cleanup so a stray dash or "!" can't survive.
+async function callAIWithBannedPhraseGuard(systemPrompt, userPrompt, maxChars, strategy, { maxQuestions = 1, maxSentences = null, rememberOpening = false } = {}) {
+  const problemsOf = text => {
+    const body = stripMetaLines(text);
+    const out = [];
+    const hit = findBannedPhrase(body);
+    if (hit) out.push(`used a banned phrase: "${hit}"`);
+    const tells = findAiTells(body, { maxQuestions });
+    if (tells.length) out.push(`read as AI-written because it used ${tells.slice(0, 8).join(', ')}`);
+    if (typeof maxChars === 'number' && body.length > maxChars) out.push(`ran ${body.length} characters, over the ${maxChars}-character limit`);
+    const sentences = (body.match(/[^.?!]+[.?!]+/g) || []).filter(x => x.trim().split(/\s+/).length > 1).length;
+    if (maxSentences && sentences > maxSentences) out.push(`had ${sentences} sentences, more than ${maxSentences}`);
+    const shape = violatesStrategyShape(body, strategy);
+    if (shape) out.push(shape);
+    return out;
+  };
+  let text = await callAI(systemPrompt, userPrompt);
+  const problems = problemsOf(text);
+  if (problems.length) {
+    const retryPrompt = `${systemPrompt}\n\nYour previous attempt was:\n"${stripMetaLines(text)}"\nIt ${problems.join('; and it ')}. Rewrite it from scratch in plain words, the way a person would type it, fixing all of that.`;
+    text = await callAI(retryPrompt, userPrompt);
+  }
+  const { body, meta } = splitMetaLines(text);
+  const clean = cleanPunctuation(body);
+  if (rememberOpening) rememberOpener(clean);
+  return meta ? `${clean}\n${meta}` : clean;
 }
+
+// Follow-ups carry NEED_ID / LEAD_READ / TIMING_NOTE lines after the message for the panel; the
+// checks and the cleanup apply to the message only.
+const META_LINE = /^(NEED_ID|LEAD_READ|TIMING_NOTE):/;
+function splitMetaLines(text) {
+  const lines = String(text || '').split('\n');
+  const i = lines.findIndex(l => META_LINE.test(l.trim()));
+  if (i === -1) return { body: String(text || '').trim(), meta: '' };
+  return { body: lines.slice(0, i).join('\n').trim(), meta: lines.slice(i).join('\n').trim() };
+}
+const stripMetaLines = text => splitMetaLines(text).body;
 
 // ─── Profile Analysis ─────────────────────────────────────────────────────────
 
@@ -729,9 +722,11 @@ One entry per input person, in the same order, using the exact same "id" value g
 // of the sender, even to someone who had just posted the sender's exact role — measured: the model
 // either broke the rule or wrote a "just networking" note a strict reviewer read as a disguised
 // application. Honest interest beats a disguise when the need is public; otherwise stay peer-to-peer.
-const B2C_OPPORTUNITY_RULE = `OPPORTUNITY RULE — first decide which situation this is, from their profile data only:
-(a) They visibly need what the sender does: hiring for a matching role, a post asking for help, a project or problem in the sender's area (a recruiter or hiring manager whose headline, role description or posts mention it). Be honest about the interest — pretending to "just network" with someone who publicly posted the need reads as a disguised application. In one short clause name the role or need, give ONE concrete reason the sender fits (only from the sender's real background below), then ask one specific question about it. No résumé dump, nothing desperate ("any opportunity", "please consider me"), never "open to work" or "hire me".
-(b) Anyone else: pure peer conversation about their work, with no job-seeking and no pitch. The sender is a fellow professional in the same field, not a candidate or a vendor.`;
+const B2C_OPPORTUNITY_RULE = `WHICH SITUATION IS THIS (decide from the profile data only):
+(a) They visibly need what the sender does: hiring for a matching role, a post asking for help, a project in the sender's area. Say plainly you saw it, give ONE concrete fit fact from the sender's real background, and ask about it.
+(b) They could hire or bring the sender in (founder, CTO, engineering or product lead, hiring manager or recruiter at a relevant company) but nothing shows an opening. Give the specific reason you're writing, say in a few words what kind of work the sender does, and make a soft, honest ask ("are you bringing in outside help for that?", "if you ever need an extra pair of hands on the AI side, I'd be up for it").
+(c) A peer with no say in hiring: a normal conversation about their work. No ask for work.
+Never sound desperate ("any opportunity", "please consider me"), never "open to work" or "hire me", never a résumé dump.`;
 
 // Grounded in 2026 LinkedIn acceptance-rate research (Leadriver's 50,000+ request benchmark,
 // Belkins' 20M+ outreach study, Closely's connection-request psychology data): acceptance barely
@@ -740,68 +735,45 @@ const B2C_OPPORTUNITY_RULE = `OPPORTUNITY RULE — first decide which situation 
 // personalization adds 12-20% acceptance on top of basic company/role context, layered on top of
 // each other; a note that sells is the fastest way to get ignored, even faster than in a first
 // message, since there isn't even a relationship yet to justify it.
-const CONNECTION_REQUEST_FRAMEWORK = `CONNECTION REQUEST FRAMEWORK — a recipient decides in 3-7 seconds, so every word has to earn its place:
-
-1. ONE REAL TRIGGER: name one specific, individual, ideally recent reason for reaching out — a post they made, a role change, something concrete about their current work. A real trigger beats a static fact (their title or company name alone) every time — static facts barely move acceptance on their own.
-2. NO SELLING: a connection note that pitches, offers, or explains what the sender does gets ignored faster here than anywhere else in the sequence — there isn't even a relationship yet to justify it. The trigger itself is the reason to connect; it doesn't need a value pitch attached.
-3. SHORTER THAN THE LIMIT: the character cap below is a ceiling, not a target to fill. The strongest notes in the data run 140-180 characters — well under most limits — not padded out to the maximum. Only use more of the budget if there's a second real, specific detail worth adding, never to sound more thorough.
-
-If there is no genuine trigger for this person, a short, honest, low-key note beats a generic one dressed up to sound personalized — vague flattery performs worse than no note at all.
-
-4. IT IS AN INVITATION, NOT A MESSAGE: they have not accepted yet. Never write as if they have ("glad to have you in my network", "thanks for connecting", "great to be connected"). Never sign off with your name — LinkedIn already shows who sent it, and a sign-off wastes characters.`;
+// Research (MD/messaging_playbook.md): a note barely changes acceptance but lifts later replies
+// (Belkins 2026: 8.2% vs 5.3%); honest stated-reason notes book more calls than vague ones (La
+// Growth Machine); notes themselves rarely get replies, so the note's job is acceptance + context.
+const CONNECTION_REQUEST_FRAMEWORK = `WHAT A GOOD NOTE DOES (it's an invitation, they haven't accepted yet):
+- Start with "Hi <first name>," using their real first name.
+- Give the real reason you're writing to THEM: one specific thing from their profile or activity (a post, a role they're hiring for, a launch, a move, their company's focus). Say it plainly.
+- Say who you are in a few words, only if it explains the reason (what you build, for whom).
+- End however a person would: "Happy to connect.", "Would be good to connect.", "Glad to connect either way." or one short question. A question is optional.
+- 100 to 180 characters is ideal. 200 is the hard limit.
+- No pitch: no services list, no results, no ask for a call, no link. Never write as if they already accepted ("thanks for connecting").
+- If nothing specific is in the data, keep it short and honest: who you are and why their kind of company is relevant to you. Never invent a detail.`;
 
 export async function handleGenerateConnectionRequest(profileData, intent, userNotes, contextMaterial, previousAttempt, strategy) {
   const ctx = await getModeContext(intent);
   const senderCtx = buildSenderContext(ctx);
-  let systemPrompt;
-
-  if (!ctx.isB2b) {
-    systemPrompt = `You write LinkedIn connection requests for an individual professional who is finding work — a job, freelance or contract projects, or a place on a team — by connecting with people who could hire them, refer them, or bring them in. Write like a real person in the same field, never like a cover letter or a vendor.
-
-PRIORITY RULE: Base the message on their CURRENT role, company, or recent activity. Never reference posts from a previous employer. Never fabricate a specific detail that isn't actually in the profile data (see GROUNDING below) — if nothing specific is available, write a warm, natural message using their current title and company. Always produce a message — never refuse, never ask for clarification, and never leave a placeholder or note saying information is missing.
+  const who = ctx.isB2b
+    ? 'You write LinkedIn connection notes for someone at a small company who wants to start real conversations with people who could become clients.'
+    : 'You write LinkedIn connection notes for an individual professional who wants work (a job, contract or freelance projects, a place on a team) from people who could hire them, refer them or bring them in. It may be honest that they do this kind of work, but it never reads like a cover letter or begs.';
+  let systemPrompt = `${who}
 
 ${CONNECTION_REQUEST_FRAMEWORK}
 
 ${buildStrategyGuidance(strategy)}
 
-Rules:
-- Hard limit: 200 characters total (count carefully)
-- No corporate speak, no buzzwords, no links
-- Never say "looking for opportunities", "open to work", "hire me", or describe services
-${B2C_OPPORTUNITY_RULE}
 ${PRECONVERSATION_GROUNDING}
 
-${WHY_THEM_WHY_NOW_GATE}
 ${AUTHENTICITY_RULES}
 
-Return ONLY the connection request text. Nothing else. No quotes around it.`;
-  } else {
-    systemPrompt = `You write LinkedIn connection requests. Write like a real person, not a marketer.
+${examplesBlock('connection', ctx.mode)}
 
-PRIORITY RULE: Base the message on their CURRENT role if possible. Only reference posts if they clearly relate to their current job — never reference posts from a previous employer. Never fabricate a specific detail that isn't actually in the profile data (see GROUNDING below) — if there is nothing specific enough to reference, write a warm, natural message using just their current title and company. Always produce a message — never refuse, never ask for clarification, and never leave a placeholder or note saying information is missing.
-
-${CONNECTION_REQUEST_FRAMEWORK}
-
-${buildStrategyGuidance(strategy)}
-
-Rules:
-- Hard limit: 200 characters total (count carefully)
-- No corporate speak, no buzzwords, no links
-- No selling, no pitching, no mention of your own work
-- Sound like a genuine human reaching out
-${PRECONVERSATION_GROUNDING}
-
-${WHY_THEM_WHY_NOW_GATE}
-${AUTHENTICITY_RULES}
-
-Return ONLY the connection request text. Nothing else. No quotes around it.`;
-  }
+Base it on their CURRENT role and company. Never reference posts from a previous employer. Always produce a note: never refuse, never ask for clarification, never leave a placeholder.
+Return ONLY the note text. No quotes around it.`;
   systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStyleRules(ctx, { connection: true })}`;
-  if (senderCtx) systemPrompt += `\n\n${senderCtx}\n(Sender context is for calibration and, in B2C case (a) only, one honest fit reason — never pitch it in a connection note.)`;
+  if (senderCtx) systemPrompt += `\n\n${senderCtx}\n(Use at most a few words of this to say who the sender is. Never list it.)`;
   systemPrompt += buildUserContextSection(contextMaterial);
   systemPrompt += buildVarietyNote(previousAttempt, strategy);
+  systemPrompt += await recentOpenersNote();
 
-  const text = await callAIWithBannedPhraseGuard(systemPrompt, buildProfileText(profileData, userNotes), 200, strategy);
+  const text = await callAIWithBannedPhraseGuard(systemPrompt, buildProfileText(profileData, userNotes), 200, strategy, { maxSentences: 3, rememberOpening: true });
   return { text: stripSignOff(text, ctx.senderName) };
 }
 
@@ -820,145 +792,69 @@ function stripSignOff(text, senderName) {
 
 // ─── First Message ────────────────────────────────────────────────────────────
 
-// Grounded in 2026 cold-outreach data: first touches that pitch (features, ROI, "we help companies
-// like yours", a call ask) fall below 5% reply; concise 40-70 word messages built on one real detail
-// and a low-friction question land around 25-40%. The pure no-pitch version of this, though, made
-// every message read as a curious peer with no reason to be writing — the BD team's direct complaint
-// was that messages never said why the sender was relevant. allowBridge permits exactly one short
-// relevance clause (sender's real expertise tied to THEIR situation) without crossing into a pitch.
-// Job Search passes false: a job seeker's first message stays entirely about the recipient.
-function buildFirstMessageFramework(allowBridge) {
-  const situation = allowBridge
-    ? `2. THEIR SITUATION FIRST, PLUS ONE RELEVANCE BRIDGE: keep the message mostly about them — an observation, or what you noticed about their situation. Then add exactly ONE short clause (about 15 words max) that connects what the sender genuinely does (taken only from the sender context provided — never invented) to THIS person's specific situation, so they understand why you, specifically, are writing. Make it specific to THEIR problem — name the particular thing the sender has built or worked on that relates to what this person described — not a generic company tagline. Test it: if the bridge would read the same in a message to a different prospect, it is a tagline — rewrite it to name the specific part of THEIR problem the sender works on. Phrase it fresh every time: never use stock bridge phrasing like "so this is familiar", "familiar ground", "this one's familiar", or "I think about this a lot". It is context, not a pitch: no feature lists, no ROI or efficiency claims, no "we help companies like yours", no pricing, no request for a call or meeting. If there is no sender context, or the bridge would feel forced for this person, leave it out entirely.`
-    : `2. THEIR SITUATION, NOT YOUR PITCH: the body stays entirely about them — an observation, a genuine question, or what you noticed about their situation. Do not describe what the sender does, offers, or has achieved, and do not hint at value, ROI, or efficiency gains — even softly. That conversation happens after they reply, never in message 1.`;
-  const selfCheck = allowBridge
-    ? `Self-check before finalizing: does the first line prove real, specific knowledge of THIS person? Does the message describe the sender in more than one short clause, or make any value, ROI, or "we help" claim? If either check fails, rewrite before returning.`
-    : `Self-check before finalizing: does the first line prove real, specific knowledge of THIS person? Does any part of the message describe the sender's company, product, or value instead of the recipient's own situation? If either check fails, rewrite before returning.`;
-  return `FIRST-MESSAGE FRAMEWORK — this is the actual structure of a message that gets replies, not a style suggestion:
-
-1. SPECIFIC HOOK (first line): open on one real, individual detail — something true of THIS person that couldn't be copy-pasted to the next 1,000 profiles unchanged. If nothing specific enough exists, say so honestly (a warm, generic opener beats a faked-specific one) — never invent one.
-${situation}
-3. ONE LOW-FRICTION QUESTION: end with a single question that's easy and low-stakes to answer — never a request for a meeting, a demo, pricing, or any other real commitment (a light, easy-to-decline call suggestion only if the MESSAGE STYLE ending below explicitly asks for one). It should feel genuinely optional — the recipient should be able to ignore it without feeling rude.
-
-LENGTH: the single most consistent finding in current outreach data. Keep the whole message to 40-70 words (tighter — 40-50 — for senior or executive recipients, who get the most outreach and scan the fastest). Every sentence past that measurably hurts reply rate rather than helping it. If a draft runs long, cut explanation before cutting personalization.
-
-FORMAT: write as 1 short paragraph, or 2 short paragraphs separated by a blank line only if there are genuinely two distinct beats (the hook, then the question) — never one dense wall of text, and never pad to a second paragraph just to have one when the whole thought is naturally a single beat.
-
-${selfCheck}`;
-}
+// Research (MD/messaging_playbook.md): best first DMs are 2-4 short sentences, ~25-60 words, under
+// ~400 characters; pitching cuts replies sharply; an interest question beats a meeting ask when
+// cold; zero or one question both work, two or more hurt. After a note, the first message refers
+// back to it lightly and never repeats it.
+const FIRST_MESSAGE_FRAMEWORK = `WHAT A GOOD FIRST MESSAGE DOES:
+- Start with "Hi <first name>," (or "Thanks for connecting, <first name>." if the connection note is shown below and this follows it, but never stop there).
+- The reason you're writing to THEM, in plain words, from one specific real detail. If the connection note below already used a detail, use a different one or move on from it in a few words.
+- Who the sender is and why that's relevant to this person, in one short sentence, using at most one real proof point from the sender context, stated plainly (what was built, for whom, one number if real). No list of skills, no claims about results you'd get for them.
+- One soft ask, or an offer they can say yes to in one word ("want me to send it?"). It can be a question or a plain sentence. Never ask for a call or meeting unless the MESSAGE STYLE ending below asks for one.
+- 2 to 4 short sentences, about 30 to 60 words, under 350 characters. Senior people get the shorter end.`;
 
 function buildConnectionRecencyNote(stage, daysSinceLastTouch) {
   if (stage !== 'connection_sent' || !Number.isFinite(daysSinceLastTouch) || daysSinceLastTouch <= 2) return '';
-  return `CONNECTION TIMING: this connection was sent/accepted ${daysSinceLastTouch} days ago, not moments ago (tracked from the sender's saved pipeline stage) — do not write as if the connection just happened ("thanks for connecting", "just connected", etc). Open as a considered first message to someone already in their network, not a reflexive same-day follow-up.`;
+  return `CONNECTION TIMING: they connected ${daysSinceLastTouch} days ago, not today. Don't open with "thanks for connecting" or "just connected".`;
 }
 
-export async function handleGenerateFirstMessage(profileData, analysis, intent, tone, userInstructions, stage, daysSinceLastTouch, contextMaterial, previousAttempt, strategy) {
+export async function handleGenerateFirstMessage(profileData, analysis, intent, tone, userInstructions, stage, daysSinceLastTouch, contextMaterial, previousAttempt, strategy, connectionNote) {
   const ctx = await getModeContext(intent);
   // The panel's per-message tone picker overrides the saved default for this one message.
   if (tone && TONE_RULES[tone]) ctx.presets = { ...ctx.presets, tone };
   const a = analysis || {};
-
-  // decisionMaker is only ever "Yes" | "Likely" | "No" — never a title string.
   const dm = a.decisionMaker || '';
   const isDecisionMaker = dm === 'Yes' || dm === 'Likely';
-  const cs = a.companySize || a.company?.size || '';
-  const hasBudgetSignals = isDecisionMaker || /enterprise|mid.market|series [bcd]|funded/i.test(cs + ' ' + (a.companyName || ''));
-
   const scoreVal = ctx.isB2b
     ? (a.prospectScore?.score || a.potentialClient?.score || 'Low')
     : (a.clientPotential?.score || ({ Strong: 'High', Possible: 'Medium', Unlikely: 'Low' })[a.hiringSignal?.score] || 'Low');
-  const isHighValue = scoreVal === 'High';
-  const isMidValue = scoreVal === 'Medium';
-  const analysisCtx = buildAnalysisContext(a, ctx.mode);
   const senderCtx = buildSenderContext(ctx);
   const maxChars = 350;
-  let systemPrompt;
 
-  if (!ctx.isB2b) {
-    const visibleNeed = (a.hiringSignals || []).length > 0 || (a.painPoints || []).length > 0;
-    const approachGuide = isHighValue && visibleNeed
-      ? 'Strong opportunity with a visible need. Follow case (a) of the OPPORTUNITY RULE: honest interest in the specific role or need, one concrete fit reason, one specific question.'
-      : isHighValue || isMidValue
-      ? 'Possible opportunity, no explicit opening yet. Be curious about their work and what they are building; let the relevance bridge carry who the sender is. No job ask.'
-      : 'Weak opportunity. Keep it short and low-commitment. Pure peer conversation, no hint of job-seeking or selling.';
+  const who = ctx.isB2b
+    ? `You write the first LinkedIn message for someone at a small company, to a person who could become a client. The goal is a reply and a real conversation, not a sale. ${isDecisionMaker ? 'This person decides, so keep it short and direct.' : 'This person may not decide alone, so keep it light and curious.'} ${scoreVal === 'Low' ? 'They are a weak fit: keep it short, friendly and with no ask for work.' : ''}`
+    : `You write the first LinkedIn message for an individual professional who wants work (a job, contract or freelance projects, a place on a team). The goal is a reply from someone who could hire, refer or bring them in.\n\n${B2C_OPPORTUNITY_RULE}`;
 
-    systemPrompt = `You write first LinkedIn messages for an individual professional who is finding work — a job, freelance or contract projects, or a place on a team — through people who could hire, refer or bring them in. You have helped hundreds of people land roles and clients this way; your messages get replies because they read as researched, specific and peer-to-peer, never as an application or a pitch.
+  let systemPrompt = `${who}
 
-APPROACH FOR THIS PERSON: ${approachGuide}
-
-${buildFirstMessageFramework(ctx.hasSender)}
+${FIRST_MESSAGE_FRAMEWORK}
 
 ${buildStrategyGuidance(strategy)}
 
-B2C RULES:
-- Sound like an accomplished professional in the same field, never like someone asking for a favour
-- Never say "looking for opportunities", "open to work", "my next role", "hire me", "my services include"
-- Use at most ONE proof point from the sender context, only if it directly relates to their need, and phrase it as context rather than a brag
-- Never include links in a first message
-${B2C_OPPORTUNITY_RULE}
-
-HARD RULES:
-- Max 350 characters total
-- Never fabricate a specific detail that isn't actually in the profile data (see GROUNDING below) — if there is nothing specific enough to reference, write a warm, natural message using just their name/current title and company
 ${PRECONVERSATION_GROUNDING}
 
-${WHY_THEM_WHY_NOW_GATE}
 ${AUTHENTICITY_RULES}
-- Never reference the analysis itself — weave the insights in naturally
-- Return ONLY the message. No quotes, no explanation.`;
 
-  } else {
-    const dmGuide = isDecisionMaker
-      ? `Decision-maker detected (${dm === 'Yes' ? 'confirmed' : 'likely'}). They get the most outreach of anyone on LinkedIn and scan the fastest — be tighter and more direct than usual (aim for the low end of the framework's word range below), never more explanatory.`
-      : `Not a final decision-maker. Be more exploratory and relationship-focused — a slightly longer, more curious message reads fine here.`;
-    const budgetGuide = hasBudgetSignals
-      ? 'Budget signals: company size and role suggest budget authority. This changes nothing about whether to pitch — it never justifies mentioning value or ROI in message 1 — only that a real conversation, if it starts, has somewhere to go.'
-      : 'Budget unclear. Stay in pure curiosity mode — start a conversation, not a sales process.';
-    const approachGuide = isHighValue
-      ? 'High-value prospect. Strong ICP fit and decision-making authority. Write with confidence. Reference their specific business context. End with a question that opens a conversation about their priority or challenge.'
-      : isMidValue
-      ? 'Mid-tier prospect. Partial fit. Be curious and helpful. Reference something specific from their profile or company. End with an open question about their current focus.'
-      : 'Low-priority prospect. Short, warm, no-commitment message. Pure relationship-building — no hints at a pitch.';
+${examplesBlock('first', ctx.mode)}
 
-    systemPrompt = `You are a senior B2B Business Development Executive with 15+ years of enterprise sales experience. You write the LinkedIn first messages that actually get replies — because they feel like they were written for this specific person, not pulled from a template.
-
-DECISION-MAKER ASSESSMENT: ${dmGuide}
-BUDGET SIGNAL: ${budgetGuide}
-APPROACH FOR THIS PROSPECT: ${approachGuide}
-
-${buildFirstMessageFramework(ctx.hasSender)}
-
-${buildStrategyGuidance(strategy)}
-
-B2B-SPECIFIC RULES:
-- Seniority changes tightness and directness, never how much you pitch — a decision-maker gets a shorter, sharper version of the exact same no-pitch structure
-- Reference at least one concrete detail from the analysis (company context, key insight, recent activity, or ICP fit signal) as the specific hook — this is what proves research, not a stated credential
-- Use at most ONE proof point from the sender context, only if it maps to their situation, phrased as context rather than a claim
-- Goal of message 1 is to start a conversation, not close a deal
-
-HARD RULES:
-- Max 350 characters total
-- Never fabricate a specific detail that isn't actually in the profile data (see GROUNDING below) — if there is nothing specific enough to reference, write a warm, natural message using just their name/current title and company
-${PRECONVERSATION_GROUNDING}
-
-${WHY_THEM_WHY_NOW_GATE}
-${AUTHENTICITY_RULES}
-- Return ONLY the message. No quotes, no explanation.`;
-  }
+Return ONLY the message. No quotes, no explanation.`;
 
   systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStyleRules(ctx)}`;
   if (senderCtx) systemPrompt += `\n\n${senderCtx}`;
-  if (userInstructions?.trim()) {
-    systemPrompt += `\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly):\n${userInstructions.trim()}`;
-  }
-  systemPrompt += `\n\n${analysisCtx}`;
-  systemPrompt += `\n\nHOW TO USE THE ANALYSIS ABOVE: "Recent Activity", "Key Insights" and any visible hiring or need signals are where the specific hook required by the framework should come from — they're the closest thing to a real trigger you have. Scores, decision-maker, fit and company size exist purely to calibrate directness and tone — never reference, restate, or hint at them in the message; the recipient never sees how they were scored.`;
+  if (userInstructions?.trim()) systemPrompt += `\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly):\n${userInstructions.trim()}`;
+  systemPrompt += `\n\n${buildAnalysisContext(a, ctx.mode)}`;
+  systemPrompt += `\n\nHOW TO USE THE ANALYSIS: it's background notes, not wording. Take at most one fact from it, in your own plain words, and only if it's true in the profile. Never repeat its phrases, scores, labels or conclusions.`;
   const recencyNote = buildConnectionRecencyNote(stage, daysSinceLastTouch);
   if (recencyNote) systemPrompt += `\n\n${recencyNote}`;
+  const note = String(connectionNote || '').trim();
+  if (note) {
+    systemPrompt += `\n\nCONNECTION NOTE ALREADY SENT OR DRAFTED FOR THIS PERSON:\n"${note.slice(0, 400)}"\nThis message comes after it. Don't reuse its detail, its question or its wording. Build on it or move to a different specific reason.`;
+  }
   systemPrompt += buildUserContextSection(contextMaterial);
   systemPrompt += buildVarietyNote(previousAttempt, strategy);
+  systemPrompt += await recentOpenersNote();
 
-  const text = await callAIWithBannedPhraseGuard(systemPrompt, buildProfileText(profileData), maxChars, strategy, { requireQuestion: true });
+  const text = await callAIWithBannedPhraseGuard(systemPrompt, buildProfileText(profileData), maxChars, strategy, { maxSentences: 4, rememberOpening: true });
   return { text: stripSignOff(text, ctx.senderName) };
 }
 
@@ -1113,7 +1009,8 @@ Requirements:
 - Serve the goal: ${pc.goal}.
 - Never repeat or closely overlap a previous post listed below — not the same subject, angle, or hook pattern.
 - Hooks must be concrete. No stock templates: then-vs-now ("Six months ago… now…"), "Most people think…", "Unpopular opinion:", one-line dramatic reveals.
-- whyNow must be honest: never invent news, statistics, launches or dates. If you're not sure something is current, tie it to a durable problem this audience has instead.`;
+- whyNow must be honest: never invent news, statistics, launches or dates. If you're not sure something is current, tie it to a durable problem this audience has instead.
+- The person reading these topics IS the author. Write title, angle, hook and whyNow speaking to them as "you"/"your" (or "we"/"our" for the company), never "the author", "the user" or their name in the third person.`;
 
   const userPrompt = [
     `--- AUTHOR FACTS ---\n${pc.facts.join('\n') || '(none provided — keep topics broad but practical)'}`,
@@ -1216,43 +1113,42 @@ function parseJsonObject(raw) {
 export async function handleGenerateChatFollowup({ conversationText, isRaw, contactName, senderName, intent, userInstructions, stage, daysSinceLastTouch, analysis, contextMaterial, strategy }) {
   const ctx = await getModeContext(intent);
   const senderCtx = [buildSenderContext(ctx), buildStyleRules(ctx)].filter(Boolean).join('\n\n');
-
-  const writer = senderName || 'the user';
+  const writer = senderName || ctx.senderName || 'the user';
   const recipient = contactName || 'the contact';
 
   const conversationFormat = isRaw
-    ? `The conversation below is raw text copied from LinkedIn messaging. It includes timestamps and sender names. Identify who said what based on the names: "${writer}" = the person you are writing for, "${recipient}" = the other person.`
-    : `In the conversation below: messages labeled "You" were sent by ${writer}. Messages labeled "${recipient}" were sent by the contact.`;
+    ? `The conversation below is raw text copied from LinkedIn messaging, with timestamps and sender names. "${writer}" is the person you write for, "${recipient}" is the other person.`
+    : `In the conversation below, "You" is ${writer} and "${recipient}" is the other person. Lines start with [date, time] when LinkedIn showed one. Use the dates to see gaps.`;
 
-  const systemPrompt = `You are an elite LinkedIn outreach strategist ghostwriting this message for ${writer}. You've read thousands of real LinkedIn conversations and know exactly how a sharp, busy professional actually talks — never like a chatbot or an email template.
+  const goal = ctx.isB2b
+    ? `${writer} wants ${recipient} as a client. Every message should move one small step toward a call or a project, without pushing.`
+    : `${writer} wants work from ${recipient} (a job, a contract, freelance projects, or a referral). Every message should move one small step toward that, without pushing or begging.`;
 
-CRITICAL — never write as ${recipient}. You are writing FOR ${writer}, TO ${recipient}. Everything in the conversation labeled as coming from ${writer} (or "You") is ${writer}'s own words about ${writer}'s own situation — never treat it as something ${recipient} said or shared, and never compliment or react to ${writer}'s own experience, skills, or story as though it belongs to ${recipient}. If ${writer} shared their own background, resume, or an ask (e.g. "I'm looking for X"), the next message continues advancing THAT, addressed to ${recipient} — it does not praise ${writer} for it.
+  const systemPrompt = `You ghostwrite ${writer}'s next LinkedIn message to ${recipient}. ${goal}
+
+Never write as ${recipient}. Everything from "You" is ${writer}'s own words about ${writer}'s own situation. Never praise or react to it as if ${recipient} said it.
 
 ${conversationFormat}
 
-Read the ENTIRE conversation below before writing anything — not just the last message. Understand the full arc: what's already been said by each side, where the conversation actually stands right now, and what the one natural next beat is. A follow-up that ignores earlier context (repeats something already covered, misses a question that was already answered, or restarts a thread that's already moved on) is worse than no follow-up at all.
+${FOLLOWUP_HISTORY_RULES}
 
-BEFORE YOU WRITE — CLASSIFY ${recipient.toUpperCase()}'S LAST REAL RESPONSE: if ${recipient} has replied at all, silently classify their most recent message as INTERESTED (asked a question, proposed a next step, clear enthusiasm), CURIOUS (engaged but noncommittal, asking for more info), NEUTRAL (short acknowledgment, no clear signal), OBJECTION (raised a concern or a "but"), NOT_NOW (explicitly said timing is bad), or PRICE_CONCERN (raised cost/budget/value directly). Never write this label into the message. Let it shape tone: INTERESTED/CURIOUS earns a direct, forward-moving reply; OBJECTION or PRICE_CONCERN should be addressed honestly, never glossed over; NOT_NOW should be respected with a light touch, never pushed past; NEUTRAL should not be over-read as more enthusiasm than it shows. If ${recipient} hasn't replied yet, skip this step.
+${FOLLOWUP_PLAYBOOK}
 
-${senderCtx ? `CONTEXT ABOUT ${writer.toUpperCase()}:\n${senderCtx}\n\n` : ''}Rules:
-- Max 300 characters
-- Sound like a real person typing a quick, thoughtful message — not a template
-- If ${recipient} has not replied yet: write a natural follow-up to ${writer}'s last message (never copy-paste the previous message)
-- If ${recipient} has replied: respond to what they specifically said and keep the conversation moving naturally, grounded in the whole thread so far — not just their most recent line
-${AUTHENTICITY_RULES}
+LENGTH: usually 150 to 300 characters. Answering their question can run up to 450. Never longer than the situation needs.
+
+${senderCtx ? `ABOUT ${writer.toUpperCase()}:\n${senderCtx}\n\n` : ''}${AUTHENTICITY_RULES}
 
 ${buildFollowupAngleRules(stage, daysSinceLastTouch, recipient)}
 
-${strategy && strategy !== 'smart_pick' ? `${buildStrategyGuidance(strategy)}\nApply this only to shape WHAT the opening move draws on — the angle, need-identification, formatting, and closing rules above still govern the rest of the message; don't let the strategy override those.\n\n` : ''}LEAD_READ LINE: after the message (and after NEED_ID if present), add one more line starting with exactly "LEAD_READ: " giving an honest, one-sentence read on how this relationship is trending — based only on real signals in the thread: whether ${recipient} has replied at all, how they replied (short/dismissive vs. detailed/curious), any questions they asked back, any timeline or urgency they mentioned, and how many unanswered touches have gone out. Do not invent a percentage, a "likelihood to close," or any numeric score — you do not have the data to support one, and a fake number is worse than no number. Say it plainly, e.g. "Warm — they've asked a specific question and haven't gone quiet" or "Cooling — three touches out with no reply, worth one higher-value message or moving on." If ${recipient} hasn't sent anything yet, base the read purely on touch count and elapsed time, and say so plainly.
+${strategy && strategy !== 'smart_pick' ? `${buildStrategyGuidance(strategy)}\nThis only shapes the opening move; the thread rules and the situation above come first.\n\n` : ''}LEAD_READ: after the message (and after NEED_ID), add one line starting exactly "LEAD_READ: " with an honest one-sentence read on where this is heading, based only on real signals (did they reply, how, did they ask anything, any timeline, how many unanswered messages). No percentages or scores.
 
-Return ONLY the message text, followed by the NEED_ID and LEAD_READ lines described above (and TIMING_NOTE if that rule applies). No quotes around the message, no other labels, no explanation.`;
+Return ONLY the message, then the NEED_ID and LEAD_READ lines (and TIMING_NOTE if it applies). No quotes, no labels on the message, no explanation.`;
 
-  const withAnalysis = analysis ? `${systemPrompt}\n\n${buildAnalysisContext(analysis, intent)}` : systemPrompt;
+  const withAnalysis = analysis ? `${systemPrompt}\n\n${buildAnalysisContext(analysis, intent)}\nThe analysis is background notes: never repeat its wording or conclusions.` : systemPrompt;
   const withContext = withAnalysis + buildUserContextSection(contextMaterial);
-
   const finalPrompt = userInstructions?.trim()
-    ? `${withContext}\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly, even if it overrides the angle guidance above):\n${userInstructions.trim()}`
+    ? `${withContext}\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly, even over the situation guidance):\n${userInstructions.trim()}`
     : withContext;
 
-  return { text: await callAIWithBannedPhraseGuard(finalPrompt, `CONVERSATION:\n${conversationText || '(no messages found)'}`, 300, strategy) };
+  return { text: await callAIWithBannedPhraseGuard(finalPrompt, `CONVERSATION:\n${conversationText || '(no messages found)'}`, 450, strategy) };
 }
