@@ -54,6 +54,7 @@
             { type: 'text', path: 'profile.pitch.senderName', label: 'Your first name' },
             { type: 'text', path: 'profile.pitch.currentTitle', label: 'Current or target title', placeholder: 'e.g. Senior AI Engineer' },
           ] },
+          { type: 'text', path: 'profile.pitch.represents', label: 'Representing a team instead of yourself?', placeholder: 'e.g. Satyron’s senior engineers, for staff augmentation and contract roles', optional: true, hint: 'leave empty if you’re finding work for yourself. Filled in, messages speak as you presenting the team’s engineers' },
           { type: 'text', path: 'profile.pitch.oneLiner', label: 'You in one line', placeholder: 'I’m a [role] who [does what] for [whom]', maxLength: 180, required: true },
           { type: 'tags', path: 'profile.pitch.skills', label: 'Top skills', placeholder: 'e.g. LLM agents, RAG, React — press Enter', max: 15, required: true },
           { type: 'textarea', path: 'profile.pitch.services', label: 'What you can do for a team or client', placeholder: 'e.g. Ship an MVP in 6 weeks, build agent pipelines, take over a backlog', optional: true },

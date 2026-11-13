@@ -701,6 +701,12 @@ document.getElementById('team-import-btn')?.addEventListener('click', async () =
     update.activeB2cProfileId = b2cProfiles.some(p => p.id === data.activeB2cProfileId) ? data.activeB2cProfileId : b2cProfiles[0].id;
     update.b2cMessagePresets = S.sanitizePresets(data.b2cMessagePresets, 'b2c_sales');
   }
+  // A code made for one rep can carry their Post Creator profile; it only fills an empty one.
+  const myCreator = (await chrome.storage.local.get('creatorProfile')).creatorProfile || {};
+  if (data.creatorProfile && typeof data.creatorProfile === 'object' && !myCreator.name && !myCreator.goal && !myCreator.audience) {
+    const c = data.creatorProfile; const t = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
+    update.creatorProfile = { name: t(c.name, 60) || accountName, linkedinUrl: t(c.linkedinUrl, 200), goal: t(c.goal, 60), audience: t(c.audience, 300), postStyle: t(c.postStyle, 40), postEnding: t(c.postEnding, 40), domains: Array.isArray(c.domains) ? c.domains.slice(0, 10).map(x => t(x, 40)) : [] };
+  }
   // A B2B-only code (a sales rep's setup) switches the importer to B2B so they start in the right mode.
   if (icpProfiles.length && !b2cProfiles.length) update.analysisIntent = 'b2b_sales';
   await chrome.storage.local.set(update);

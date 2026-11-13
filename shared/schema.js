@@ -195,7 +195,7 @@
       seeking: { workTypes: [], roles: [], level: '', workplace: [], availability: '' },
       pitch: {
         senderName: '', currentTitle: '', oneLiner: '', skills: [], services: '',
-        proofPoints: BLANK_PROOFS(), uniqueAngle: '', portfolio: '', background: '', location: '', rate: '', notes: '',
+        proofPoints: BLANK_PROOFS(), uniqueAngle: '', portfolio: '', background: '', location: '', rate: '', represents: '', notes: '',
       },
     };
   }
@@ -445,7 +445,7 @@
       pitch: {
         senderName: keepName, currentTitle: str(pi.currentTitle, 120), oneLiner: str(pi.oneLiner), skills: strList(pi.skills, 15),
         services: str(pi.services), proofPoints: proofs(pi.proofPoints), uniqueAngle: str(pi.uniqueAngle),
-        portfolio: str(pi.portfolio, 300), background: str(pi.background, 1200), location: str(pi.location, 160), rate: str(pi.rate, 200), notes: str(pi.notes, 1200),
+        portfolio: str(pi.portfolio, 300), background: str(pi.background, 1200), location: str(pi.location, 160), rate: str(pi.rate, 200), represents: str(pi.represents, 240), notes: str(pi.notes, 1200),
       },
     };
   }

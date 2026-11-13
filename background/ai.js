@@ -238,9 +238,17 @@ function buildSenderContext(ctx) {
     if (s.notes) L.push(`Other notes from the company: ${s.notes}`);
   } else {
     const k = ctx.seeking || {};
+    if (s.represents) {
+      L.push('--- ABOUT THE SENDER (a business development person who represents engineers for hire: staff augmentation, contract or full-time) ---');
+      if (ctx.senderName) L.push(`Sender's first name: ${ctx.senderName}`);
+      if (s.currentTitle) L.push(`Sender's title: ${s.currentTitle}`);
+      L.push(`Who the sender represents: ${s.represents}`);
+      L.push('Everything below describes the engineers the sender represents, not the sender.');
+    } else {
     L.push('--- ABOUT THE SENDER (an individual professional looking for work) ---');
     if (s.senderName) L.push(`Name: ${s.senderName}`);
     if (s.currentTitle) L.push(`Current / target title: ${s.currentTitle}`);
+    }
     if (s.oneLiner) L.push(`In one line: ${s.oneLiner}`);
     if ((k.workTypes || []).length) L.push(`Open to: ${optLabels(S.OPTIONS.workTypes, k.workTypes).join(', ')}`);
     if ((k.roles || []).length) L.push(`Target roles: ${k.roles.join(', ')}`);
@@ -293,7 +301,29 @@ function b2bVoice(ctx) {
 }
 // B2C got the same complaint: messages hid who the sender is and what they do. The sender's own
 // title, one-liner and matched proof are now always part of the introduction.
+// B2C for a staffing rep (Satyron's BD team, Nov 2026): the sender presents the team's engineers to
+// companies that need them. Same honesty rules as a rep in B2B: "I" for the rep, "we"/"our
+// engineers" for the team, and the rep never claims the engineering work.
+const representsTeam = ctx => !ctx.isB2b && !!(ctx.sender.represents || '').trim();
+function b2cTeamVoice(ctx) {
+  const name = ctx.senderName || 'the sender';
+  return `HOW A STAFFING REP TALKS (B2C, ${name} represents ${ctx.sender.represents}):
+- ${name} writes as themselves. "I" for ${name}, "we" or "our engineers" for the team. ${name} is not the engineer: never "I built", never claim the engineering work.
+- Make clear early who you are and who you represent, in a few words ("I'm ${name}, I work with Satyron's engineering team").
+- Describe the engineer by role, seniority and one matched project ("one of our senior engineers built the RAG search for a fintech product"), never a list of skills. Never name an engineer or a client.
+- Engagement types honestly from the sender context (staff augmentation, contract, full-time), and time-zone overlap once when the role is remote.
+- No rates in a first message. Not salesy: no "top talent", "rockstar", "A-players", "pre-vetted talent pool", "best-in-class".`;
+}
+const B2C_TEAM_SITUATION_RULE = `WHICH SITUATION IS THIS (decide from the profile data only):
+(a) They're hiring for a role the team's engineers fit: say plainly you saw the role, give ONE fit fact about one of the engineers, and ask if they'd consider a contract or embedded engineer for it.
+(b) They could bring in engineers (founder, CTO, engineering or product lead, hiring manager) but nothing shows an opening: give the specific reason you're writing, say in a few words what kind of engineers you work with, and ask one easy question about their plans for the team.
+(c) A peer with no say in hiring: a normal conversation about their work. No ask.
+(d) A recruiter or talent person: a short factual note. The kind of engineers, level, engagement types, time zone, and ask whether they work with outside partners on roles like that.
+(e) Someone at the company who isn't the hiring manager: ask one specific question about their team. No pitch.
+Never sound desperate, never a list of profiles.`;
+
 function b2cVoice(ctx) {
+  if (representsTeam(ctx)) return b2cTeamVoice(ctx);
   const name = ctx.senderName || 'the sender';
   return `HOW AN INDIVIDUAL PRESENTS THEMSELVES (B2C, ${name} is looking for work):
 - Say plainly who you are and what you do in a few words, from the title and one-liner in the sender context ("I'm ${name}, an AI and full-stack engineer").
@@ -836,7 +866,9 @@ export async function handleGenerateConnectionRequest(profileData, intent, userN
   const senderCtx = buildSenderContext(ctx);
   const who = ctx.isB2b
     ? 'You write LinkedIn connection notes for a business development rep (or founder) at a services company, to people who could become clients. The note introduces the rep and the company and gives the real reason for connecting.'
-    : 'You write LinkedIn connection notes for an individual professional who wants work (a job, contract or freelance projects, a place on a team) from people who could hire them, refer them or bring them in. It may be honest that they do this kind of work, but it never reads like a cover letter or begs.';
+    : representsTeam(ctx)
+      ? 'You write LinkedIn connection notes for a business development person who places their team\'s engineers with companies (staff augmentation, contract or full-time). The note says who they are and who they represent, and gives the real reason for connecting.'
+      : 'You write LinkedIn connection notes for an individual professional who wants work (a job, contract or freelance projects, a place on a team) from people who could hire them, refer them or bring them in. It may be honest that they do this kind of work, but it never reads like a cover letter or begs.';
   let systemPrompt = `${who}
 
 ${ctx.isB2b ? `${CONNECTION_REQUEST_FRAMEWORK_B2B}\n\n${B2B_DETAIL_PRIORITY}\n\n${b2bVoice(ctx)}` : `${CONNECTION_REQUEST_FRAMEWORK}\n\n${b2cVoice(ctx)}`}
@@ -863,7 +895,7 @@ Return ONLY the note text. No quotes around it.`;
 
 function b2bChecks(ctx) {
   const avoidNames = clientNamesIn(ctx.sender.proofPoints);
-  if (!ctx.isB2b) return { avoidNames };
+  if (!ctx.isB2b) return representsTeam(ctx) ? { avoidNames, noFirstPersonBuild: true } : { avoidNames };
   return { avoidNames, mustMention: ctx.sender.companyName || '', noFirstPersonBuild: !roleCanClaimBuild(ctx.sender.senderRole) };
 }
 
@@ -933,7 +965,9 @@ export async function handleGenerateFirstMessage(profileData, analysis, intent, 
 
   const who = ctx.isB2b
     ? `You write the first LinkedIn message from a business development rep (or founder) at a services company to a person who could become a client. After reading it, the person knows which company is writing, how its work connects to them, and why they got this message now. The goal is a real conversation, not a sale. ${scoreVal === 'Low' ? 'They are a weak fit: keep it light and make no ask for work.' : ''}`
-    : `You write the first LinkedIn message for an individual professional who wants work (a job, contract or freelance projects, a place on a team). The goal is a reply from someone who could hire, refer or bring them in.\n\n${B2C_OPPORTUNITY_RULE}`;
+    : representsTeam(ctx)
+      ? `You write the first LinkedIn message from a business development person who places their team's engineers with companies (staff augmentation, contract or full-time). The goal is a real conversation with someone who could bring an engineer in, not a hard sell.\n\n${B2C_TEAM_SITUATION_RULE}`
+      : `You write the first LinkedIn message for an individual professional who wants work (a job, contract or freelance projects, a place on a team). The goal is a reply from someone who could hire, refer or bring them in.\n\n${B2C_OPPORTUNITY_RULE}`;
 
   let systemPrompt = `${who}
 
@@ -1043,6 +1077,7 @@ async function getPostContext(mode, creatorProfile, companyProfile) {
     if (!isCompany && s.senderRole) facts.push(`Author's role at the company: ${s.senderRole}`);
   } else {
     if (s.currentTitle) facts.push(`Author's title: ${s.currentTitle}`);
+    if (s.represents) facts.push(`The author represents (they are not an engineer themselves): ${s.represents}. Everything below is about those engineers.`);
     if (s.oneLiner) facts.push(`Author in one line: ${s.oneLiner}`);
     if ((s.skills || []).length) facts.push(`Skills: ${s.skills.join(', ')}`);
     if (s.services) facts.push(`What the author does for teams and clients: ${s.services}`);
@@ -1076,7 +1111,7 @@ async function getPostContext(mode, creatorProfile, companyProfile) {
   const kind = isCompany ? 'company' : 'personal';
   const pillars = optLabels(S.OPTIONS.postPillars[kind], settings.pillars);
   const ending = POST_ENDING_RULES[settings.postEnding] || POST_ENDING_RULES.question;
-  const goal = settings.goal || (isCompany ? 'attract clients and build authority' : (ctx.isB2b ? 'build authority with potential clients' : 'get noticed by people who could hire me'));
+  const goal = settings.goal || (isCompany ? 'attract clients and build authority' : (ctx.isB2b ? 'build authority with potential clients' : representsTeam(ctx) ? 'get companies to bring in our engineers' : 'get noticed by people who could hire me'));
   const realPosts = isCompany ? [] : (Array.isArray(ownPosts) ? ownPosts : []).map(p => p.text).filter(Boolean);
   const generated = (Array.isArray(postHistory) ? postHistory : []).filter(h => (h.mode || 'personal') === kind);
   const voiceSample = (settings.voiceSample || '').trim();
@@ -1158,7 +1193,9 @@ export async function handleGeneratePost({ topic, angle, hook, style, creatorPro
       tips: 'Quick Tips: Lead with what the reader will be able to do, 3-5 numbered points, each crisp and actionable',
     };
     styleGuide = personalStyleGuides[style] || personalStyleGuides.educational;
-    systemContext = `You are a LinkedIn ghostwriter writing as ${pc.name || 'the author'}, in the first person. Direct, confident, human — never corporate or generic.`;
+    systemContext = representsTeam(pc.ctx)
+      ? `You are a LinkedIn ghostwriter writing as ${pc.name || 'the author'}, who represents ${pc.ctx.sender.represents}, posting from their own profile. "I" for their own view, "we" or "our engineers" for the team. They are not an engineer: never claim the engineering work as theirs. Direct, confident, human — never corporate or generic.`
+      : `You are a LinkedIn ghostwriter writing as ${pc.name || 'the author'}, in the first person. Direct, confident, human — never corporate or generic.`;
   }
 
   const wordCount = pc.isCompany ? '200-320 words' : '150-280 words';
@@ -1234,6 +1271,11 @@ const B2B_FOLLOWUP_RULES = ctx => {
 
 const B2C_FOLLOWUP_RULES = ctx => {
   const portfolio = ctx.sender.portfolio;
+  if (representsTeam(ctx)) return `SPEAKING FOR THE TEAM (B2C staffing, you represent ${ctx.sender.represents}):
+- If the thread hasn't made clear who you are and who you represent, say it in one line.
+- Good moves, when they fit the situation: one engineer's comparable project (role, what they built, one result), offering to send one or two matching engineer profiles once they show interest${portfolio ? ` (or the link ${portfolio})` : ''}, proposing a short intro call or an interview with the engineer at two specific times once they're interested, and a straight answer on availability, time zone and engagement type (staff augmentation, contract, full-time).
+- Asked about rates: ${ctx.sender.rate ? 'answer from the sender context in plain words. If it has no number, say so plainly and that the exact rate depends on the role and seniority, then one scoping question ("one engineer or a small team?"). Never make up a number.' : 'say it depends on the role and seniority and suggest a short call. Never make up a number.'}
+- Never invent engineer names, years of experience, availability dates, rates or results that aren't in the sender context.`;
   return `SPEAKING FOR YOURSELF (B2C, looking for work):
 - If the thread hasn't yet made clear what you do, say it in one line.
 - Good moves, when they fit the situation: a project from the proof points that matches their industry or problem (what it was, one result), ${portfolio ? `the portfolio link (${portfolio}) once they show interest, never before` : 'offering examples of past work once they show interest'}, one quick idea for their product, two specific times for a 20-minute call once they're interested, and a straight answer on availability and the kinds of work you're open to.
@@ -1283,5 +1325,5 @@ Return ONLY the message, then the NEED_ID and LEAD_READ lines (and TIMING_NOTE i
     ? `${withContext}\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly, even over the situation guidance):\n${userInstructions.trim()}`
     : withContext;
 
-  return { text: await callAIWithBannedPhraseGuard(finalPrompt, `CONVERSATION:\n${conversationText || '(no messages found)'}`, ctx.isB2b ? 550 : 500, strategy, { noFirstPersonBuild: ctx.isB2b && !roleCanClaimBuild(ctx.sender.senderRole), avoidNames: clientNamesIn(ctx.sender.proofPoints) }) };
+  return { text: await callAIWithBannedPhraseGuard(finalPrompt, `CONVERSATION:\n${conversationText || '(no messages found)'}`, ctx.isB2b ? 550 : 500, strategy, { noFirstPersonBuild: (ctx.isB2b && !roleCanClaimBuild(ctx.sender.senderRole)) || representsTeam(ctx), avoidNames: clientNamesIn(ctx.sender.proofPoints) }) };
 }
