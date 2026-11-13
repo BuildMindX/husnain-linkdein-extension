@@ -688,7 +688,8 @@ document.getElementById('team-import-btn')?.addEventListener('click', async () =
   const b2cName = myB2c?.pitch?.senderName || myB2b?.businessProfile?.senderName || accountName;
 
   const update = { companyProfile: companyFields(data.companyProfile) };
-  const icpProfiles = (Array.isArray(data.icpProfiles) ? data.icpProfiles : []).map(p => S.sanitizeB2bProfile(p, b2bName));
+  // A code made for one rep may carry their role; the importer's own role always wins.
+  const icpProfiles = (Array.isArray(data.icpProfiles) ? data.icpProfiles : []).map(p => S.sanitizeB2bProfile(p, b2bName, myB2b?.businessProfile?.senderRole || String(p?.businessProfile?.senderRole || '')));
   if (icpProfiles.length) {
     update.icpProfiles = icpProfiles;
     update.activeIcpProfileId = icpProfiles.some(p => p.id === data.activeIcpProfileId) ? data.activeIcpProfileId : icpProfiles[0].id;
@@ -700,6 +701,8 @@ document.getElementById('team-import-btn')?.addEventListener('click', async () =
     update.activeB2cProfileId = b2cProfiles.some(p => p.id === data.activeB2cProfileId) ? data.activeB2cProfileId : b2cProfiles[0].id;
     update.b2cMessagePresets = S.sanitizePresets(data.b2cMessagePresets, 'b2c_sales');
   }
+  // A B2B-only code (a sales rep's setup) switches the importer to B2B so they start in the right mode.
+  if (icpProfiles.length && !b2cProfiles.length) update.analysisIntent = 'b2b_sales';
   await chrome.storage.local.set(update);
   showStatus(status, 'Team setup imported. Reloading.', 'success');
   setTimeout(() => location.reload(), 700);

@@ -195,7 +195,7 @@
       seeking: { workTypes: [], roles: [], level: '', workplace: [], availability: '' },
       pitch: {
         senderName: '', currentTitle: '', oneLiner: '', skills: [], services: '',
-        proofPoints: BLANK_PROOFS(), uniqueAngle: '', portfolio: '', background: '', notes: '',
+        proofPoints: BLANK_PROOFS(), uniqueAngle: '', portfolio: '', background: '', location: '', rate: '', notes: '',
       },
     };
   }
@@ -206,8 +206,8 @@
       name,
       icp: emptyIcp(),
       businessProfile: {
-        senderName: '', companyName: '', offerType: '', offer: '', problems: [], problem: '',
-        outcome: '', proofPoints: BLANK_PROOFS(), valueProp: '', expertise: '', notes: '',
+        senderName: '', senderRole: '', companyName: '', offerType: '', offer: '', problems: [], problem: '',
+        outcome: '', proofPoints: BLANK_PROOFS(), valueProp: '', expertise: '', serviceMap: '', trust: '', pricing: '', notes: '',
       },
       // Legacy flat arrays, kept only so older code paths and v1 team codes stay readable.
       targetIndustries: [], excludeIndustries: [],
@@ -417,16 +417,17 @@
 
   // senderName is deliberately dropped: a shared team setup must never carry one person's name
   // into another rep's messages. The importer keeps their own.
-  function sanitizeB2bProfile(p, keepName = '') {
+  // senderName and senderRole are personal (each rep's own); everything else is the company's.
+  function sanitizeB2bProfile(p, keepName = '', keepRole = '') {
     const b = p?.businessProfile || {};
     return {
       id: str(p?.id, 60) || emptyB2bProfile().id, name: str(p?.name, 60) || 'Imported',
       icp: sanitizeIcp(p?.icp),
       businessProfile: {
-        senderName: keepName, companyName: str(b.companyName, 120), offerType: oneOf(b.offerType, OPTIONS.offerTypes),
+        senderName: keepName, senderRole: str(keepRole, 80), companyName: str(b.companyName, 120), offerType: oneOf(b.offerType, OPTIONS.offerTypes),
         offer: str(b.offer), problems: idList(b.problems, x => ALLOWED.problems.has(x)), problem: str(b.problem),
         outcome: oneOf(b.outcome, OPTIONS.outcomes), proofPoints: proofs(b.proofPoints), valueProp: str(b.valueProp),
-        expertise: str(b.expertise), notes: str(b.notes, 1200),
+        expertise: str(b.expertise), serviceMap: str(b.serviceMap, 1200), trust: str(b.trust, 400), pricing: str(b.pricing, 300), notes: str(b.notes, 1200),
       },
       targetIndustries: [], excludeIndustries: [],
     };
@@ -444,7 +445,7 @@
       pitch: {
         senderName: keepName, currentTitle: str(pi.currentTitle, 120), oneLiner: str(pi.oneLiner), skills: strList(pi.skills, 15),
         services: str(pi.services), proofPoints: proofs(pi.proofPoints), uniqueAngle: str(pi.uniqueAngle),
-        portfolio: str(pi.portfolio, 300), background: str(pi.background, 1200), notes: str(pi.notes, 1200),
+        portfolio: str(pi.portfolio, 300), background: str(pi.background, 1200), location: str(pi.location, 160), rate: str(pi.rate, 200), notes: str(pi.notes, 1200),
       },
     };
   }

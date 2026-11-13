@@ -60,6 +60,8 @@
           { type: 'proofs', path: 'profile.pitch.proofPoints', label: 'Proof points', hint: proofHint },
           { type: 'textarea', path: 'profile.pitch.background', label: 'Background', placeholder: '1–3 sentences on your experience', optional: true },
           { type: 'text', path: 'profile.pitch.portfolio', label: 'Portfolio or work link', placeholder: 'https://…', optional: true, hint: 'only shared in follow-ups, never in a first message' },
+          { type: 'text', path: 'profile.pitch.location', label: 'Where you’re based and overlap hours', placeholder: 'e.g. Lahore, Pakistan. 4 hours overlap with US Eastern', optional: true, hint: 'said once, to people hiring for remote work' },
+          { type: 'text', path: 'profile.pitch.rate', label: 'Your rate', placeholder: 'e.g. $40–60/hr, or fixed price once scope is clear', optional: true, hint: 'only used when someone asks, never in a first message' },
         ],
       },
       {
@@ -87,13 +89,17 @@
         fields: [
           { type: 'row', fields: [
             { type: 'text', path: 'profile.businessProfile.senderName', label: 'Your first name' },
-            { type: 'text', path: 'profile.businessProfile.companyName', label: 'Company name' },
+            { type: 'text', path: 'profile.businessProfile.senderRole', label: 'Your role', placeholder: 'e.g. Business Development', optional: true },
           ] },
+          { type: 'text', path: 'profile.businessProfile.companyName', label: 'Company name', required: true },
           { type: 'text', path: 'profile.businessProfile.offer', label: 'Your offer in one line', placeholder: 'We help [who] [get outcome] by [how]', maxLength: 220, required: true },
           { type: 'chips', path: 'profile.businessProfile.problems', options: O.problems, label: 'Problems you solve', hint: 'pick up to 3', max: 3, required: true },
           { type: 'textarea', path: 'profile.businessProfile.problem', label: 'The problem, in your words', placeholder: 'e.g. Teams that tried AI agents and hit reliability problems in production', optional: true },
           { type: 'proofs', path: 'profile.businessProfile.proofPoints', label: 'Proof points', hint: proofHint },
-          { type: 'textarea', path: 'profile.businessProfile.expertise', label: 'Your own background', placeholder: 'e.g. 10 years building ML systems at fintechs', optional: true },
+          { type: 'textarea', path: 'profile.businessProfile.expertise', label: 'What your team works with', placeholder: 'e.g. LLM agents, RAG, Next.js, React Native, n8n', optional: true },
+          { type: 'textarea', path: 'profile.businessProfile.serviceMap', label: 'Which service fits which situation', rows: 4, placeholder: 'One per line, e.g.\nHiring developers = dedicated engineers\nManual, repetitive work = AI automation\nLaunching an MVP = full stack web and mobile', optional: true, hint: 'each message picks the ONE service that fits what it found on the profile' },
+          { type: 'textarea', path: 'profile.businessProfile.trust', label: 'Why clients trust you', placeholder: 'e.g. You own the code and repo from day one. 4 hours overlap with US Eastern. Senior engineers only.', optional: true, hint: 'used from the second message on, never invented' },
+          { type: 'text', path: 'profile.businessProfile.pricing', label: 'Typical price range', placeholder: 'e.g. Most projects $8k–30k, smallest engagement $3k', optional: true, hint: 'only used when someone asks what you charge' },
         ],
       },
       {
@@ -173,7 +179,9 @@
     const k = KEYS[state.intent];
     const sanitize = state.intent === 'b2b_sales' ? S.sanitizeB2bProfile : S.sanitizeB2cProfile;
     const senderName = state.intent === 'b2b_sales' ? state.draft.businessProfile.senderName : state.draft.pitch.senderName;
-    const clean = sanitize(state.draft, (senderName || '').slice(0, 60));
+    const clean = state.intent === 'b2b_sales'
+      ? sanitize(state.draft, (senderName || '').slice(0, 60), state.draft.businessProfile.senderRole || '')
+      : sanitize(state.draft, (senderName || '').slice(0, 60));
     clean.id = state.draft.id; clean.name = state.draft.name;
     state.lists[state.intent] = state.lists[state.intent].map(p => (p.id === clean.id ? clean : p));
     state.presets[state.intent] = S.sanitizePresets(state.draftPresets, state.intent);

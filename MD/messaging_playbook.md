@@ -64,6 +64,104 @@ One real, recent, checkable detail beats any amount of flattery. The test: the l
 - Banning tells one by one makes the model swap in another, so we pair a ban list with a positive voice spec, examples, and a code check.
 - Claude-specific tells (Graphite, Opus 5.5 study) include "this matters", "rather than simply", "is more than a" and evaluative adjectives such as "dependable", "thoughtful" and "meaningful".
 
+## B2B: the rep speaks for the company
+
+The cold-outreach research above says "don't pitch". Satyron's BD team found the result useless for a services company, and they were right. The messages never said who was writing, which company it was or what it does. They were written as a lone founder ("I run a small studio", "I built"), which isn't true for a BD rep.
+
+B2B messages now work like this:
+
+- **Who:** the rep gives their first name, their role if set, and the company name.
+- **What:** one sentence on the one or two services that fit this prospect, never the full list.
+- **Proof:** at most one proof point, the closest match to the prospect's industry or problem, in "we" form.
+- **"We" and "I":** "we" for the company's work. "I" only for what the rep does. "I built" is blocked unless the role is founder, CTO, engineer or lead.
+- **Length:**
+  - Note: 130 to 200 characters.
+  - First message (BD team spec, Nov 13): 50 to 75 words, three lines:
+    1. One natural line about something specific they posted, built, launched or are hiring for.
+    2. How the company's work connects to that, framed as the outcome for them. Only ONE service, and not AI by default.
+    3. One easy, curious question about their work or plans.
+
+    The goal is a conversation, not a sale. A first message never contains a proof point, a link, a call request, Calendly or "thanks for connecting". Code checks enforce the word range, no links and the closing question. Proof and trust points wait for message 2.
+  - Follow-ups: up to 350 characters, or 550 for an answer or a case study.
+- **Follow-ups** can share a matching case study, offer case studies or the portfolio, propose two call times once the prospect is interested, and explain how the company works. They never invent prices, timelines or client names.
+- **Code checks:** every note and first message must name the company. "I built" from a non-engineer triggers one rewrite.
+- **No client names.** Proof points can name clients for the rep's reference, but messages describe the project instead. A code check rewrites any message that names one.
+- **Price:** never in a first message (code check). When asked, the answer comes from the "Typical price range" field. Satyron's says budget-friendly hourly rates, hourly or fixed-price contracts, so the reply says that plainly and offers 15 minutes to give a real number.
+- **Role is personal**, like the rep's name. Settings has a "Your role" field, and importing a team setup keeps each rep's own role.
+
+## B2C: say who you are and what you do
+
+B2C messages had the same problem. "Say who you are only if it explains the reason" and a 350-character cap meant they often never said what the sender does.
+
+B2C messages now work like this:
+
+- **Who:** what the sender does, in a few words, from their title and one-liner.
+- **Skills:** only the one or two that fit this person.
+- **Proof:** at most one proof point, matched to the person's industry or problem.
+- **Ask:** fits the situation:
+  - (a) a visible opening;
+  - (b) someone who could hire, with no opening;
+  - (c) a peer, with no ask for work.
+- **Length:**
+  - Note: 100 to 180 characters.
+  - First message: 3 to 5 sentences, up to 450 characters.
+  - Follow-ups: up to 300 characters, or 500 when answering a question or sharing a project.
+- **Follow-ups** can share a matching project, share the portfolio link once the person shows interest, propose two call times, and answer questions about availability and the kind of work wanted. They never invent rates, start dates, years of experience or employers.
+
+## Research round 2 (Nov 13, 2026)
+
+Three more passes looked at agency outreach, job and freelance outreach, and follow-ups. Again the evidence is almost all vendor data or practitioner opinion. There's no controlled test of message wording, so measuring our own replies is the real test.
+
+**Agencies (B2B)**
+
+- **Naming the company early doesn't hurt.** Expandi: notes starting "Hello from [Company]" got 60.9% acceptance against a 30.2% baseline (2,860 contacts). That's acceptance only, not replies.
+- **Length:** the best replies come at 151 to 200 characters (8.5%). 301 to 500 still gets 7.6%. Over 500 drops to 5.8% (Expandi, about 150k contacts).
+- **Message 2** is the best place for the substance (8.8% per send). Three messages beat five or more (9.8% vs 5.0%).
+- **Structure:** observation, then one line of who we are and what we do, then one comparable project, then an easy question. Name one service, matched to their situation.
+- **Wording that hurts:** buzzwords ("AI-powered", "platform", "solutions", "leading"), listing every service, selling on price, and asking for a meeting on the first touch.
+- **Offshore studios:** founders worry about risk more than price. The trust points that help are code ownership, overlap hours and senior engineers. Don't lead with location.
+
+**Individuals (B2C)**
+
+- **What gets people hired:**
+  - Referrals and sourcing do far better than inbound applications (Ashby: 38M applications).
+  - Cold referrals from strangers are filed as leads, not real referrals (interviewing.io).
+- **Who to message:**
+  - **Hiring managers:** name the role and give one proof.
+  - **Recruiters:** a factual summary.
+  - **Employees:** ask a question first, ask for a referral later.
+- **Remote:** say where you're based and your time-zone overlap once. Fake remote candidates have made founders cautious, so real, checkable proof matters.
+- **Never in a first message:** a rate, a résumé or an attachment.
+
+**Follow-ups**
+
+- **Lines that get replies but cost meetings (Gong, 304k emails):** "thoughts?" (meetings booked down 20%) and "never heard back" (down 14%).
+- **No-reply angles, in order:**
+  1. Something new about them
+  2. A comparable project with a result
+  3. A useful observation
+  4. "Is someone else closer to this?"
+  5. A warm close
+- **When they're interested:** offer two specific times, say the call length, and say what they get from it either way.
+- **Price questions:** give an honest range and what drives it. Dodging reads as evasive (Gong; Blair Enns).
+- **Objections:** accept it, ask one real question, and leave a way out. Never criticise their vendor. No reverse psychology. At most one "sounds like".
+- **Mirroring:** match their wording early in the conversation (Swaab et al. 2011).
+- **Job follow-ups:**
+  - About a week after applying.
+  - Thanks within a day of an interview.
+  - One gracious reply after a rejection, with an optional request for feedback.
+
+Main new sources:
+
+- Expandi H2 2026: https://expandi.io/state-of-linkedin-outreach-h2-2026/
+- Belkins follow-up statistics: https://belkins.io/blog/sales-follow-up-statistics
+- Gong follow-up wording: https://www.gong.io/blog/7-tips-for-writing-the-perfect-follow-up-sales-email-according-to-science
+- Josh Braun objection flashcards (via 30 Minutes to President's Club): https://blog.contactout.io/wp-content/uploads/2023/10/30MPC-09-Sep2023-Josh-Braun-Objection-Flashcards_V2.pdf
+- Ashby referrals: https://www.ashbyhq.com/talent-trends-report/reports/referrals
+- interviewing.io: https://interviewing.io/blog/how-to-get-in-the-door-at-top-companies-part-1
+- The Pragmatic Engineer, tech jobs market 2025: https://newsletter.pragmaticengineer.com/p/tech-jobs-market-2025-part-3
+- Swaab, Maddux & Sinaceur 2011: https://willmaddux.web.unc.edu/wp-content/uploads/sites/15846/2018/04/JESP-Virtual-Linguistic-Mimicry.pdf
+
 ## Rules the code enforces
 
 [findAiTells](../background/writing.js) checks every message for:

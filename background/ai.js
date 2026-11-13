@@ -219,8 +219,9 @@ function buildIcpContext(ctx) {
 function buildSenderContext(ctx) {
   const s = ctx.sender; const L = [];
   if (ctx.isB2b) {
-    L.push('--- ABOUT THE SENDER (a business) ---');
-    if (s.senderName) L.push(`Sender name: ${s.senderName}`);
+    L.push('--- ABOUT THE SENDER (a person writing on behalf of their company) ---');
+    if (ctx.senderName) L.push(`Sender's first name: ${ctx.senderName}`);
+    L.push(`Sender's role: ${s.senderRole || 'not given (say they are from the company, never invent a title)'}`);
     if (s.companyName) L.push(`Company: ${s.companyName}`);
     if (s.offerType) L.push(`What they sell: ${optLabel(S.OPTIONS.offerTypes, s.offerType)}`);
     if (s.offer) L.push(`Offer in one line: ${s.offer}`);
@@ -228,10 +229,13 @@ function buildSenderContext(ctx) {
     if (probs.length) L.push(`Problems they solve: ${probs.join('; ')}`);
     if (s.outcome) L.push(`Main outcome delivered: ${optLabel(S.OPTIONS.outcomes, s.outcome)}`);
     if (s.valueProp) L.push(`What makes them different: ${s.valueProp}`);
-    if (s.expertise) L.push(`Sender's own background: ${s.expertise}`);
+    if (s.expertise) L.push(`What the company's team works with: ${s.expertise}`);
     const proofs = (s.proofPoints || []).filter(Boolean);
-    if (proofs.length) L.push(`Proof points (real results — use at most one, lightly, never as a brag):\n${proofs.map(p => `  - ${p}`).join('\n')}`);
-    if (s.notes) L.push(`Other notes from the sender: ${s.notes}`);
+    if (proofs.length) L.push(`Company proof points (real work. Use at most one, the closest match to this person's industry or problem, in "we" form, as a comparable project (what kind of company, what was built, one concrete result). Never a bare percentage. If none is close, use a general one or none):\n${proofs.map(p => `  - ${p}`).join('\n')}`);
+    if (s.serviceMap) L.push(`Service matching guide (pick the ONE service whose situation matches what you found on their profile):\n${s.serviceMap}`);
+    if (s.trust) L.push(`Why clients trust the company (use from the second message on, one at a time, never in a connection note): ${s.trust}`);
+    if (s.pricing) L.push(`Typical pricing (only when they ask about price or budget, never before): ${s.pricing}`);
+    if (s.notes) L.push(`Other notes from the company: ${s.notes}`);
   } else {
     const k = ctx.seeking || {};
     L.push('--- ABOUT THE SENDER (an individual professional looking for work) ---');
@@ -248,12 +252,73 @@ function buildSenderContext(ctx) {
     if (s.uniqueAngle) L.push(`What makes them different: ${s.uniqueAngle}`);
     if (s.background) L.push(`Background: ${s.background}`);
     const proofs = (s.proofPoints || []).filter(Boolean);
-    if (proofs.length) L.push(`Proof points (real results — use at most one, lightly, never as a brag):\n${proofs.map(p => `  - ${p}`).join('\n')}`);
+    if (proofs.length) L.push(`Proof points (real work. Use at most one, the closest match to this person's industry or problem, as a comparable project (what kind of company, what was built, one concrete result). Never a bare percentage. If none is close, leave proof out):\n${proofs.map(p => `  - ${p}`).join('\n')}`);
+    if (s.location) L.push(`Based in / time-zone overlap: ${s.location}`);
+    if (s.rate) L.push(`Rate (only when they ask about rates or budget, never before): ${s.rate}`);
     if (s.portfolio) L.push(`Portfolio link (only ever share in a follow-up when they show interest — never in a first touch): ${s.portfolio}`);
     if (s.notes) L.push(`Other notes from the sender: ${s.notes}`);
   }
   return L.length > 1 ? L.join('\n') : '';
 }
+
+// B2B messages used to be written like a lone founder chatting ("I run a small studio", "I built"),
+// and the no-pitch rules kept the company and its services out of them. The BD team's verdict
+// (Nov 2026): it doesn't sound like a company presenting itself. These rules make the rep speak
+// for the company: who they are, which company, the one relevant service, one matched proof.
+// From Satyron's BD team (Nov 2026): which profile detail to lead with, and what never to mention.
+const B2B_DETAIL_PRIORITY = `HOW TO PICK THE DETAIL. Scan their headline, About, recent posts and company info, and use the ONE strongest detail, in this order:
+1. A recent post where they share a problem, a frustration or a goal (strongest, use it if it exists).
+2. Something new at their company: a product launch, a new feature, a funding round, an expansion, a new market.
+3. Hiring, especially engineers, developers, data or AI roles.
+4. A role change or new position in the last few months.
+5. What their About or headline says they focus on (only if nothing above exists).
+Then match that detail to the ONE service that fits it best.
+Never mention: generic praise of their profile, follower counts, their job title on its own, anything older than about 3 months unless it is still clearly relevant, or anything about their personal life.
+If nothing specific is found, say their company's focus in one line and ask one question about their current priorities.`;
+
+const roleCanClaimBuild = role => /\b(founder|co-?founder|cto|ceo|engineer|developer|architect|lead)\b/i.test(role || '');
+function b2bVoice(ctx) {
+  const name = ctx.senderName || 'the sender';
+  const co = ctx.sender.companyName || 'their company';
+  const role = ctx.sender.senderRole;
+  return `HOW A COMPANY REP TALKS (this is B2B, the sender speaks for ${co}):
+- ${name} writes as themselves, on behalf of ${co}. Make clear where you're from, using the company name exactly: "I'm ${name} from ${co}", "I work at ${co}" or "at ${co} we"${role ? `, or with the role ("I'm ${name}, ${role} at ${co}")` : ''}.
+- Say what ${co} does in one plain sentence about the ONE service that fits the detail you picked (use the service matching guide in the sender context if there is one). Never the full service list.
+- "We" for anything ${co} builds or has built ("we built a clinical dashboard for a health startup"). "I" only for what ${name} personally does.${roleCanClaimBuild(role) ? '' : ` Never say "I built", "I developed" or "I shipped". ${name} is not the engineer.`}
+- Describe the problem the company fixes or the concrete thing it builds ("we build the AI tutor and the app around it"), not a category ("we build custom software", "AI-powered solutions", "a platform").
+- One proof point at most, a comparable project: the kind of company, what was built, one concrete result. The closest match to their industry or problem. A proof from an unrelated industry doesn't count as fit (a vet app is not edtech proof). Never a bare percentage.
+- Never name a client or a client's product, even if a proof point names one. Describe the project instead ("a vet-tech startup's multi-agent diagnostic system").
+- Don't lead with where the team is based and don't open on price. Affordability comes up only when they ask about price or budget.
+- Confident and specific, like a real person at a real studio. Not a marketing page: no "leading", "top-rated", "cost-effective", "offshore", "we help companies like yours", "partner with you", "solutions", "take it to the next level", "I'd love to show you". Never assume a problem ("are you struggling with").`;
+}
+// B2C got the same complaint: messages hid who the sender is and what they do. The sender's own
+// title, one-liner and matched proof are now always part of the introduction.
+function b2cVoice(ctx) {
+  const name = ctx.senderName || 'the sender';
+  return `HOW AN INDIVIDUAL PRESENTS THEMSELVES (B2C, ${name} is looking for work):
+- Say plainly who you are and what you do in a few words, from the title and one-liner in the sender context ("I'm ${name}, an AI and full-stack engineer").
+- Name only the one or two skills or services that fit this person's company or need. Never a skill list, never a résumé.
+- One proof point at most, the closest match to their industry or problem, with one real number if there is one. Leave it out if nothing fits.
+- When it fits the situation, say honestly what kind of work you're open to (contract, full-time, freelance), using only the sender context.
+- Writing to a founder, hiring manager or recruiter about remote work: say where you're based and the time-zone overlap once, in one short clause, only if the sender context gives it. Never mention a rate in a first message, never sell on being cheap.
+- Never name a client or a client's product, even if a proof point names one. Describe the project instead ("an AI tutoring product", "a health startup's clinical dashboard"). Your own current employer in your title is fine.
+- Proof is a comparable project (the kind of company, what you built, one concrete result), never an adjective ("highly skilled", "results-driven") and never a bare percentage.
+- A confident peer, not an applicant. No "I'm writing to express my interest", no "I'd be a great fit", no "any opportunity", no "hire me", no "open to work".`;
+}
+
+// Client names the sender doesn't want shared: the "Name:" prefix of a proof point, or a capitalised
+// name right after "Built"/"for". Messages describe the project instead.
+function clientNamesIn(proofs) {
+  const names = new Set();
+  for (const p of (proofs || []).filter(Boolean)) {
+    const lead = p.match(/^\s*([A-Z][\w.&'-]*(?:\s+[A-Z][\w.&'-]*){0,3})\s*:/);
+    if (lead) names.add(lead[1]);
+    for (const m of p.matchAll(/\b(?:[Bb]uilt|for)\s+([A-Z][\w.&'-]*(?:\s+(?:AI|[A-Z][\w.&'-]*))?)/g)) names.add(m[1]);
+  }
+  return [...names].filter(n => n.length > 2 && !/^(A|An|The|We|I|LLM|AI|RAG|HIPAA)$/.test(n));
+}
+
+const firstPersonBuild = text => /\bI(?:'ve| have)? (built|developed|coded|designed|shipped|engineered)\b/i.test(text || '');
 
 // LinkedIn's own InMail data: under 400 characters gets 22% more replies, over 1,200 gets 11% fewer
 // — so length is no longer a setting. Gong's 304k cold-email study: an interest question beats a
@@ -487,7 +552,7 @@ function violatesStrategyShape(text, strategy) {
 // Every outreach message goes through here: the banned list above, the AI-tells check from
 // writing.js, length, question count and strategy shape. One rewrite with the exact problems
 // named, never a loop; then punctuation-only cleanup so a stray dash or "!" can't survive.
-async function callAIWithBannedPhraseGuard(systemPrompt, userPrompt, maxChars, strategy, { maxQuestions = 1, maxSentences = null, rememberOpening = false } = {}) {
+async function callAIWithBannedPhraseGuard(systemPrompt, userPrompt, maxChars, strategy, { maxQuestions = 1, maxSentences = null, rememberOpening = false, mustMention = '', noFirstPersonBuild = false, noPrice = false, avoidNames = [], noLinks = false, wordRange = null, endWithQuestion = false } = {}) {
   const problemsOf = text => {
     const body = stripMetaLines(text);
     const out = [];
@@ -500,6 +565,14 @@ async function callAIWithBannedPhraseGuard(systemPrompt, userPrompt, maxChars, s
     if (maxSentences && sentences > maxSentences) out.push(`had ${sentences} sentences, more than ${maxSentences}`);
     const shape = violatesStrategyShape(body, strategy);
     if (shape) out.push(shape);
+    if (mustMention && !body.toLowerCase().includes(mustMention.toLowerCase())) out.push(`never said the sender is from ${mustMention}`);
+    if (noFirstPersonBuild && firstPersonBuild(body)) out.push('said "I built" (or similar) about company work, use "we"');
+    if (noLinks && /https?:\/\/|www\.|calendly|\.com\b/i.test(body)) out.push('included a link, which never goes in a first message');
+    if (wordRange) { const n = body.split(/\s+/).filter(Boolean).length; if (n < wordRange[0] || n > wordRange[1]) out.push(`was ${n} words, it must be ${wordRange[0]} to ${wordRange[1]}`); }
+    if (endWithQuestion && !/\?\s*$/.test(body)) out.push('did not end with a question about their work or plans');
+    const named = (avoidNames || []).find(n => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(body));
+    if (named) out.push(`named the client "${named}", describe the project instead`);
+    if (noPrice && /\$\s?\d|\b\d+\s?(k|usd|pkr)\b|per hour|\/\s?hr\b|hourly rate/i.test(body)) out.push('mentioned a price or rate, which never goes in a first message');
     return out;
   };
   let text = await callAI(systemPrompt, userPrompt);
@@ -726,6 +799,8 @@ const B2C_OPPORTUNITY_RULE = `WHICH SITUATION IS THIS (decide from the profile d
 (a) They visibly need what the sender does: hiring for a matching role, a post asking for help, a project in the sender's area. Say plainly you saw it, give ONE concrete fit fact from the sender's real background, and ask about it.
 (b) They could hire or bring the sender in (founder, CTO, engineering or product lead, hiring manager or recruiter at a relevant company) but nothing shows an opening. Give the specific reason you're writing, say in a few words what kind of work the sender does, and make a soft, honest ask ("are you bringing in outside help for that?", "if you ever need an extra pair of hands on the AI side, I'd be up for it").
 (c) A peer with no say in hiring: a normal conversation about their work. No ask for work.
+(d) A recruiter or talent person: a short factual summary, no small talk and no story. Target role and level, contract or full-time, where you're based and remote, and ask whether they recruit for roles like that.
+(e) An employee at a company the sender wants to join (not the hiring manager): never ask a stranger for a referral in a first message. Ask one specific question about their team or work that helps the sender judge the fit. A referral ask only comes later, after they reply.
 Never sound desperate ("any opportunity", "please consider me"), never "open to work" or "hire me", never a résumé dump.`;
 
 // Grounded in 2026 LinkedIn acceptance-rate research (Leadriver's 50,000+ request benchmark,
@@ -738,10 +813,19 @@ Never sound desperate ("any opportunity", "please consider me"), never "open to 
 // Research (MD/messaging_playbook.md): a note barely changes acceptance but lifts later replies
 // (Belkins 2026: 8.2% vs 5.3%); honest stated-reason notes book more calls than vague ones (La
 // Growth Machine); notes themselves rarely get replies, so the note's job is acceptance + context.
+const CONNECTION_REQUEST_FRAMEWORK_B2B = `WHAT A GOOD NOTE FROM A COMPANY REP DOES (an invitation, they haven't accepted yet):
+- Start with "Hi <first name>," using their real first name.
+- The real reason you're writing to THEM: one specific thing from their profile or activity (a launch, a hire, a post, what their product does). Say it plainly.
+- Who you are: your first name, the company, and in a few words what the company does that connects to them ("I'm Ahmed from Northbeam, we build AI features for edtech apps"). Either order is fine, reason first or introduction first.
+- End simply: "Happy to connect.", "Would be good to connect." or one short question.
+- 130 to 200 characters. 200 is the hard limit.
+- No results or numbers, no list of services, no ask for a call, no link. Never write as if they already accepted.
+- If nothing specific is in the data, introduce yourself and the company and say why their kind of company is relevant. Never invent a detail.`;
+
 const CONNECTION_REQUEST_FRAMEWORK = `WHAT A GOOD NOTE DOES (it's an invitation, they haven't accepted yet):
 - Start with "Hi <first name>," using their real first name.
 - Give the real reason you're writing to THEM: one specific thing from their profile or activity (a post, a role they're hiring for, a launch, a move, their company's focus). Say it plainly.
-- Say who you are in a few words, only if it explains the reason (what you build, for whom).
+- Say who you are in a few words (what you do, for whom), so they know why you're connecting.
 - End however a person would: "Happy to connect.", "Would be good to connect.", "Glad to connect either way." or one short question. A question is optional.
 - 100 to 180 characters is ideal. 200 is the hard limit.
 - No pitch: no services list, no results, no ask for a call, no link. Never write as if they already accepted ("thanks for connecting").
@@ -751,13 +835,13 @@ export async function handleGenerateConnectionRequest(profileData, intent, userN
   const ctx = await getModeContext(intent);
   const senderCtx = buildSenderContext(ctx);
   const who = ctx.isB2b
-    ? 'You write LinkedIn connection notes for someone at a small company who wants to start real conversations with people who could become clients.'
+    ? 'You write LinkedIn connection notes for a business development rep (or founder) at a services company, to people who could become clients. The note introduces the rep and the company and gives the real reason for connecting.'
     : 'You write LinkedIn connection notes for an individual professional who wants work (a job, contract or freelance projects, a place on a team) from people who could hire them, refer them or bring them in. It may be honest that they do this kind of work, but it never reads like a cover letter or begs.';
   let systemPrompt = `${who}
 
-${CONNECTION_REQUEST_FRAMEWORK}
+${ctx.isB2b ? `${CONNECTION_REQUEST_FRAMEWORK_B2B}\n\n${B2B_DETAIL_PRIORITY}\n\n${b2bVoice(ctx)}` : `${CONNECTION_REQUEST_FRAMEWORK}\n\n${b2cVoice(ctx)}`}
 
-${buildStrategyGuidance(strategy)}
+${ctx.isB2b && (!strategy || strategy === 'smart_pick') ? '' : buildStrategyGuidance(strategy)}\n${ctx.isB2b ? 'The strategy only shapes the opening. The note still says who you are and which company.' : 'The strategy only shapes the opening. The note still says who you are and what you do.'}
 
 ${PRECONVERSATION_GROUNDING}
 
@@ -768,13 +852,19 @@ ${examplesBlock('connection', ctx.mode)}
 Base it on their CURRENT role and company. Never reference posts from a previous employer. Always produce a note: never refuse, never ask for clarification, never leave a placeholder.
 Return ONLY the note text. No quotes around it.`;
   systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStyleRules(ctx, { connection: true })}`;
-  if (senderCtx) systemPrompt += `\n\n${senderCtx}\n(Use at most a few words of this to say who the sender is. Never list it.)`;
+  if (senderCtx) systemPrompt += `\n\n${senderCtx}\n(${ctx.isB2b ? 'In a note, use only the company name and a few words of what it does. Never list services.' : 'In a note, use only a few words of this to say what the sender does. Never list it.'})`;
   systemPrompt += buildUserContextSection(contextMaterial);
   systemPrompt += buildVarietyNote(previousAttempt, strategy);
   systemPrompt += await recentOpenersNote();
 
-  const text = await callAIWithBannedPhraseGuard(systemPrompt, buildProfileText(profileData, userNotes), 200, strategy, { maxSentences: 3, rememberOpening: true });
+  const text = await callAIWithBannedPhraseGuard(systemPrompt, buildProfileText(profileData, userNotes), 200, strategy, { maxSentences: 3, rememberOpening: true, noPrice: true, ...b2bChecks(ctx) });
   return { text: stripSignOff(text, ctx.senderName) };
+}
+
+function b2bChecks(ctx) {
+  const avoidNames = clientNamesIn(ctx.sender.proofPoints);
+  if (!ctx.isB2b) return { avoidNames };
+  return { avoidNames, mustMention: ctx.sender.companyName || '', noFirstPersonBuild: !roleCanClaimBuild(ctx.sender.senderRole) };
 }
 
 // Connection requests and first messages both still signed off with the sender's name in testing ("…shakes
@@ -796,12 +886,32 @@ function stripSignOff(text, senderName) {
 // ~400 characters; pitching cuts replies sharply; an interest question beats a meeting ask when
 // cold; zero or one question both work, two or more hurt. After a note, the first message refers
 // back to it lightly and never repeats it.
-const FIRST_MESSAGE_FRAMEWORK = `WHAT A GOOD FIRST MESSAGE DOES:
-- Start with "Hi <first name>," (or "Thanks for connecting, <first name>." if the connection note is shown below and this follows it, but never stop there).
-- The reason you're writing to THEM, in plain words, from one specific real detail. If the connection note below already used a detail, use a different one or move on from it in a few words.
-- Who the sender is and why that's relevant to this person, in one short sentence, using at most one real proof point from the sender context, stated plainly (what was built, for whom, one number if real). No list of skills, no claims about results you'd get for them.
-- One soft ask, or an offer they can say yes to in one word ("want me to send it?"). It can be a question or a plain sentence. Never ask for a call or meeting unless the MESSAGE STYLE ending below asks for one.
-- 2 to 4 short sentences, about 30 to 60 words, under 350 characters. Senior people get the shorter end.`;
+const FIRST_MESSAGE_FRAMEWORK = `WHAT A GOOD FIRST MESSAGE DOES, in this order:
+1. "Hi <first name>,". Never open with "thanks for connecting".
+2. Why them, now: one specific real detail (an opening, a launch, funding, a post, what their product does), in plain words. If the connection note used a detail, use a different one or move on from it in a few words.
+3. Who you are: what you do, in a few words, and the one or two skills that fit that detail. If the connection note already said it, a few words is enough.
+4. One proof that fits them (closest industry or problem), stated plainly: what was built, for whom, one number if real. Leave it out if nothing fits. No claims about results you'd get for them.
+5. One ask that fits the situation above, or an offer they can say yes to in one word ("want me to send it?"). A question or a plain sentence. Never ask for a call or meeting unless the MESSAGE STYLE ending below asks for one.
+- 3 to 5 short sentences, about 40 to 80 words, under 450 characters. One question at most. Senior people get the shorter end.
+- No links, no résumé, no attachments, no rate in a first message.
+- The strategy below only shapes step 2. Steps 3 and 5 are always there (in situation (c), step 5 is a normal question, not an ask for work).`;
+
+// B2B: the BD team needs the company presented (who, which company, the relevant service, one
+// matched proof). Longer than the cold-outreach ideal on purpose; still one idea and one ask.
+// Satyron BD team's spec (Nov 2026): start a real conversation, not sell. Three lines, 50-75
+// words, one service matched to their situation, framed as the outcome for them, then a question.
+const FIRST_MESSAGE_FRAMEWORK_B2B = `THE GOAL OF THIS FIRST MESSAGE: start a real conversation, not sell.
+STRUCTURE, after "Hi <first name>,":
+1. One short, natural line about something specific they posted, built, launched or are hiring for (the detail picked by HOW TO PICK THE DETAIL below). If the connection note used a detail, use the next one down the list.
+2. One line on how the company's work connects to that, framed as the outcome for them, not a service list. Make clear you're with the company ("I work at Satyron and we...", "at Satyron we..."). Pick only the ONE service that fits their situation best. Don't default to AI: if their need is web, mobile, hiring help, data, DevOps or security, use that.
+3. End with one easy, curious question about their work or plans.
+RULES:
+- 50 to 75 words. "I" for the sender, "we" for the company. No sign-off and no name at the end.
+- No links, no call or meeting request, no calendar or Calendly link, no proof point or client example in this message (those come later).
+- No em dashes, no emojis, minimal punctuation, no random capital letters (only names and the start of sentences).
+- Don't explain their own business back to them.
+- Never open with "thanks for connecting".
+- A chosen strategy below (if any) only shapes line 1. Lines 2 and 3 are always there.`;
 
 function buildConnectionRecencyNote(stage, daysSinceLastTouch) {
   if (stage !== 'connection_sent' || !Number.isFinite(daysSinceLastTouch) || daysSinceLastTouch <= 2) return '';
@@ -819,17 +929,17 @@ export async function handleGenerateFirstMessage(profileData, analysis, intent, 
     ? (a.prospectScore?.score || a.potentialClient?.score || 'Low')
     : (a.clientPotential?.score || ({ Strong: 'High', Possible: 'Medium', Unlikely: 'Low' })[a.hiringSignal?.score] || 'Low');
   const senderCtx = buildSenderContext(ctx);
-  const maxChars = 350;
+  const maxChars = ctx.isB2b ? 520 : 450; // B2B is held to 50-75 words by the word check
 
   const who = ctx.isB2b
-    ? `You write the first LinkedIn message for someone at a small company, to a person who could become a client. The goal is a reply and a real conversation, not a sale. ${isDecisionMaker ? 'This person decides, so keep it short and direct.' : 'This person may not decide alone, so keep it light and curious.'} ${scoreVal === 'Low' ? 'They are a weak fit: keep it short, friendly and with no ask for work.' : ''}`
+    ? `You write the first LinkedIn message from a business development rep (or founder) at a services company to a person who could become a client. After reading it, the person knows which company is writing, how its work connects to them, and why they got this message now. The goal is a real conversation, not a sale. ${scoreVal === 'Low' ? 'They are a weak fit: keep it light and make no ask for work.' : ''}`
     : `You write the first LinkedIn message for an individual professional who wants work (a job, contract or freelance projects, a place on a team). The goal is a reply from someone who could hire, refer or bring them in.\n\n${B2C_OPPORTUNITY_RULE}`;
 
   let systemPrompt = `${who}
 
-${FIRST_MESSAGE_FRAMEWORK}
+${ctx.isB2b ? `${FIRST_MESSAGE_FRAMEWORK_B2B}\n\n${B2B_DETAIL_PRIORITY}\n\n${b2bVoice(ctx)}` : `${FIRST_MESSAGE_FRAMEWORK}\n\n${b2cVoice(ctx)}`}
 
-${buildStrategyGuidance(strategy)}
+${ctx.isB2b && (!strategy || strategy === 'smart_pick') ? '' : buildStrategyGuidance(strategy)}
 
 ${PRECONVERSATION_GROUNDING}
 
@@ -839,7 +949,7 @@ ${examplesBlock('first', ctx.mode)}
 
 Return ONLY the message. No quotes, no explanation.`;
 
-  systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStyleRules(ctx)}`;
+  systemPrompt += `\n\n--- MESSAGE STYLE ---\n${buildStyleRules(ctx, { connection: ctx.isB2b })}`;
   if (senderCtx) systemPrompt += `\n\n${senderCtx}`;
   if (userInstructions?.trim()) systemPrompt += `\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly):\n${userInstructions.trim()}`;
   systemPrompt += `\n\n${buildAnalysisContext(a, ctx.mode)}`;
@@ -854,7 +964,7 @@ Return ONLY the message. No quotes, no explanation.`;
   systemPrompt += buildVarietyNote(previousAttempt, strategy);
   systemPrompt += await recentOpenersNote();
 
-  const text = await callAIWithBannedPhraseGuard(systemPrompt, buildProfileText(profileData), maxChars, strategy, { maxSentences: 4, rememberOpening: true });
+  const text = await callAIWithBannedPhraseGuard(systemPrompt, buildProfileText(profileData), maxChars, strategy, { maxSentences: 5, rememberOpening: true, noPrice: true, noLinks: true, ...(ctx.isB2b ? { wordRange: [50, 75], endWithQuestion: true } : {}), ...b2bChecks(ctx) });
   return { text: stripSignOff(text, ctx.senderName) };
 }
 
@@ -869,6 +979,7 @@ export async function handleRefineMessage(originalMessage, profileData, analysis
     bold: 'Confident and memorable. Takes a position. Not afraid to be different.',
   };
   const toneGuide = TONE_GUIDE[tone] || TONE_GUIDE.warm;
+  const refineMax = 450;
 
   const systemPrompt = `You are refining a LinkedIn outreach message. Apply the requested tone and follow the user's instructions precisely.
 
@@ -881,7 +992,7 @@ Rules:
 - Follow the user's instructions exactly, and treat length instructions as measurable: "shorter" means cutting at least a third of the words; "longer" means meaningfully more. Measured: "make it shorter" once went from 36 words to 35.
 - If the instruction adds an ask (such as a call), attach it naturally to the message's existing question rather than stacking a second request, and skip softeners like "no pressure at all"
 - Use the recipient's name and company only as they appear in the profile below
-- Max 350 characters unless the instructions explicitly request more
+- Max ${refineMax} characters unless the instructions explicitly request more
 ${AUTHENTICITY_RULES}
 - Return ONLY the refined message text. No quotes, no explanation.`;
 
@@ -896,7 +1007,7 @@ ${instructions?.trim() || 'No specific instructions — just apply the tone cons
 
 ${analysis ? `ANALYSIS CONTEXT:\n${buildAnalysisContext(analysis, intent)}` : ''}`;
 
-  return { text: await callAIWithBannedPhraseGuard(systemPrompt, userPrompt, 350) };
+  return { text: await callAIWithBannedPhraseGuard(systemPrompt, userPrompt, refineMax) };
 }
 
 // ─── Post Creator ─────────────────────────────────────────────────────────────
@@ -928,7 +1039,8 @@ async function getPostContext(mode, creatorProfile, companyProfile) {
     const probs = [...optLabels(S.OPTIONS.problems, s.problems), s.problem].filter(Boolean);
     if (probs.length) facts.push(`Problems it solves: ${probs.join('; ')}`);
     if (s.valueProp) facts.push(`What makes it different: ${s.valueProp}`);
-    if (!isCompany && s.expertise) facts.push(`Author's own background: ${s.expertise}`);
+    if (s.expertise) facts.push(`What the company's team works with: ${s.expertise}`);
+    if (!isCompany && s.senderRole) facts.push(`Author's role at the company: ${s.senderRole}`);
   } else {
     if (s.currentTitle) facts.push(`Author's title: ${s.currentTitle}`);
     if (s.oneLiner) facts.push(`Author in one line: ${s.oneLiner}`);
@@ -1110,6 +1222,25 @@ function parseJsonObject(raw) {
 // sender/recipient from a "RECIPIENT PROFILE" blob, which used to let the wrong page's scraped
 // profile (e.g. the account owner's own) leak in as if it belonged to the contact.
 
+const B2B_FOLLOWUP_RULES = ctx => {
+  const co = ctx.sender.companyName || 'the company';
+  return `SPEAKING FOR ${co.toUpperCase()} (B2B):
+- If the thread hasn't yet made clear who you are and what ${co} does, say it in one line.
+- The second message is where fuller credibility goes: one trust point from the sender context (code ownership, overlap hours, seniority) or one comparable project with a result. One at a time, never a stack.
+- Good moves for a services company, when they fit the situation: one case study that matches their industry or problem (the kind of company, what was built, one result), one quick idea for their product, two specific times for a 20-minute call once they're interested, and a straight answer on how ${co} works (a fixed-scope project, a dedicated team, or an audit first) when they ask about process.
+- Asked what it costs: ${ctx.sender.pricing ? 'answer from the sender context. If it gives numbers, give the honest range and the main thing that moves it (scope, integrations, timeline). If it only describes the pricing (for example budget-friendly hourly rates, hourly or contract), say that plainly in everyday words ("our rates are budget-friendly, and we work hourly or on a fixed contract"), say the real number depends on scope, and suggest 15 minutes to give one. Then one scoping question. Never dodge a price question and never make up a figure.' : 'no pricing is in the sender context, so say plainly it depends on scope, name what drives it, and suggest 15 minutes to give a real number. Never make up a figure.'}
+- Never invent prices, timelines, team sizes, client names or results that aren't in the sender context.`;
+};
+
+const B2C_FOLLOWUP_RULES = ctx => {
+  const portfolio = ctx.sender.portfolio;
+  return `SPEAKING FOR YOURSELF (B2C, looking for work):
+- If the thread hasn't yet made clear what you do, say it in one line.
+- Good moves, when they fit the situation: a project from the proof points that matches their industry or problem (what it was, one result), ${portfolio ? `the portfolio link (${portfolio}) once they show interest, never before` : 'offering examples of past work once they show interest'}, one quick idea for their product, two specific times for a 20-minute call once they're interested, and a straight answer on availability and the kinds of work you're open to.
+- Asked about rates: ${ctx.sender.rate ? 'answer from the sender context. If it gives a number, give it and add that a fixed price is possible once scope is clear. If it only describes the rate (for example budget-friendly), say that plainly and that the number depends on scope. Then one scoping question ("a few weeks, or ongoing?"). Never dodge it and never make up a figure.' : 'no rate is in the sender context, so say it depends on scope and suggest a short call to pin it down. Never make up a number.'}
+- Never invent rates, start dates, years of experience, employers or results that aren't in the sender context.`;
+};
+
 export async function handleGenerateChatFollowup({ conversationText, isRaw, contactName, senderName, intent, userInstructions, stage, daysSinceLastTouch, analysis, contextMaterial, strategy }) {
   const ctx = await getModeContext(intent);
   const senderCtx = [buildSenderContext(ctx), buildStyleRules(ctx)].filter(Boolean).join('\n\n');
@@ -1121,7 +1252,7 @@ export async function handleGenerateChatFollowup({ conversationText, isRaw, cont
     : `In the conversation below, "You" is ${writer} and "${recipient}" is the other person. Lines start with [date, time] when LinkedIn showed one. Use the dates to see gaps.`;
 
   const goal = ctx.isB2b
-    ? `${writer} wants ${recipient} as a client. Every message should move one small step toward a call or a project, without pushing.`
+    ? `${writer} works for ${ctx.sender.companyName || 'a services company'} and wants ${recipient} as a client. Every message should move one small step toward a call or a project, without pushing.`
     : `${writer} wants work from ${recipient} (a job, a contract, freelance projects, or a referral). Every message should move one small step toward that, without pushing or begging.`;
 
   const systemPrompt = `You ghostwrite ${writer}'s next LinkedIn message to ${recipient}. ${goal}
@@ -1134,7 +1265,9 @@ ${FOLLOWUP_HISTORY_RULES}
 
 ${FOLLOWUP_PLAYBOOK}
 
-LENGTH: usually 150 to 300 characters. Answering their question can run up to 450. Never longer than the situation needs.
+${ctx.isB2b ? `${B2B_FOLLOWUP_RULES(ctx)}\n\n${b2bVoice({ ...ctx, senderName: writer })}` : `${B2C_FOLLOWUP_RULES(ctx)}\n\n${b2cVoice({ ...ctx, senderName: writer })}`}
+
+LENGTH: ${ctx.isB2b ? 'usually 150 to 350 characters. Answering their question or sharing a case study can run up to 550.' : 'usually 150 to 300 characters. Answering their question or sharing a project can run up to 500.'} Never longer than the situation needs.
 
 ${senderCtx ? `ABOUT ${writer.toUpperCase()}:\n${senderCtx}\n\n` : ''}${AUTHENTICITY_RULES}
 
@@ -1150,5 +1283,5 @@ Return ONLY the message, then the NEED_ID and LEAD_READ lines (and TIMING_NOTE i
     ? `${withContext}\n\nADDITIONAL INSTRUCTIONS FROM USER (follow exactly, even over the situation guidance):\n${userInstructions.trim()}`
     : withContext;
 
-  return { text: await callAIWithBannedPhraseGuard(finalPrompt, `CONVERSATION:\n${conversationText || '(no messages found)'}`, 450, strategy) };
+  return { text: await callAIWithBannedPhraseGuard(finalPrompt, `CONVERSATION:\n${conversationText || '(no messages found)'}`, ctx.isB2b ? 550 : 500, strategy, { noFirstPersonBuild: ctx.isB2b && !roleCanClaimBuild(ctx.sender.senderRole), avoidNames: clientNamesIn(ctx.sender.proofPoints) }) };
 }
